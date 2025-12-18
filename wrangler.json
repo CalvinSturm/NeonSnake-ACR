@@ -4,5 +4,4 @@
   "assets": {
     "directory": "./dist"
   },
-  "main": "dist/index.html" 
 }
