@@ -1,0 +1,8 @@
+{
+  "name": "NeonSnake-ACR",
+  "compatibility_date": "2025-12-18",
+  "assets": {
+    "directory": "./dist"
+  },
+  "main": "dist/index.html" 
+}
