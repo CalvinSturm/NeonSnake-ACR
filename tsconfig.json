@@ -11,5 +11,5 @@
     "noUnusedParameters": false,
     "verbatimModuleSyntax": false
   },
-  "include": ["src"]
+  "include": ["**/*.ts", "**/*.tsx"]
 }
