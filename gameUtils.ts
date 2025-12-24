@@ -1,5 +1,5 @@
-import { GRID_COLS, GRID_ROWS, STAGE_THEMES, DEFAULT_SETTINGS } from '../constants';
-import { Point, StageTheme } from '../types';
+import { GRID_COLS, GRID_ROWS, STAGE_THEMES, DEFAULT_SETTINGS } from './constants';
+import { Point, StageTheme } from './types';
 
 export const formatTime = (ms: number): string => {
   const totalSec = Math.floor(ms / 1000);
