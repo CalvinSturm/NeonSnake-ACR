@@ -360,99 +360,108 @@ export function useCombat(
           }
       }
 
-      // 1. AUTO CANNON
-      if (wStats.cannonLevel > 0) {
-          weaponFireTimerRef.current += dt;
-          let fireRate = wStats.cannonFireRate;
-          if (overclockActiveRef.current) fireRate *= 0.5;
+// 1. AUTO CANNON
+if (wStats.cannonLevel > 0) {
+    weaponFireTimerRef.current += dt;
+    let fireRate = wStats.cannonFireRate;
+    if (overclockActiveRef.current) fireRate *= 0.5;
 
-          if (weaponFireTimerRef.current >= fireRate) {
-              if (enemiesRef.current.length > 0) {
-                  let nearest: Enemy | null = null;
-                  let minDist = Infinity;
-                  (enemiesRef.current as Enemy[]).forEach(e => {
-                      const d = Math.pow(e.x - head.x, 2) + Math.pow(e.y - head.y, 2);
-                      if (d < minDist) { minDist = d; nearest = e; }
-                  });
+    if (weaponFireTimerRef.current >= fireRate) {
+        const enemies = enemiesRef.current as Enemy[];
+        if (enemies.length > 0) {
+            let nearest: Enemy | null = null;
+            let minDist = Infinity;
 
-                  if (nearest) {
-                      const dx = (nearest as Enemy).x - head.x;
-                      const dy = (nearest as Enemy).y - head.y;
-                      const angle = Math.atan2(dy, dx);
-                      const count = wStats.cannonProjectileCount;
-                      const spread = 0.15;
-                      
-                      for(let i=0; i<count; i++) {
-                          const offset = (i - (count-1)/2) * spread;
-                          const finalAngle = angle + offset;
-                          const vx = Math.cos(finalAngle) * wStats.cannonProjectileSpeed;
-                          const vy = Math.sin(finalAngle) * wStats.cannonProjectileSpeed;
+            for (const e of enemies) {
+                const dx = e.x - head.x;
+                const dy = e.y - head.y;
+                const d = dx * dx + dy * dy;
+                if (d < minDist) {
+                    minDist = d;
+                    nearest = e;
+                }
+            }
 
-                          projectilesRef.current.push({
-                              id: Math.random().toString(36),
-                              x: head.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
-                              y: head.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
-                              vx: vx * (DEFAULT_SETTINGS.gridSize / 20),
-                              vy: vy * (DEFAULT_SETTINGS.gridSize / 20),
-                              damage: wStats.cannonDamage,
-                              color: COLORS.projectile,
-                              size: 3 + Math.min(wStats.cannonLevel, 4),
-                              type: 'STANDARD',
-                              owner: 'PLAYER'
-                          });
-                      }
-                      
-                      if (now - shootAudioThrottleRef.current > 100) {
-                          audioEventsRef.current.push({ type: 'SHOOT' });
-                          shootAudioThrottleRef.current = now;
-                      }
-                      
-                      weaponFireTimerRef.current = 0;
-                  }
-              }
-          }
-      }
+            if (nearest) {
+                const angle = Math.atan2(nearest.y - head.y, nearest.x - head.x);
+                const count = wStats.cannonProjectileCount;
+                const spread = 0.15;
 
-      // 2. PRISM LANCE
-      if (wStats.prismLanceLevel > 0) {
-          prismLanceTimerRef.current += dt;
-          let fireRate = 2000;
-          if (overclockActiveRef.current) fireRate = 1000;
+                for (let i = 0; i < count; i++) {
+                    const offset = (i - (count - 1) / 2) * spread;
+                    const finalAngle = angle + offset;
 
-          if (prismLanceTimerRef.current >= fireRate) {
-              let nearest: Enemy | null = null;
-              let minDist = Infinity;
-              (enemiesRef.current as Enemy[]).forEach(e => {
+                    projectilesRef.current.push({
+                        id: Math.random().toString(36),
+                        x: head.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2,
+                        y: head.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2,
+                        vx: Math.cos(finalAngle) * wStats.cannonProjectileSpeed * (DEFAULT_SETTINGS.gridSize / 20),
+                        vy: Math.sin(finalAngle) * wStats.cannonProjectileSpeed * (DEFAULT_SETTINGS.gridSize / 20),
+                        damage: wStats.cannonDamage,
+                        color: COLORS.projectile,
+                        size: 3 + Math.min(wStats.cannonLevel, 4),
+                        type: 'STANDARD',
+                        owner: 'PLAYER'
+                    });
+                }
 
-                const d = Math.pow(e.x - head.x, 2) + Math.pow(e.y - head.y, 2);
-                if (d < minDist) { minDist = d; nearest = e; }
-              });
+                if (now - shootAudioThrottleRef.current > 100) {
+                    audioEventsRef.current.push({ type: 'SHOOT' });
+                    shootAudioThrottleRef.current = now;
+                }
 
-              if (nearest) {
-                  const angle = Math.atan2(nearest.y - head.y, nearest.x - head.x);
-                  const projectileSpeed = 30;
-                  const vx = Math.cos(angle) * projectileSpeed;
-                  const vy = Math.sin(angle) * projectileSpeed;
-                  
-                  projectilesRef.current.push({
-                      id: Math.random().toString(36),
-                      x: head.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
-                      y: head.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
-                      vx: vx * (DEFAULT_SETTINGS.gridSize / 20),
-                      vy: vy * (DEFAULT_SETTINGS.gridSize / 20),
-                      damage: wStats.prismLanceDamage,
-                      color: COLORS.prismLance,
-                      size: 4,
-                      type: 'LANCE',
-                      piercing: true,
-                      hitIds: [],
-                      owner: 'PLAYER'
-                  });
-                  audioEventsRef.current.push({ type: 'SHOOT' });
-                  prismLanceTimerRef.current = 0;
-              }
-          }
-      }
+                weaponFireTimerRef.current = 0;
+            }
+        }
+    }
+}
+
+
+// 2. PRISM LANCE
+if (wStats.prismLanceLevel > 0) {
+    prismLanceTimerRef.current += dt;
+    let fireRate = overclockActiveRef.current ? 1000 : 2000;
+
+    if (prismLanceTimerRef.current >= fireRate) {
+        const enemies = enemiesRef.current as Enemy[];
+        let nearest: Enemy | null = null;
+        let minDist = Infinity;
+
+        for (const e of enemies) {
+            const dx = e.x - head.x;
+            const dy = e.y - head.y;
+            const d = dx * dx + dy * dy;
+            if (d < minDist) {
+                minDist = d;
+                nearest = e;
+            }
+        }
+
+        if (nearest) {
+            const angle = Math.atan2(nearest.y - head.y, nearest.x - head.x);
+            const speed = 30;
+
+            projectilesRef.current.push({
+                id: Math.random().toString(36),
+                x: head.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2,
+                y: head.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2,
+                vx: Math.cos(angle) * speed * (DEFAULT_SETTINGS.gridSize / 20),
+                vy: Math.sin(angle) * speed * (DEFAULT_SETTINGS.gridSize / 20),
+                damage: wStats.prismLanceDamage,
+                color: COLORS.prismLance,
+                size: 4,
+                type: 'LANCE',
+                piercing: true,
+                hitIds: [],
+                owner: 'PLAYER'
+            });
+
+            audioEventsRef.current.push({ type: 'SHOOT' });
+            prismLanceTimerRef.current = 0;
+        }
+    }
+}
+
 
       // 3. NEON SCATTER
       if (wStats.neonScatterLevel > 0) {
@@ -593,73 +602,97 @@ export function useCombat(
           }
       }
 
-      // 7. PLASMA MINES
-      if (wStats.mineLevel > 0) {
-          mineDropTimerRef.current += dt;
-          if (mineDropTimerRef.current >= wStats.mineDropRate) {
-              const tail = snakeRef.current[snakeRef.current.length - 1];
-              if (tail) {
-                  minesRef.current.push({
-                      id: Math.random().toString(36),
-                      x: tail.x,
-                      y: tail.y,
-                      damage: wStats.mineDamage,
-                      radius: wStats.mineRadius,
-                      triggerRadius: 1.5,
-                      createdAt: now
-                  });
-              }
-              mineDropTimerRef.current = 0;
-          }
+// 7. PLASMA MINES
+if (wStats.mineLevel > 0) {
+    mineDropTimerRef.current += dt;
 
-          for (let i = minesRef.current.length - 1; i >= 0; i--) {
-              const mine = minesRef.current[i];
-              if (mine.shouldRemove) continue;
+    if (mineDropTimerRef.current >= wStats.mineDropRate) {
+        const snake = snakeRef.current;
+        if (snake.length > 0) {
+            const tail = snake[snake.length - 1];
 
-              let triggered = false;
-              for (const e of enemiesRef.current as Enemy[]) {
-                  const dist = Math.hypot(e.x - mine.x, e.y - mine.y);
-                  if (dist <= mine.triggerRadius) {
-                      triggered = true;
-                      break;
-                  }
-              }
+            minesRef.current.push({
+                id: Math.random().toString(36),
+                x: tail.x,
+                y: tail.y,
+                damage: wStats.mineDamage,
+                radius: wStats.mineRadius,
+                triggerRadius: 1.5,
+                createdAt: now
+            });
+        }
 
-              if (triggered) {
-                  triggerShockwave({
-                      id: Math.random().toString(),
-                      x: mine.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
-                      y: mine.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
-                      currentRadius: 0,
-                      maxRadius: mine.radius * DEFAULT_SETTINGS.gridSize,
-                      damage: mine.damage,
-                      opacity: 1.0
-                  });
-                  createParticles(mine.x, mine.y, COLORS.mine, 20);
-                  audioEventsRef.current.push({ type: 'COMPRESS' });
-                  mine.shouldRemove = true;
-              }
-          }
-      }
+        mineDropTimerRef.current = 0;
+    }
 
-      // 8. AURA
-      if (wStats.auraLevel > 0) {
-          auraTickTimerRef.current += dt;
-          if (auraTickTimerRef.current >= 250) {
-              const r2 = wStats.auraRadius ** 2;
-              (enemiesRef.current as Enemy[]).forEach(e => {
-                  const hit = snakeRef.current.some(seg => {
-                      const d2 = Math.pow(e.x - seg.x, 2) + Math.pow(e.y - seg.y, 2);
-                      return d2 <= r2;
-                  });
-                  if (hit) {
-                      damageEnemy(e, wStats.auraDamage);
-                      createParticles(e.x, e.y, COLORS.aura, 1);
-                  }
-              });
-              auraTickTimerRef.current = 0;
-          }
-      }
+    const enemies = enemiesRef.current as Enemy[];
+
+    for (let i = minesRef.current.length - 1; i >= 0; i--) {
+        const mine = minesRef.current[i];
+        if (mine.shouldRemove) continue;
+
+        let triggered = false;
+
+        for (const e of enemies) {
+            const dx = e.x - mine.x;
+            const dy = e.y - mine.y;
+            if (dx * dx + dy * dy <= mine.triggerRadius * mine.triggerRadius) {
+                triggered = true;
+                break;
+            }
+        }
+
+        if (triggered) {
+            triggerShockwave({
+                id: Math.random().toString(36),
+                x: mine.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2,
+                y: mine.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2,
+                currentRadius: 0,
+                maxRadius: mine.radius * DEFAULT_SETTINGS.gridSize,
+                damage: mine.damage,
+                opacity: 1
+            });
+
+            createParticles(mine.x, mine.y, COLORS.mine, 20);
+            audioEventsRef.current.push({ type: 'COMPRESS' });
+
+            mine.shouldRemove = true;
+        }
+    }
+}
+
+
+// 8. AURA
+if (wStats.auraLevel > 0) {
+    auraTickTimerRef.current += dt;
+
+    if (auraTickTimerRef.current >= 250) {
+        const enemies = enemiesRef.current as Enemy[];
+        const snake = snakeRef.current;
+        const r2 = wStats.auraRadius * wStats.auraRadius;
+
+        for (const e of enemies) {
+            let hit = false;
+
+            for (const seg of snake) {
+                const dx = e.x - seg.x;
+                const dy = e.y - seg.y;
+                if (dx * dx + dy * dy <= r2) {
+                    hit = true;
+                    break;
+                }
+            }
+
+            if (hit) {
+                damageEnemy(e, wStats.auraDamage);
+                createParticles(e.x, e.y, COLORS.aura, 1);
+            }
+        }
+
+        auraTickTimerRef.current = 0;
+    }
+}
+
 
       // 9. PROJECTILES UPDATE
       const margin = 100;
