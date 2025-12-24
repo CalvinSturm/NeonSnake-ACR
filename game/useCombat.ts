@@ -58,6 +58,12 @@ export function useCombat(
 
   const shootAudioThrottleRef = useRef(0);
 
+  function isPlayerHomingProjectile(
+    p: Projectile
+    ): p is Projectile & { targetId?: string } {
+    return p.owner === 'PLAYER' && p.homing === true;
+  }
+
   /* ─────────────────────────────
      Internal Combat Logic
      ───────────────────────────── */
@@ -362,213 +368,270 @@ export function useCombat(
 
 // 1. AUTO CANNON
 if (wStats.cannonLevel > 0) {
-    weaponFireTimerRef.current += dt;
-    let fireRate = wStats.cannonFireRate;
-    if (overclockActiveRef.current) fireRate *= 0.5;
+  weaponFireTimerRef.current += dt;
 
-    if (weaponFireTimerRef.current >= fireRate) {
-        const enemies = enemiesRef.current as Enemy[];
-        if (enemies.length > 0) {
-            let nearest: Enemy | null = null;
-            let minDist = Infinity;
+  let fireRate = wStats.cannonFireRate;
+  if (overclockActiveRef.current) fireRate *= 0.5;
 
-            for (const e of enemies) {
-                const dx = e.x - head.x;
-                const dy = e.y - head.y;
-                const d = dx * dx + dy * dy;
-                if (d < minDist) {
-                    minDist = d;
-                    nearest = e;
-                }
-            }
+  if (weaponFireTimerRef.current >= fireRate) {
+    const enemies = enemiesRef.current;
+    if (enemies.length === 0) return;
 
-            if (nearest) {
-                const angle = Math.atan2(nearest.y - head.y, nearest.x - head.x);
-                const count = wStats.cannonProjectileCount;
-                const spread = 0.15;
+    let nearest: Enemy | null = null;
+    let minDist = Infinity;
 
-                for (let i = 0; i < count; i++) {
-                    const offset = (i - (count - 1) / 2) * spread;
-                    const finalAngle = angle + offset;
+    for (const e of enemies) {
+      const dx = e.x - head.x;
+      const dy = e.y - head.y;
+      const d = dx * dx + dy * dy;
 
-                    projectilesRef.current.push({
-                        id: Math.random().toString(36),
-                        x: head.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2,
-                        y: head.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2,
-                        vx: Math.cos(finalAngle) * wStats.cannonProjectileSpeed * (DEFAULT_SETTINGS.gridSize / 20),
-                        vy: Math.sin(finalAngle) * wStats.cannonProjectileSpeed * (DEFAULT_SETTINGS.gridSize / 20),
-                        damage: wStats.cannonDamage,
-                        color: COLORS.projectile,
-                        size: 3 + Math.min(wStats.cannonLevel, 4),
-                        type: 'STANDARD',
-                        owner: 'PLAYER'
-                    });
-                }
-
-                if (now - shootAudioThrottleRef.current > 100) {
-                    audioEventsRef.current.push({ type: 'SHOOT' });
-                    shootAudioThrottleRef.current = now;
-                }
-
-                weaponFireTimerRef.current = 0;
-            }
-        }
+      if (d < minDist) {
+        minDist = d;
+        nearest = e;
+      }
     }
+
+    if (!nearest) return;
+
+    const angle = Math.atan2(
+      nearest.y - head.y,
+      nearest.x - head.x
+    );
+
+    const count = wStats.cannonProjectileCount;
+    const spread = 0.15;
+
+    for (let i = 0; i < count; i++) {
+      const offset = (i - (count - 1) / 2) * spread;
+      const finalAngle = angle + offset;
+
+      projectilesRef.current.push({
+        id: Math.random().toString(36),
+        x: head.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2,
+        y: head.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2,
+        vx:
+          Math.cos(finalAngle) *
+          wStats.cannonProjectileSpeed *
+          (DEFAULT_SETTINGS.gridSize / 20),
+        vy:
+          Math.sin(finalAngle) *
+          wStats.cannonProjectileSpeed *
+          (DEFAULT_SETTINGS.gridSize / 20),
+        damage: wStats.cannonDamage,
+        color: COLORS.projectile,
+        size: 3 + Math.min(wStats.cannonLevel, 4),
+        type: 'STANDARD',
+        owner: 'PLAYER'
+      });
+    }
+
+    if (now - shootAudioThrottleRef.current > 100) {
+      audioEventsRef.current.push({ type: 'SHOOT' });
+      shootAudioThrottleRef.current = now;
+    }
+
+    weaponFireTimerRef.current = 0;
+  }
 }
+
 
 
 // 2. PRISM LANCE
 if (wStats.prismLanceLevel > 0) {
-    prismLanceTimerRef.current += dt;
-    let fireRate = overclockActiveRef.current ? 1000 : 2000;
+  prismLanceTimerRef.current += dt;
+  const fireRate = overclockActiveRef.current ? 1000 : 2000;
 
-    if (prismLanceTimerRef.current >= fireRate) {
-        const enemies = enemiesRef.current as Enemy[];
-        let nearest: Enemy | null = null;
-        let minDist = Infinity;
+  if (prismLanceTimerRef.current >= fireRate) {
+    const enemies: Enemy[] = enemiesRef.current;
 
-        for (const e of enemies) {
-            const dx = e.x - head.x;
-            const dy = e.y - head.y;
-            const d = dx * dx + dy * dy;
-            if (d < minDist) {
-                minDist = d;
-                nearest = e;
-            }
-        }
+    let nearest: Enemy | null = null;
+    let minDist = Infinity;
 
-        if (nearest) {
-            const angle = Math.atan2(nearest.y - head.y, nearest.x - head.x);
-            const speed = 30;
+    const hx = head.x * DEFAULT_SETTINGS.gridSize;
+    const hy = head.y * DEFAULT_SETTINGS.gridSize;
 
-            projectilesRef.current.push({
-                id: Math.random().toString(36),
-                x: head.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2,
-                y: head.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2,
-                vx: Math.cos(angle) * speed * (DEFAULT_SETTINGS.gridSize / 20),
-                vy: Math.sin(angle) * speed * (DEFAULT_SETTINGS.gridSize / 20),
-                damage: wStats.prismLanceDamage,
-                color: COLORS.prismLance,
-                size: 4,
-                type: 'LANCE',
-                piercing: true,
-                hitIds: [],
-                owner: 'PLAYER'
-            });
+    for (const e of enemies) {
+      const ex = e.x * DEFAULT_SETTINGS.gridSize;
+      const ey = e.y * DEFAULT_SETTINGS.gridSize;
 
-            audioEventsRef.current.push({ type: 'SHOOT' });
-            prismLanceTimerRef.current = 0;
-        }
+      const dx = ex - hx;
+      const dy = ey - hy;
+      const d = dx * dx + dy * dy;
+
+      if (d < minDist) {
+        minDist = d;
+        nearest = e;
+      }
     }
+
+    if (nearest !== null) {
+      const angle = Math.atan2(
+        nearest.y * DEFAULT_SETTINGS.gridSize - hy,
+        nearest.x * DEFAULT_SETTINGS.gridSize - hx
+      );
+
+      const speed = 30;
+
+      projectilesRef.current.push({
+        id: Math.random().toString(36),
+        x: hx + DEFAULT_SETTINGS.gridSize / 2,
+        y: hy + DEFAULT_SETTINGS.gridSize / 2,
+        vx: Math.cos(angle) * speed * (DEFAULT_SETTINGS.gridSize / 20),
+        vy: Math.sin(angle) * speed * (DEFAULT_SETTINGS.gridSize / 20),
+        damage: wStats.prismLanceDamage,
+        color: COLORS.prismLance,
+        size: 4,
+        type: 'LANCE',
+        piercing: true,
+        hitIds: [],
+        owner: 'PLAYER'
+      });
+
+      audioEventsRef.current.push({ type: 'SHOOT' });
+      prismLanceTimerRef.current = 0;
+    }
+  }
 }
 
+// 3. NEON SCATTER
+if (wStats.neonScatterLevel > 0) {
+  neonScatterTimerRef.current += dt;
 
-      // 3. NEON SCATTER
-      if (wStats.neonScatterLevel > 0) {
-          neonScatterTimerRef.current += dt;
-          let fireRate = 1200;
-          if (overclockActiveRef.current) fireRate = 600;
+  let fireRate = 1200;
+  if (overclockActiveRef.current) fireRate = 600;
 
-          if (neonScatterTimerRef.current >= fireRate) {
-              let nearest: Enemy | null = null;
-              let minDist = Infinity;
-              enemiesRef.current.forEach(e => {
-                  const d = Math.pow(e.x - head.x, 2) + Math.pow(e.y - head.y, 2);
-                  if (d < 100 && d < minDist) { minDist = d; nearest = e; }
-              });
+  if (neonScatterTimerRef.current >= fireRate) {
+    const enemies = enemiesRef.current;
+    if (enemies.length === 0) {
+      neonScatterTimerRef.current = 0;
+    } else {
+      let nearest: Enemy | null = null;
+      let minDist = Infinity;
 
-              const target = nearest ?? (enemiesRef.current as Enemy[])[0];
-              if (!target) {
-                neonScatterTimerRef.current = 0;
-              } else {
-              const baseAngle = Math.atan2(target.y - head.y, target.x - head.x);
-              const shards = 3 + wStats.neonScatterLevel;
-              const spread = 0.5;
+      for (const e of enemies) {
+        const dx = e.x - head.x;
+        const dy = e.y - head.y;
+        const d = dx * dx + dy * dy;
 
-              for (let i = 0; i < shards; i++) {
-                const a = baseAngle - (spread / 2) + (Math.random() * spread);
-                const speed = 15 + Math.random() * 5;
+        if (d < 100 && d < minDist) {
+          minDist = d;
+          nearest = e;
+        }
+      }
 
-                projectilesRef.current.push({
-                  id: Math.random().toString(36),
-                  x: head.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2,
-                  y: head.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2,
-                  vx: Math.cos(a) * speed * (DEFAULT_SETTINGS.gridSize / 20),
-                  vy: Math.sin(a) * speed * (DEFAULT_SETTINGS.gridSize / 20),
-                  damage: wStats.neonScatterDamage,
-                  color: COLORS.neonScatter,
-                  size: 3,
-                  type: 'SHARD',
-                  life: 25,
-                  owner: 'PLAYER'
-                });
-              }
+      const target = nearest ?? enemies[0];
+      if (!target) {
+        neonScatterTimerRef.current = 0;
+      } else {
+        const baseAngle = Math.atan2(
+          target.y - head.y,
+          target.x - head.x
+        );
 
-              audioEventsRef.current.push({ type: 'SHOOT' });
-              neonScatterTimerRef.current = 0;
-            }
-          }
+        const shards = 3 + wStats.neonScatterLevel;
+        const spread = 0.5;
+
+        for (let i = 0; i < shards; i++) {
+          const a =
+            baseAngle - spread / 2 + Math.random() * spread;
+          const speed = 15 + Math.random() * 5;
+
+          projectilesRef.current.push({
+            id: Math.random().toString(36),
+            x:
+              head.x * DEFAULT_SETTINGS.gridSize +
+              DEFAULT_SETTINGS.gridSize / 2,
+            y:
+              head.y * DEFAULT_SETTINGS.gridSize +
+              DEFAULT_SETTINGS.gridSize / 2,
+            vx:
+              Math.cos(a) *
+              speed *
+              (DEFAULT_SETTINGS.gridSize / 20),
+            vy:
+              Math.sin(a) *
+              speed *
+              (DEFAULT_SETTINGS.gridSize / 20),
+            damage: wStats.neonScatterDamage,
+            color: COLORS.neonScatter,
+            size: 3,
+            type: 'SHARD',
+            life: 25,
+            owner: 'PLAYER'
+          });
         }
 
-      // 4. VOLT SERPENT
-      if (wStats.voltSerpentLevel > 0) {
-          voltSerpentTimerRef.current += dt;
-          const fireRate = 3000;
+        audioEventsRef.current.push({ type: 'SHOOT' });
+        neonScatterTimerRef.current = 0;
+      }
+    }
+  }
+}
 
-          if (voltSerpentTimerRef.current >= fireRate) {
-              projectilesRef.current.push({
-                  id: Math.random().toString(36),
-                  x: head.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
-                  y: head.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
-                  vx: (Math.random() - 0.5) * 10,
-                  vy: (Math.random() - 0.5) * 10,
-                  damage: wStats.voltSerpentDamage,
-                  color: COLORS.voltSerpent,
-                  size: 5,
-                  type: 'SERPENT',
-                  homing: true,
-                  owner: 'PLAYER'
-              });
-              voltSerpentTimerRef.current = 0;
-          }
+// 5. PHASE RAIL
+if (wStats.phaseRailLevel > 0) {
+  phaseRailChargeRef.current += dt;
+  const chargeTime = 4000;
+
+  if (phaseRailChargeRef.current >= chargeTime) {
+    const enemies = enemiesRef.current;
+    if (enemies.length === 0) {
+      phaseRailChargeRef.current = 0;
+    } else {
+      let nearest: Enemy | null = null;
+      let minDist = Infinity;
+
+      for (const e of enemies) {
+        const dx = e.x - head.x;
+        const dy = e.y - head.y;
+        const d = dx * dx + dy * dy;
+
+        if (d < minDist) {
+          minDist = d;
+          nearest = e;
+        }
       }
 
-      // 5. PHASE RAIL
-      if (wStats.phaseRailLevel > 0) {
-          phaseRailChargeRef.current += dt;
-          const chargeTime = 4000;
+      if (nearest) {
+        const angle = Math.atan2(
+          nearest.y - head.y,
+          nearest.x - head.x
+        );
 
-          if (phaseRailChargeRef.current >= chargeTime) {
-              let nearest: Enemy | null = null;
-              let minDist = Infinity;
-              (enemiesRef.current as Enemy[]).forEach(e => {
-                  const d = Math.pow(e.x - head.x, 2) + Math.pow(e.y - head.y, 2);
-                  if (d < minDist) { minDist = d; nearest = e; }
-              });
+        const speed = 60;
 
-              if (nearest) {
-                  const angle = Math.atan2(nearest.y - head.y, nearest.x - head.x);
-                  const speed = 60;
-                  projectilesRef.current.push({
-                      id: Math.random().toString(36),
-                      x: head.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
-                      y: head.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
-                      vx: Math.cos(angle) * speed * (DEFAULT_SETTINGS.gridSize / 20),
-                      vy: Math.sin(angle) * speed * (DEFAULT_SETTINGS.gridSize / 20),
-                      damage: wStats.phaseRailDamage,
-                      color: COLORS.phaseRail,
-                      size: 6,
-                      type: 'RAIL',
-                      piercing: true,
-                      hitIds: [],
-                      owner: 'PLAYER'
-                  });
-                  audioEventsRef.current.push({ type: 'SHOOT' });
-                  triggerShake(10, 10);
-                  phaseRailChargeRef.current = 0;
-              }
-          }
+        projectilesRef.current.push({
+          id: Math.random().toString(36),
+          x:
+            head.x * DEFAULT_SETTINGS.gridSize +
+            DEFAULT_SETTINGS.gridSize / 2,
+          y:
+            head.y * DEFAULT_SETTINGS.gridSize +
+            DEFAULT_SETTINGS.gridSize / 2,
+          vx:
+            Math.cos(angle) *
+            speed *
+            (DEFAULT_SETTINGS.gridSize / 20),
+          vy:
+            Math.sin(angle) *
+            speed *
+            (DEFAULT_SETTINGS.gridSize / 20),
+          damage: wStats.phaseRailDamage,
+          color: COLORS.phaseRail,
+          size: 6,
+          type: 'RAIL',
+          piercing: true,
+          hitIds: [],
+          owner: 'PLAYER'
+        });
+
+        audioEventsRef.current.push({ type: 'SHOOT' });
+        triggerShake(10, 10);
+        phaseRailChargeRef.current = 0;
       }
+    }
+  }
+}
 
       // 6. NANO SWARM
       if (wStats.nanoSwarmLevel > 0) {
@@ -707,16 +770,17 @@ if (isPlayerHomingProjectile(p)) {
     let nearest: Enemy | null = null;
     let minDist = Infinity;
 
-    (enemiesRef.current as Enemy[]).forEach((e: Enemy) => {
-      const d =
-        Math.pow(e.x * DEFAULT_SETTINGS.gridSize - p.x, 2) +
-        Math.pow(e.y * DEFAULT_SETTINGS.gridSize - p.y, 2);
+for (const e of enemiesRef.current) {
+  const dx = e.x * DEFAULT_SETTINGS.gridSize - p.x;
+  const dy = e.y * DEFAULT_SETTINGS.gridSize - p.y;
+  const d = dx * dx + dy * dy;
 
-      if (d < minDist) {
-        minDist = d;
-        nearest = e;
-      }
-    });
+  if (d < minDist) {
+    minDist = d;
+    nearest = e;
+  }
+}
+
 
     if (nearest) p.targetId = nearest.id;
   }
