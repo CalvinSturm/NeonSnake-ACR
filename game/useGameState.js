@@ -45,7 +45,10 @@ export function useGameState() {
         scoreMultiplier: 1,
         foodQualityMod: 1,
         critChance: 0.05,
-        critMultiplier: 1.5
+        critMultiplier: 1.5,
+        hackSpeedMod: 1,
+        moveSpeedMod: 1,
+        activeWeaponIds: []
     });
     const powerUpsRef = useRef({ slowUntil: 0, magnetUntil: 0 });
     const lastPowerUpStateRef = useRef({ slow: false, magnet: false });
@@ -101,6 +104,29 @@ export function useGameState() {
         bossActiveRef.current = active;
         setBossActiveState(active); // Sync UI state
     }, []);
+    // Helper to determine initial locked weapons from a character
+    const getInitialWeapons = (w) => {
+        const active = [];
+        if (w.cannonLevel > 0)
+            active.push('CANNON');
+        if (w.auraLevel > 0)
+            active.push('AURA');
+        if (w.nanoSwarmLevel > 0)
+            active.push('NANO_SWARM');
+        if (w.mineLevel > 0)
+            active.push('MINES');
+        if (w.chainLightningLevel > 0)
+            active.push('LIGHTNING');
+        if (w.prismLanceLevel > 0)
+            active.push('PRISM_LANCE');
+        if (w.neonScatterLevel > 0)
+            active.push('NEON_SCATTER');
+        if (w.voltSerpentLevel > 0)
+            active.push('VOLT_SERPENT');
+        if (w.phaseRailLevel > 0)
+            active.push('PHASE_RAIL');
+        return active;
+    };
     const resetGame = useCallback((char) => {
         gameTimeRef.current = 0;
         snakeRef.current = [
@@ -112,6 +138,7 @@ export function useGameState() {
         directionQueueRef.current = [];
         enemiesRef.current = [];
         foodRef.current = [];
+        wallsRef.current = [];
         projectilesRef.current = [];
         terminalsRef.current = [];
         minesRef.current = [];
@@ -128,6 +155,11 @@ export function useGameState() {
         stageRef.current = 1;
         comboMultiplierRef.current = 1;
         lastEatTimeRef.current = 0;
+        // Reset Powerups and Cooldowns to prevent carry-over
+        powerUpsRef.current = { slowUntil: 0, magnetUntil: 0 };
+        lastPowerUpStateRef.current = { slow: false, magnet: false };
+        setActivePowerUps({ slow: false, magnet: false });
+        abilityCooldownsRef.current = { chrono: 0, ping: 0, systemShock: 0 };
         enemySpawnTimerRef.current = 0;
         enemyMoveTimerRef.current = 0;
         terminalSpawnTimerRef.current = 0;
@@ -161,8 +193,9 @@ export function useGameState() {
         setUiShield(char?.initialStats.shieldActive || false);
         // Apply character stats
         if (char) {
+            const wStats = { ...CHARACTERS[0].initialStats.weapon, ...char.initialStats.weapon };
             statsRef.current = {
-                weapon: { ...CHARACTERS[0].initialStats.weapon, ...char.initialStats.weapon },
+                weapon: wStats,
                 slowDurationMod: char.initialStats.slowDurationMod ?? 1,
                 magnetRangeMod: char.initialStats.magnetRangeMod ?? 0,
                 empCooldownMod: char.initialStats.empCooldownMod ?? 1,
@@ -170,7 +203,10 @@ export function useGameState() {
                 scoreMultiplier: char.initialStats.scoreMultiplier ?? 1,
                 foodQualityMod: char.initialStats.foodQualityMod ?? 1,
                 critChance: char.initialStats.critChance ?? 0.05,
-                critMultiplier: char.initialStats.critMultiplier ?? 1.5
+                critMultiplier: char.initialStats.critMultiplier ?? 1.5,
+                hackSpeedMod: 1,
+                moveSpeedMod: 1,
+                activeWeaponIds: getInitialWeapons(wStats)
             };
         }
         enemiesKilledRef.current = 0;

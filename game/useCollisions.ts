@@ -318,8 +318,9 @@ export function useCollisions(
         const range = t.radius * DEFAULT_SETTINGS.gridSize;
 
         if (dist <= range) {
-          // Progress update
-          t.progress += dt;
+          // Progress update using STATS MODIFIER
+          const speedMod = statsRef.current.hackSpeedMod || 1.0;
+          t.progress += dt * speedMod;
 
           // Deterministic particles (Accumulator Pattern)
           // Prevents "Death Spiral" where lag causes more particles to spawn
@@ -375,7 +376,8 @@ export function useCollisions(
       spawnFloatingText,
       onTerminalHacked,
       gameTimeRef,
-      spawner
+      spawner,
+      statsRef
     ]
   );
 

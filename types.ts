@@ -175,15 +175,25 @@ export interface UpgradeStats {
   foodQualityMod: number;
   critChance: number;
   critMultiplier: number;
+  
+  // ── NEW STATS ──
+  hackSpeedMod: number; // For Terminal Hacking
+  moveSpeedMod: number; // Base movement speed multiplier
+  activeWeaponIds: string[]; // Tracks locked weapon slots
 }
+
+export type UpgradeCategory = 'WEAPON' | 'DEFENSE' | 'UTILITY' | 'SYSTEM' | 'HACKING' | 'MOBILITY' | 'THREAT' | 'ECONOMY';
+export type UpgradeRarity = 'COMMON' | 'RARE' | 'LEGENDARY';
 
 export interface UpgradeOption {
   id: string;
   title: string;
   description: string;
   color: string;
-  type: 'WEAPON' | 'DEFENSE' | 'UTILITY';
+  category: UpgradeCategory;
+  rarity: UpgradeRarity;
   icon: string;
+  isNewWeapon?: boolean; // Helper for UI to show "New Weapon" badge
 }
 
 export interface Enemy extends Point, EngineFlags {

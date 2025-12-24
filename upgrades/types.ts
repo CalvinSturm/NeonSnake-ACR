@@ -20,10 +20,12 @@ export type UpgradeId =
   | 'EMP_BLOOM'
   | 'NEURAL_MAGNET'
   | 'OVERCLOCK'
-  | 'ECHO_CACHE';
+  | 'ECHO_CACHE'
+  | 'TERMINAL_PROTOCOL';
 
 export type UpgradeContext = {
   weapon: WeaponStats;
   critChance: number;
   shieldActive: boolean;
+  hackSpeedMod: number; // Added context for factories
 };

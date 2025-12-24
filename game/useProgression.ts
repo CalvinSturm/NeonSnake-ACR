@@ -127,17 +127,57 @@ export function useProgression(
 
   const generateUpgradeOptions = useCallback((): UpgradeOption[] => {
     const stats = statsRef.current;
-
+    
     const ctx: UpgradeContext = {
       weapon: stats.weapon,
       critChance: stats.critChance,
-      shieldActive: stats.shieldActive
+      shieldActive: stats.shieldActive,
+      hackSpeedMod: stats.hackSpeedMod
     };
 
-    return Object.entries(UPGRADE_FACTORIES)
-      .map(([_, f]) => f(ctx))
-      .sort(() => Math.random() - 0.5)
-      .slice(0, 3);
+    const lockedWeaponCount = stats.activeWeaponIds.length;
+    const MAX_WEAPONS = 3;
+
+    // 1. Generate all possible options
+    const allOptions = Object.values(UPGRADE_FACTORIES).map(f => f(ctx));
+
+    // 2. Filter valid options
+    const validOptions = allOptions.filter(opt => {
+        // If it's a new weapon (level 0), check slot limits
+        if (opt.category === 'WEAPON' && opt.isNewWeapon) {
+            if (lockedWeaponCount >= MAX_WEAPONS) return false;
+        }
+        return true;
+    });
+
+    // 3. Shuffle
+    const shuffled = validOptions.sort(() => Math.random() - 0.5);
+
+    // 4. Select 3 distinct options with category diversity
+    const selected: UpgradeOption[] = [];
+    const usedCategories = new Set<string>();
+
+    for (const opt of shuffled) {
+        if (selected.length >= 3) break;
+        
+        // Try to prioritize new categories
+        if (!usedCategories.has(opt.category) || selected.length >= 2) {
+            selected.push(opt);
+            usedCategories.add(opt.category);
+        }
+    }
+    
+    // Fill if we skipped too many due to category diversity (fallback)
+    if (selected.length < 3) {
+        for (const opt of shuffled) {
+            if (selected.length >= 3) break;
+            if (!selected.includes(opt)) {
+                selected.push(opt);
+            }
+        }
+    }
+
+    return selected;
   }, [statsRef]);
 
   /* ─────────────────────────────
@@ -336,6 +376,7 @@ export function useProgression(
     // Apply mutation logic based on ID
     switch (upgradeId) {
       case 'CANNON':
+        if (w.cannonLevel === 0) stats.activeWeaponIds.push('CANNON');
         w.cannonLevel += 1;
         if (w.cannonLevel === 1) {
             w.cannonDamage = 12;
@@ -353,6 +394,7 @@ export function useProgression(
         break;
       
       case 'AURA':
+        if (w.auraLevel === 0) stats.activeWeaponIds.push('AURA');
         w.auraLevel += 1;
         if (w.auraLevel === 1) {
             w.auraRadius = 2.0;
@@ -364,6 +406,7 @@ export function useProgression(
         break;
       
       case 'NANO_SWARM':
+        if (w.nanoSwarmLevel === 0) stats.activeWeaponIds.push('NANO_SWARM');
         w.nanoSwarmLevel += 1;
         if (w.nanoSwarmLevel === 1) {
             w.nanoSwarmCount = 2;
@@ -375,6 +418,7 @@ export function useProgression(
         break;
       
       case 'MINES':
+        if (w.mineLevel === 0) stats.activeWeaponIds.push('MINES');
         w.mineLevel += 1;
         if (w.mineLevel === 1) {
             w.mineDamage = 40;
@@ -388,6 +432,7 @@ export function useProgression(
         break;
       
       case 'LIGHTNING':
+        if (w.chainLightningLevel === 0) stats.activeWeaponIds.push('LIGHTNING');
         w.chainLightningLevel += 1;
         if (w.chainLightningLevel === 1) {
             w.chainLightningDamage = 0.5;
@@ -427,6 +472,7 @@ export function useProgression(
         break;
 
       case 'PRISM_LANCE':
+        if (w.prismLanceLevel === 0) stats.activeWeaponIds.push('PRISM_LANCE');
         w.prismLanceLevel += 1;
         if (w.prismLanceLevel === 1) {
             w.prismLanceDamage = 25;
@@ -436,6 +482,7 @@ export function useProgression(
         break;
 
       case 'NEON_SCATTER':
+        if (w.neonScatterLevel === 0) stats.activeWeaponIds.push('NEON_SCATTER');
         w.neonScatterLevel += 1;
         if (w.neonScatterLevel === 1) {
             w.neonScatterDamage = 10; 
@@ -445,6 +492,7 @@ export function useProgression(
         break;
 
       case 'VOLT_SERPENT':
+        if (w.voltSerpentLevel === 0) stats.activeWeaponIds.push('VOLT_SERPENT');
         w.voltSerpentLevel += 1;
         if (w.voltSerpentLevel === 1) {
             w.voltSerpentDamage = 20;
@@ -454,6 +502,7 @@ export function useProgression(
         break;
 
       case 'PHASE_RAIL':
+        if (w.phaseRailLevel === 0) stats.activeWeaponIds.push('PHASE_RAIL');
         w.phaseRailLevel += 1;
         if (w.phaseRailLevel === 1) {
             w.phaseRailDamage = 200;
@@ -484,6 +533,11 @@ export function useProgression(
 
       case 'ECHO_CACHE':
         w.echoCacheLevel += 1;
+        break;
+      
+      case 'TERMINAL_PROTOCOL':
+        stats.hackSpeedMod *= 1.25; // 25% faster
+        stats.scoreMultiplier += 0.1; // 10% more score
         break;
     }
 
