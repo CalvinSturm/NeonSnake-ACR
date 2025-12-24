@@ -422,9 +422,9 @@ export function useCombat(
           if (prismLanceTimerRef.current >= fireRate) {
               let nearest: Enemy | null = null;
               let minDist = Infinity;
-              enemiesRef.current.forEach(e => {
-                  const d = Math.pow(e.x - head.x, 2) + Math.pow(e.y - head.y, 2);
-                  if (d < minDist) { minDist = d; nearest = e; }
+              enemiesRef.current.forEach((e: Enemy) => {
+                const d = Math.pow(e.x - head.x, 2) + Math.pow(e.y - head.y, 2);
+                if (d < minDist) { minDist = d; nearest = e; }
               });
 
               if (nearest) {
@@ -695,8 +695,8 @@ export function useCombat(
           }
 
           const target = p.targetId
-            ? enemiesRef.current.find(e => e.id === p.targetId)
-            : undefined;
+          ? enemiesRef.current.find((e: Enemy) => e.id === p.targetId)
+          : undefined;
 
         if (!target) {
             p.shouldRemove = true;
