@@ -469,37 +469,36 @@ export function useCombat(
 
             const target = nearest ?? enemiesRef.current[0];
             if (!target) {
-                neonScatterTimerRef.current = 0;
+              neonScatterTimerRef.current = 0;
             } else {
+              const baseAngle = Math.atan2(target.y - head.y, target.x - head.x);
+              const shards = 3 + wStats.neonScatterLevel;
+              const spread = 0.5;
 
-            const baseAngle = Math.atan2(target.y - head.y, target.x - head.x);
-            const shards = 3 + wStats.neonScatterLevel;
-            const spread = 0.5;
-
-            for(let i=0; i<shards; i++) {
-                const a = baseAngle - (spread/2) + (Math.random() * spread);
+              for (let i = 0; i < shards; i++) {
+                const a = baseAngle - (spread / 2) + (Math.random() * spread);
                 const speed = 15 + Math.random() * 5;
-    
+
                 projectilesRef.current.push({
-                    id: Math.random().toString(36),
-                    x: head.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
-                    y: head.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
-                    vx: Math.cos(a) * speed * (DEFAULT_SETTINGS.gridSize / 20),
-                    vy: Math.sin(a) * speed * (DEFAULT_SETTINGS.gridSize / 20),
-                    damage: wStats.neonScatterDamage,
-                    color: COLORS.neonScatter,
-                    size: 3,
-                    type: 'SHARD',
-                    life: 25,
-                    owner: 'PLAYER'
+                  id: Math.random().toString(36),
+                  x: head.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2,
+                  y: head.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2,
+                  vx: Math.cos(a) * speed * (DEFAULT_SETTINGS.gridSize / 20),
+                  vy: Math.sin(a) * speed * (DEFAULT_SETTINGS.gridSize / 20),
+                  damage: wStats.neonScatterDamage,
+                  color: COLORS.neonScatter,
+                  size: 3,
+                  type: 'SHARD',
+                  life: 25,
+                  owner: 'PLAYER'
                 });
+              }
+
+              audioEventsRef.current.push({ type: 'SHOOT' });
+              neonScatterTimerRef.current = 0;
             }
-
-            audioEventsRef.current.push({ type: 'SHOOT' });
-            neonScatterTimerRef.current = 0;
           }
-      }
-
+        }
 
       // 4. VOLT SERPENT
       if (wStats.voltSerpentLevel > 0) {
@@ -559,6 +558,7 @@ export function useCombat(
                   phaseRailChargeRef.current = 0;
               }
           }
+      }
 
       // 6. NANO SWARM
       if (wStats.nanoSwarmLevel > 0) {
@@ -767,56 +767,51 @@ export function useCombat(
             }
         }
     }
-}
+  } // END PROJECTILES LOOP
 
+  // 10. SHOCKWAVES
+  shockwavesRef.current.forEach(s => {
+    if (s.shouldRemove) return;
 
+    // Normalize growth
+    s.currentRadius += SHOCKWAVE_SPEED * frame * 10;
+    s.opacity -= 0.02 * frame;
 
-      // 10. SHOCKWAVES
-      shockwavesRef.current.forEach(s => {
-          if (s.shouldRemove) return;
+    if (s.damage > 0 || s.stunDuration) {
+      const rSq = s.currentRadius ** 2;
+      enemiesRef.current.forEach(e => {
+          // Debounce: SHOCKWAVE
+        if (e.hitCooldowns && e.hitCooldowns['SHOCKWAVE'] > 0) return;
+        const ex = e.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2;
+        const ey = e.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2;
+        const dSq = Math.pow(ex - s.x, 2) + Math.pow(ey - s.y, 2);
 
-          // Normalize growth
-          s.currentRadius += SHOCKWAVE_SPEED * frame * 10;
-          s.opacity -= 0.02 * frame;
-
-          if (s.damage > 0 || s.stunDuration) {
-              const rSq = s.currentRadius ** 2;
-              enemiesRef.current.forEach(e => {
-                  // Debounce: SHOCKWAVE
-                  if (e.hitCooldowns && e.hitCooldowns['SHOCKWAVE'] > 0) return;
-
-                  const ex = e.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2;
-                  const ey = e.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2;
-                  const dSq = Math.pow(ex - s.x, 2) + Math.pow(ey - s.y, 2);
-                  
-                  if (dSq <= rSq && dSq >= (s.currentRadius - 20)**2) {
-                      if (s.damage > 0) damageEnemy(e, s.damage, true);
-                      if (s.stunDuration) {
-                          e.stunTimer = s.stunDuration;
-                          createParticles(e.x, e.y, '#00ffff', 5);
-                      }
-                      
-                      const angle = Math.atan2(ey - s.y, ex - s.x);
-                      e.x += Math.cos(angle) * 1.5;
-                      e.y += Math.sin(angle) * 1.5;
-                      
-                      if (!e.hitCooldowns) e.hitCooldowns = {};
-                      e.hitCooldowns['SHOCKWAVE'] = 20; // 300ms cooldown
-                  }
-              });
+        if (dSq <= rSq && dSq >= (s.currentRadius - 20)**2) {
+          if (s.damage > 0) damageEnemy(e, s.damage, true);
+          if (s.stunDuration) {
+            e.stunTimer = s.stunDuration;
+            createParticles(e.x, e.y, '#00ffff', 5);
           }
+          const angle = Math.atan2(ey - s.y, ex - s.x);
+          e.x += Math.cos(angle) * 1.5;
+          e.y += Math.sin(angle) * 1.5;
 
-          if (s.opacity <= 0 || s.currentRadius >= s.maxRadius) {
-              s.shouldRemove = true;
-          }
+          if (!e.hitCooldowns) e.hitCooldowns = {};
+          e.hitCooldowns['SHOCKWAVE'] = 20; // 300ms cooldown
+        }
       });
+    }
+    if (s.opacity <= 0 || s.currentRadius >= s.maxRadius) {
+      s.shouldRemove = true;
+    }
+  });
 
-      // 11. LIGHTNING
-      lightningArcsRef.current.forEach(arc => { 
-          if (arc.shouldRemove) return;
-          arc.life -= frame * 0.08; // Normalized decay
-          if (arc.life <= 0) arc.shouldRemove = true;
-      });
+  // 11. LIGHTNING
+  lightningArcsRef.current.forEach(arc => { 
+    if (arc.shouldRemove) return;
+    arc.life -= frame * 0.08; // Normalized decay
+    if (arc.life <= 0) arc.shouldRemove = true;
+  });
 
   }, [
       statsRef,
