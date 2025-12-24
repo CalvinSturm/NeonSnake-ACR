@@ -326,13 +326,12 @@ export function useCombat(
      Main Combat Loop
      ───────────────────────────── */
   const update = useCallback((dt: number) => {
-      const head = snakeRef.current[0];
-      if (!head) return;
+    const head = snakeRef.current[0];
+    if (!head) return;
 
-      // 🛑 TIME NORMALIZATION (Standardize to 60fps frame units)
-      const frame = dt / 16.667;
-      const now = gameTimeRef.current;
-      const wStats = statsRef.current.weapon;
+    const frame = dt / 16.667;
+    const now = gameTimeRef.current;
+    const wStats = statsRef.current.weapon;
 
       // ── OVERCLOCK UPDATE ──
       if (wStats.overclockLevel > 0) {
@@ -468,9 +467,11 @@ export function useCombat(
                   if (d < 100 && d < minDist) { minDist = d; nearest = e; }
               });
 
-              if (nearest || enemiesRef.current.length > 0) {
-                  const target = nearest || enemiesRef.current[0];
-                  const baseAngle = Math.atan2(target.y - head.y, target.x - head.x);
+              const target = nearest ?? enemiesRef.current[0];
+              if (!target) return;
+
+                const baseAngle = Math.atan2(target.y - head.y, target.x - head.x);
+
                   const shards = 3 + wStats.neonScatterLevel;
                   const spread = 0.5;
 
@@ -676,10 +677,15 @@ export function useCombat(
                   if (nearest) p.targetId = nearest.id;
               }
 
-              const target = enemiesRef.current.find(e => e.id === p.targetId);
-              if (target) {
-                  const tx = target.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2;
-                  const ty = target.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2;
+              const target = p.targetId
+              ? enemiesRef.current.find(e => e.id === p.targetId)
+             : undefined;
+
+                if (!target) continue;
+
+                    const tx = target.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2;
+                    const ty = target.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2;
+
                   const dx = tx - p.x;
                   const dy = ty - p.y;
                   const angle = Math.atan2(dy, dx);
@@ -720,10 +726,12 @@ export function useCombat(
                       createParticles(e.x, e.y, p.color, 3);
                       
                       if (p.piercing) {
-                          p.hitIds?.push(e.id);
+                          p.hitIds ??= [];
+                          p.hitIds.push(e.id);
                       } else {
-                          p.shouldRemove = true;
+                        p.shouldRemove = true;
                       }
+
                       break;
                   }
               }
