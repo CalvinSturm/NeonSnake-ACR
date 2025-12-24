@@ -702,54 +702,50 @@ if (wStats.auraLevel > 0) {
           continue;
         }
 
-    // ── Homing Logic ──────────────────────────
-        if (p.homing && p.owner === 'PLAYER') {
-          if (!p.targetId) {
-            let nearest: Enemy | null = null;
-            let minDist = Infinity;
-            (enemiesRef.current as Enemy[]).forEach(e => {
-                const d =
-                    Math.pow(
-                        e.x * DEFAULT_SETTINGS.gridSize - p.x,
-                        2
-                    ) +
-                    Math.pow(
-                        e.y * DEFAULT_SETTINGS.gridSize - p.y,
-                        2
-                    );
+if (p.homing && p.owner === 'PLAYER') {
+  if (!p.targetId) {
+    let nearest: Enemy | null = null;
+    let minDist = Infinity;
 
-                if (d < minDist) {
-                    minDist = d;
-                    nearest = e;
-                }
-            });
+    (enemiesRef.current as Enemy[]).forEach((e: Enemy) => {
+      const d =
+        Math.pow(e.x * DEFAULT_SETTINGS.gridSize - p.x, 2) +
+        Math.pow(e.y * DEFAULT_SETTINGS.gridSize - p.y, 2);
 
-            if (nearest) p.targetId = nearest.id;
-          }
-          const target = p.targetId
-          ? (enemiesRef.current as Enemy[]).find(e => e.id === p.targetId)
-          : undefined;
+      if (d < minDist) {
+        minDist = d;
+        nearest = e;
+      }
+    });
 
-        if (!target) {
-            p.shouldRemove = true;
-        } else {
-            const tx =
-                target.x * DEFAULT_SETTINGS.gridSize +
-                DEFAULT_SETTINGS.gridSize / 2;
-            const ty =
-                target.y * DEFAULT_SETTINGS.gridSize +
-                DEFAULT_SETTINGS.gridSize / 2;
+    if (nearest) p.targetId = nearest.id;
+  }
 
-            const dx = tx - p.x;
-            const dy = ty - p.y;
-            const angle = Math.atan2(dy, dx);
-            const speed = Math.hypot(p.vx, p.vy);
+  const enemies = enemiesRef.current as Enemy[];
 
-            p.vx = p.vx * 0.9 + Math.cos(angle) * speed * 0.1;
-            p.vy = p.vy * 0.9 + Math.sin(angle) * speed * 0.1;
+  const target: Enemy | undefined = p.targetId
+    ? enemies.find((e: Enemy) => e.id === p.targetId)
+    : undefined;
 
-          }
-        }
+  if (!target) {
+    p.shouldRemove = true;
+  } else {
+    const tx =
+      target.x * DEFAULT_SETTINGS.gridSize +
+      DEFAULT_SETTINGS.gridSize / 2;
+    const ty =
+      target.y * DEFAULT_SETTINGS.gridSize +
+      DEFAULT_SETTINGS.gridSize / 2;
+
+    const dx = tx - p.x;
+    const dy = ty - p.y;
+    const angle = Math.atan2(dy, dx);
+    const speed = Math.hypot(p.vx, p.vy);
+
+    p.vx = p.vx * 0.9 + Math.cos(angle) * speed * 0.1;
+    p.vy = p.vy * 0.9 + Math.sin(angle) * speed * 0.1;
+  }
+}
 
     // ── Movement ───────────────────────────────
     p.x += p.vx * frame;
@@ -770,36 +766,37 @@ if (wStats.auraLevel > 0) {
         continue;
     }
 
-    // ── Player Projectile vs Enemy ─────────────
-    if (p.owner === 'PLAYER') {
-      for (const e of enemiesRef.current as Enemy[]) {
-            if (p.piercing && p.hitIds?.includes(e.id)) continue;
+// ── Player Projectile vs Enemy ─────────────
+if (p.owner === 'PLAYER') {
+  const enemies = enemiesRef.current as Enemy[];
 
-            const ex =
-                e.x * DEFAULT_SETTINGS.gridSize +
-                DEFAULT_SETTINGS.gridSize / 2;
-            const ey =
-                e.y * DEFAULT_SETTINGS.gridSize +
-                DEFAULT_SETTINGS.gridSize / 2;
+  for (const e of enemies) {
+    if (p.piercing && p.hitIds?.includes(e.id)) continue;
 
-            if (
-                Math.abs(p.x - ex) < 25 &&
-                Math.abs(p.y - ey) < 25
-            ) {
-                damageEnemy(e, p.damage);
-                createParticles(e.x, e.y, p.color, 3);
+    const ex =
+      e.x * DEFAULT_SETTINGS.gridSize +
+      DEFAULT_SETTINGS.gridSize / 2;
+    const ey =
+      e.y * DEFAULT_SETTINGS.gridSize +
+      DEFAULT_SETTINGS.gridSize / 2;
 
-                if (p.piercing) {
-                    p.hitIds ??= [];
-                    p.hitIds.push(e.id);
-                } else {
-                    p.shouldRemove = true;
-                }
-                break;
-            }
-        }
+    if (
+      Math.abs(p.x - ex) < 25 &&
+      Math.abs(p.y - ey) < 25
+    ) {
+      damageEnemy(e, p.damage);
+      createParticles(e.x, e.y, p.color, 3);
+
+      if (p.piercing) {
+        p.hitIds ??= [];
+        p.hitIds.push(e.id);
+      } else {
+        p.shouldRemove = true;
+      }
+      break;
     }
-  } // END PROJECTILES LOOP
+  }
+}
 
   // 10. SHOCKWAVES
   shockwavesRef.current.forEach(s => {
