@@ -702,7 +702,7 @@ if (wStats.auraLevel > 0) {
           continue;
         }
 
-if (p.homing && p.owner === 'PLAYER') {
+if (isPlayerHomingProjectile(p)) {
   if (!p.targetId) {
     let nearest: Enemy | null = null;
     let minDist = Infinity;
