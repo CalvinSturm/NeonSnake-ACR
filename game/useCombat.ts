@@ -467,37 +467,40 @@ export function useCombat(
                   if (d < 100 && d < minDist) { minDist = d; nearest = e; }
               });
 
-const target = nearest ?? enemiesRef.current[0];
-if (!target) return;
+            const target = nearest ?? enemiesRef.current[0];
+            if (!target) {
+                neonScatterTimerRef.current = 0;
+            break;
+            }
 
-const baseAngle = Math.atan2(target.y - head.y, target.x - head.x);
-const shards = 3 + wStats.neonScatterLevel;
-const spread = 0.5;
+            const baseAngle = Math.atan2(target.y - head.y, target.x - head.x);
+            const shards = 3 + wStats.neonScatterLevel;
+            const spread = 0.5;
 
-for(let i=0; i<shards; i++) {
-    const a = baseAngle - (spread/2) + (Math.random() * spread);
-    const speed = 15 + Math.random() * 5;
+            for(let i=0; i<shards; i++) {
+                const a = baseAngle - (spread/2) + (Math.random() * spread);
+                const speed = 15 + Math.random() * 5;
     
-    projectilesRef.current.push({
-        id: Math.random().toString(36),
-        x: head.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
-        y: head.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
-        vx: Math.cos(a) * speed * (DEFAULT_SETTINGS.gridSize / 20),
-        vy: Math.sin(a) * speed * (DEFAULT_SETTINGS.gridSize / 20),
-        damage: wStats.neonScatterDamage,
-        color: COLORS.neonScatter,
-        size: 3,
-        type: 'SHARD',
-        life: 25,
-        owner: 'PLAYER'
-    });
-}
-audioEventsRef.current.push({ type: 'SHOOT' });
-neonScatterTimerRef.current = 0;
+                projectilesRef.current.push({
+                    id: Math.random().toString(36),
+                    x: head.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
+                    y: head.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
+                    vx: Math.cos(a) * speed * (DEFAULT_SETTINGS.gridSize / 20),
+                    vy: Math.sin(a) * speed * (DEFAULT_SETTINGS.gridSize / 20),
+                    damage: wStats.neonScatterDamage,
+                    color: COLORS.neonScatter,
+                    size: 3,
+                    type: 'SHARD',
+                    life: 25,
+                    owner: 'PLAYER'
+                });
+            }
 
-              }
+            audioEventsRef.current.push({ type: 'SHOOT' });
+            neonScatterTimerRef.current = 0;
           }
       }
+
 
       // 4. VOLT SERPENT
       if (wStats.voltSerpentLevel > 0) {
