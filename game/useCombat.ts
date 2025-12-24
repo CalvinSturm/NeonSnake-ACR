@@ -370,7 +370,7 @@ export function useCombat(
               if (enemiesRef.current.length > 0) {
                   let nearest: Enemy | null = null;
                   let minDist = Infinity;
-                  enemiesRef.current.forEach(e => {
+                  (enemiesRef.current as Enemy[]).forEach(e => {
                       const d = Math.pow(e.x - head.x, 2) + Math.pow(e.y - head.y, 2);
                       if (d < minDist) { minDist = d; nearest = e; }
                   });
@@ -422,7 +422,8 @@ export function useCombat(
           if (prismLanceTimerRef.current >= fireRate) {
               let nearest: Enemy | null = null;
               let minDist = Infinity;
-              enemiesRef.current.forEach((e: Enemy) => {
+              (enemiesRef.current as Enemy[]).forEach(e => {
+
                 const d = Math.pow(e.x - head.x, 2) + Math.pow(e.y - head.y, 2);
                 if (d < minDist) { minDist = d; nearest = e; }
               });
@@ -467,10 +468,10 @@ export function useCombat(
                   if (d < 100 && d < minDist) { minDist = d; nearest = e; }
               });
 
-            const target = nearest ?? enemiesRef.current[0];
-            if (!target) {
-              neonScatterTimerRef.current = 0;
-            } else {
+              const target = nearest ?? (enemiesRef.current as Enemy[])[0];
+              if (!target) {
+                neonScatterTimerRef.current = 0;
+              } else {
               const baseAngle = Math.atan2(target.y - head.y, target.x - head.x);
               const shards = 3 + wStats.neonScatterLevel;
               const spread = 0.5;
@@ -531,7 +532,7 @@ export function useCombat(
           if (phaseRailChargeRef.current >= chargeTime) {
               let nearest: Enemy | null = null;
               let minDist = Infinity;
-              enemiesRef.current.forEach(e => {
+              (enemiesRef.current as Enemy[]).forEach(e => {
                   const d = Math.pow(e.x - head.x, 2) + Math.pow(e.y - head.y, 2);
                   if (d < minDist) { minDist = d; nearest = e; }
               });
@@ -574,7 +575,7 @@ export function useCombat(
               // FIX: Use CY center reference for correct orbiting, not raw head.y
               const sy = cy + Math.sin(angle) * radius;
 
-              enemiesRef.current.forEach(e => {
+              (enemiesRef.current as Enemy[]).forEach(e => {
                   // Debounce: NANO
                   if (e.hitCooldowns && e.hitCooldowns['NANO'] > 0) return;
                   
@@ -616,7 +617,7 @@ export function useCombat(
               if (mine.shouldRemove) continue;
 
               let triggered = false;
-              for (const e of enemiesRef.current) {
+              for (const e of enemiesRef.current as Enemy[]) {
                   const dist = Math.hypot(e.x - mine.x, e.y - mine.y);
                   if (dist <= mine.triggerRadius) {
                       triggered = true;
@@ -646,7 +647,7 @@ export function useCombat(
           auraTickTimerRef.current += dt;
           if (auraTickTimerRef.current >= 250) {
               const r2 = wStats.auraRadius ** 2;
-              enemiesRef.current.forEach(e => {
+              (enemiesRef.current as Enemy[]).forEach(e => {
                   const hit = snakeRef.current.some(seg => {
                       const d2 = Math.pow(e.x - seg.x, 2) + Math.pow(e.y - seg.y, 2);
                       return d2 <= r2;
@@ -673,8 +674,7 @@ export function useCombat(
           if (!p.targetId) {
             let nearest: Enemy | null = null;
             let minDist = Infinity;
-
-            enemiesRef.current.forEach(e => {
+            (enemiesRef.current as Enemy[]).forEach(e => {
                 const d =
                     Math.pow(
                         e.x * DEFAULT_SETTINGS.gridSize - p.x,
@@ -693,9 +693,8 @@ export function useCombat(
 
             if (nearest) p.targetId = nearest.id;
           }
-
           const target = p.targetId
-          ? enemiesRef.current.find((e: Enemy) => e.id === p.targetId)
+          ? (enemiesRef.current as Enemy[]).find(e => e.id === p.targetId)
           : undefined;
 
         if (!target) {
@@ -740,7 +739,7 @@ export function useCombat(
 
     // ── Player Projectile vs Enemy ─────────────
     if (p.owner === 'PLAYER') {
-        for (const e of enemiesRef.current) {
+      for (const e of enemiesRef.current as Enemy[]) {
             if (p.piercing && p.hitIds?.includes(e.id)) continue;
 
             const ex =
@@ -779,7 +778,7 @@ export function useCombat(
 
     if (s.damage > 0 || s.stunDuration) {
       const rSq = s.currentRadius ** 2;
-      enemiesRef.current.forEach(e => {
+      (enemiesRef.current as Enemy[]).forEach(e => {
           // Debounce: SHOCKWAVE
         if (e.hitCooldowns && e.hitCooldowns['SHOCKWAVE'] > 0) return;
         const ex = e.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2;
