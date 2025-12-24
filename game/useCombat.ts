@@ -797,6 +797,7 @@ if (p.owner === 'PLAYER') {
     }
   }
 }
+}
 
   // 10. SHOCKWAVES
   shockwavesRef.current.forEach(s => {
