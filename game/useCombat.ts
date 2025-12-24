@@ -470,8 +470,7 @@ export function useCombat(
             const target = nearest ?? enemiesRef.current[0];
             if (!target) {
                 neonScatterTimerRef.current = 0;
-            break;
-            }
+            } else {
 
             const baseAngle = Math.atan2(target.y - head.y, target.x - head.x);
             const shards = 3 + wStats.neonScatterLevel;
@@ -663,82 +662,114 @@ export function useCombat(
 
       // 9. PROJECTILES UPDATE
       const margin = 100;
-      
+
       for (const p of projectilesRef.current) {
-          if (p.shouldRemove) continue;
+        if (p.shouldRemove) {
+          continue;
+        }
 
-          // Homing Logic
-          if (p.homing && p.owner === 'PLAYER') {
-              if (!p.targetId) {
-                  let nearest: Enemy | null = null;
-                  let minDist = Infinity;
-                  enemiesRef.current.forEach(e => {
-                      const d = Math.pow(e.x * DEFAULT_SETTINGS.gridSize - p.x, 2) + Math.pow(e.y * DEFAULT_SETTINGS.gridSize - p.y, 2);
-                      if (d < minDist) { minDist = d; nearest = e; }
-                  });
-                  if (nearest) p.targetId = nearest.id;
-              }
+    // ── Homing Logic ──────────────────────────
+        if (p.homing && p.owner === 'PLAYER') {
+          if (!p.targetId) {
+            let nearest: Enemy | null = null;
+            let minDist = Infinity;
 
-              const target = p.targetId
-              ? enemiesRef.current.find(e => e.id === p.targetId)
-             : undefined;
+            enemiesRef.current.forEach(e => {
+                const d =
+                    Math.pow(
+                        e.x * DEFAULT_SETTINGS.gridSize - p.x,
+                        2
+                    ) +
+                    Math.pow(
+                        e.y * DEFAULT_SETTINGS.gridSize - p.y,
+                        2
+                    );
 
-                if (!target) continue;
+                if (d < minDist) {
+                    minDist = d;
+                    nearest = e;
+                }
+            });
 
-                    const tx = target.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2;
-                    const ty = target.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2;
-
-                  const dx = tx - p.x;
-                  const dy = ty - p.y;
-                  const angle = Math.atan2(dy, dx);
-                  const speed = Math.hypot(p.vx, p.vy);
-                  // Smoother homing turn
-                  p.vx = p.vx * 0.9 + Math.cos(angle) * speed * 0.1;
-                  p.vy = p.vy * 0.9 + Math.sin(angle) * speed * 0.1;
-              }
+            if (nearest) p.targetId = nearest.id;
           }
 
-          // Use FRAME normalization
-          p.x += p.vx * frame;
-          p.y += p.vy * frame;
-          
-          if (p.life !== undefined) {
-              p.life -= frame;
-              if (p.life <= 0) p.shouldRemove = true;
+          const target = p.targetId
+            ? enemiesRef.current.find(e => e.id === p.targetId)
+            : undefined;
+
+        if (!target) {
+            p.shouldRemove = true;
+        } else {
+            const tx =
+                target.x * DEFAULT_SETTINGS.gridSize +
+                DEFAULT_SETTINGS.gridSize / 2;
+            const ty =
+                target.y * DEFAULT_SETTINGS.gridSize +
+                DEFAULT_SETTINGS.gridSize / 2;
+
+            const dx = tx - p.x;
+            const dy = ty - p.y;
+            const angle = Math.atan2(dy, dx);
+            const speed = Math.hypot(p.vx, p.vy);
+
+            p.vx = p.vx * 0.9 + Math.cos(angle) * speed * 0.1;
+            p.vy = p.vy * 0.9 + Math.sin(angle) * speed * 0.1;
+
           }
+        }
 
-          if (
-              p.x < -margin || p.x > CANVAS_WIDTH + margin ||
-              p.y < -margin || p.y > CANVAS_HEIGHT + margin
-          ) {
-              p.shouldRemove = true;
-              continue;
-          }
+    // ── Movement ───────────────────────────────
+    p.x += p.vx * frame;
+    p.y += p.vy * frame;
 
-          // PLAYER PROJECTILE vs ENEMY
-          if (p.owner === 'PLAYER') {
-              for (const e of enemiesRef.current) {
-                  if (p.piercing && p.hitIds?.includes(e.id)) continue;
+    if (p.life !== undefined) {
+        p.life -= frame;
+        if (p.life <= 0) p.shouldRemove = true;
+    }
 
-                  const ex = e.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2;
-                  const ey = e.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2;
-                  
-                  if (Math.abs(p.x - ex) < 25 && Math.abs(p.y - ey) < 25) {
-                      damageEnemy(e, p.damage);
-                      createParticles(e.x, e.y, p.color, 3);
-                      
-                      if (p.piercing) {
-                          p.hitIds ??= [];
-                          p.hitIds.push(e.id);
-                      } else {
-                        p.shouldRemove = true;
-                      }
+    if (
+        p.x < -margin ||
+        p.x > CANVAS_WIDTH + margin ||
+        p.y < -margin ||
+        p.y > CANVAS_HEIGHT + margin
+    ) {
+        p.shouldRemove = true;
+        continue;
+    }
 
-                      break;
-                  }
-              }
-          }
-      }
+    // ── Player Projectile vs Enemy ─────────────
+    if (p.owner === 'PLAYER') {
+        for (const e of enemiesRef.current) {
+            if (p.piercing && p.hitIds?.includes(e.id)) continue;
+
+            const ex =
+                e.x * DEFAULT_SETTINGS.gridSize +
+                DEFAULT_SETTINGS.gridSize / 2;
+            const ey =
+                e.y * DEFAULT_SETTINGS.gridSize +
+                DEFAULT_SETTINGS.gridSize / 2;
+
+            if (
+                Math.abs(p.x - ex) < 25 &&
+                Math.abs(p.y - ey) < 25
+            ) {
+                damageEnemy(e, p.damage);
+                createParticles(e.x, e.y, p.color, 3);
+
+                if (p.piercing) {
+                    p.hitIds ??= [];
+                    p.hitIds.push(e.id);
+                } else {
+                    p.shouldRemove = true;
+                }
+                break;
+            }
+        }
+    }
+}
+
+
 
       // 10. SHOCKWAVES
       shockwavesRef.current.forEach(s => {
