@@ -1,12 +1,12 @@
 import React from 'react';
 import SnakeGame from './components/SnakeGame';
 
-function App() {
+const App: React.FC = () => {
   return (
-    <div className="min-h-screen bg-[#050505] text-white overflow-hidden select-none selection:bg-cyan-500 selection:text-black">
+    <div className="h-screen w-screen bg-black overflow-hidden flex items-center justify-center">
       <SnakeGame />
     </div>
   );
-}
+};
 
 export default App;
