@@ -46,7 +46,7 @@ export function useGameState() {
   const [selectedChar, setSelectedChar] = useState<CharacterProfile | null>(null);
   const [upgradeOptions, setUpgradeOptions] = useState<UpgradeOption[]>([]);
   const [resumeCountdown, setResumeCountdown] = useState(0);
-  const [activePowerUps, setActivePowerUps] = useState({ magnet: false });
+  const [activePowerUps, setActivePowerUps] = useState({ slow: false, magnet: false });
   const [isMuted, setIsMuted] = useState(false);
   
   // Settings State
@@ -98,6 +98,7 @@ export function useGameState() {
   
   const statsRef = useRef<UpgradeStats>({
     weapon: CHARACTERS[0].initialStats.weapon as any,
+    slowDurationMod: 1,
     magnetRangeMod: 0,
     shieldActive: false,
     scoreMultiplier: 1,
@@ -115,7 +116,7 @@ export function useGameState() {
     globalProjectileSpeedMod: 1
   });
 
-  const powerUpsRef = useRef({ magnetUntil: 0 });
+  const powerUpsRef = useRef({ slowUntil: 0, magnetUntil: 0 });
   const ghostCoilCooldownRef = useRef(0);
   
   const directionRef = useRef<Direction>(Direction.RIGHT);
@@ -146,7 +147,7 @@ export function useGameState() {
   const overclockTimerRef = useRef(0);
   const nanoSwarmAngleRef = useRef(0); 
   
-  const lastPowerUpStateRef = useRef({ magnet: false });
+  const lastPowerUpStateRef = useRef({ slow: false, magnet: false });
 
   // ─────────────────────────────
   // MODAL LOGIC
@@ -191,13 +192,15 @@ export function useGameState() {
     traitsRef.current = resolveTraits(charProfile);
 
     // 3. ATOMIC METRIC RESET
+    // SAFE INITIALIZATION: Head(10), Neck(9), Tail(8) for Direction.RIGHT
+    // Prevents spawn collision/overlap
     snakeRef.current = [
       { x: 10, y: 10 },
       { x: 9, y: 10 },
       { x: 8, y: 10 }
     ];
-    prevTailRef.current = { x: 7, y: 10 }; 
-    tailIntegrityRef.current = 100; 
+    prevTailRef.current = { x: 7, y: 10 }; // Phantom tail for interpolation on frame 0
+    tailIntegrityRef.current = 100; // Reset Block Integrity
 
     directionRef.current = Direction.RIGHT;
     directionQueueRef.current = [];
@@ -240,6 +243,7 @@ export function useGameState() {
     // ATOMIC STATS RECONSTRUCTION
     const baseStats: UpgradeStats = {
         weapon: JSON.parse(JSON.stringify(CHARACTERS[0].initialStats.weapon)),
+        slowDurationMod: 1,
         magnetRangeMod: 0,
         shieldActive: false,
         scoreMultiplier: 1,
@@ -292,9 +296,10 @@ export function useGameState() {
     setUiShield(!!statsRef.current.shieldActive);
     setBossActive(false);
     
+    // Clear Modal State (except if handled by caller, but generally reset means new run)
     setModalState('NONE');
 
-    powerUpsRef.current = { magnetUntil: 0 };
+    powerUpsRef.current = { slowUntil: 0, magnetUntil: 0 };
     nanoSwarmAngleRef.current = 0;
     
   }, []);
@@ -320,12 +325,12 @@ export function useGameState() {
     
     settings, setSettings,
     
-    runIdRef, 
+    runIdRef, // Expose Run ID
     
     snakeRef,
-    prevTailRef, 
-    tailIntegrityRef, 
-    traitsRef, 
+    prevTailRef, // Exposed for rendering interpolation
+    tailIntegrityRef, // Exposed for logic
+    traitsRef, // Exposed for logic systems
     
     enemiesRef,
     foodRef,
@@ -358,7 +363,7 @@ export function useGameState() {
     bossEnemyRef,
     bossActiveRef,
     bossDefeatedRef,
-    bossOverrideTimerRef, 
+    bossOverrideTimerRef, // Added
     
     statsRef,
     powerUpsRef,

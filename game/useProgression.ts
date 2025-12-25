@@ -1,9 +1,8 @@
-/// <reference types="vite/client" />
 
 import { useCallback } from 'react';
 import { useGameState } from './useGameState';
 import { UpgradeId } from '../upgrades/types';
-import { PASSIVE_SCORE_PER_SEC, COMBO_WINDOW, RARITY_MULTIPLIERS, UPGRADE_BASES } from '../constants';
+import { XP_TO_LEVEL_UP, PASSIVE_SCORE_PER_SEC, COMBO_WINDOW, DIFFICULTY_CONFIGS, RARITY_MULTIPLIERS, UPGRADE_BASES } from '../constants';
 import { UPGRADE_DEFINITIONS } from '../upgrades/factories';
 import { GameStatus, Difficulty, WeaponStats, TerminalType, EnemyType, UpgradeRarity } from '../types';
 import { DESCRIPTOR_REGISTRY } from './descriptors';
@@ -17,6 +16,7 @@ export interface ProgressionAPI {
   unlockNextDifficulty: () => void;
 }
 
+// Helper to map upgrade IDs to their stat keys in WeaponStats
 const WEAPON_STAT_MAP: Partial<Record<UpgradeId, keyof WeaponStats>> = {
   CANNON: 'cannonLevel',
   AURA: 'auraLevel',
@@ -34,14 +34,19 @@ const WEAPON_STAT_MAP: Partial<Record<UpgradeId, keyof WeaponStats>> = {
   ECHO_CACHE: 'echoCacheLevel'
 };
 
+// Rolling Logic
 const rollRarity = (id: UpgradeId): UpgradeRarity => {
-    // Note: OVERCLOCK_WEAPON_SLOT is always Legendary by definition in descriptors
+    // Overclock Exception: Small chance to break limits
+    if (id === 'OVERCLOCK') {
+        if (Math.random() < 0.05) return 'OVERCLOCKED';
+    }
+
     const r = Math.random();
     if (r < 0.50) return 'COMMON';
     if (r < 0.80) return 'UNCOMMON';
     if (r < 0.95) return 'RARE';
     if (r < 0.99) return 'ULTRA_RARE';
-    return 'ULTRA_RARE'; // Cap standard rolls at Ultra Rare.
+    return 'MEGA_RARE';
 };
 
 export function useProgression(game: ReturnType<typeof useGameState>): ProgressionAPI {
@@ -67,8 +72,8 @@ export function useProgression(game: ReturnType<typeof useGameState>): Progressi
     setUnlockedDifficulties,
     difficulty,
     pendingStatusRef,
-    uiXp, 
-    enemiesRef 
+    uiXp, // Used for debug assertion
+    enemiesRef // Access enemies for Override effects
   } = game;
 
   const unlockNextDifficulty = useCallback(() => {
@@ -89,12 +94,15 @@ export function useProgression(game: ReturnType<typeof useGameState>): Progressi
     const stats = statsRef.current;
     const allIds = Object.keys(UPGRADE_DEFINITIONS) as UpgradeId[];
     
+    // 1. Filter Valid Upgrades based on caps and uniqueness
     const validIds = allIds.filter(id => {
         const desc = DESCRIPTOR_REGISTRY[id];
         if (!desc) return false;
 
+        // MAX LEVEL / UNIQUE CHECK
         const maxLevel = desc.maxLevel || 999;
         
+        // Check current level
         let currentLevel = 0;
         const statKey = WEAPON_STAT_MAP[id];
         if (statKey) {
@@ -105,6 +113,7 @@ export function useProgression(game: ReturnType<typeof useGameState>): Progressi
 
         if (currentLevel >= maxLevel) return false;
 
+        // SLOT CHECK (Only for new WEAPON acquisition)
         if (desc.category === 'WEAPON') {
             const isActive = stats.activeWeaponIds.includes(id);
             const slotsFull = stats.activeWeaponIds.length >= stats.maxWeaponSlots;
@@ -114,6 +123,7 @@ export function useProgression(game: ReturnType<typeof useGameState>): Progressi
         return true;
     });
 
+    // 2. Generate Options with Weights
     const options = [];
     const context = {
         weapon: statsRef.current.weapon,
@@ -144,10 +154,8 @@ export function useProgression(game: ReturnType<typeof useGameState>): Progressi
                     break;
                 }
             }
-            // Force Legendary for special upgrades if needed, otherwise roll
-            let rarity = rollRarity(pickedId);
-            if (pickedId === 'OVERCLOCK_WEAPON_SLOT') rarity = 'LEGENDARY';
-
+            // 🎲 ROLL RARITY HERE
+            const rarity = rollRarity(pickedId);
             options.push(UPGRADE_DEFINITIONS[pickedId](context, rarity));
             currentPool = currentPool.filter(id => id !== pickedId);
         }
@@ -161,13 +169,17 @@ export function useProgression(game: ReturnType<typeof useGameState>): Progressi
     setUpgradeOptions(options);
   }, [setStatus, audioEventsRef, levelRef, difficulty, uiCombo, statsRef, setUpgradeOptions]);
 
+  // 🔒 RESTORED XP AUTHORITY
   const gainXp = useCallback((amount: number) => {
+      // Invariant 1: Always increment XP
       xpRef.current += amount;
       
-      if (import.meta.env.DEV && xpRef.current > 0 && uiXp === 0) {
+      // Temporary Debug Assertion
+      if (process.env.NODE_ENV === 'development' && xpRef.current > 0 && uiXp === 0) {
           console.warn('[INVARIANT VIOLATION] XP gained but UI not updating. uiXp:', uiXp, 'xpRef:', xpRef.current);
       }
 
+      // Invariant 2: Immediate Level-Up Trigger
       if (xpRef.current >= nextLevelXpRef.current) {
           xpRef.current -= nextLevelXpRef.current;
           levelRef.current += 1;
@@ -177,6 +189,7 @@ export function useProgression(game: ReturnType<typeof useGameState>): Progressi
           levelUp();
       }
       
+      // Always update UI
       setUiXp((xpRef.current / nextLevelXpRef.current) * 100);
   }, [xpRef, nextLevelXpRef, levelRef, setUiLevel, setUiXp, levelUp, uiXp]);
 
@@ -204,6 +217,7 @@ export function useProgression(game: ReturnType<typeof useGameState>): Progressi
           data: { multiplier: 1 + (uiCombo * 0.1) } 
       });
 
+      // Explicitly call gainXp without stage checks
       if (type === 'XP_ORB' && value) {
           gainXp(value);
       } else if (type === 'NORMAL') {
@@ -212,9 +226,14 @@ export function useProgression(game: ReturnType<typeof useGameState>): Progressi
   }, [gameTimeRef, lastEatTimeRef, uiCombo, setUiCombo, statsRef, scoreRef, stageScoreRef, setUiScore, audioEventsRef, gainXp]);
 
   const onTerminalHacked = useCallback((type: TerminalType) => {
+      // 🔒 AUTHORITATIVE TERMINAL REWARD HANDLER
+      // Terminals grant rewards based on TYPE. 
+      // FOOD DROPS ARE STRICTLY FORBIDDEN FROM THIS PATH.
+      
       const stats = statsRef.current;
 
       if (type === 'RESOURCE') {
+          // Standard Terminal: Grants high XP & Score
           const baseTerminalXp = 300; 
           const xpGain = Math.floor(baseTerminalXp * stats.hackSpeedMod);
           
@@ -225,13 +244,15 @@ export function useProgression(game: ReturnType<typeof useGameState>): Progressi
           setUiScore(scoreRef.current);
       } 
       else if (type === 'OVERRIDE') {
+          // Boss Override: Stuns the boss (System Shutdown)
           const boss = enemiesRef.current.find(e => e.type === EnemyType.BOSS);
           if (boss) {
-              boss.stunTimer = 4000; 
+              boss.stunTimer = 4000; // Disable boss firing for 4s
               boss.flash = 10;
           }
       }
       else if (type === 'CLEARANCE') {
+          // Future proofing for keycard terminals
           scoreRef.current += 500;
           setUiScore(scoreRef.current);
       }
@@ -249,13 +270,23 @@ export function useProgression(game: ReturnType<typeof useGameState>): Progressi
       }
   }, [statsRef, scoreRef, stageScoreRef, setUiScore, uiCombo, gameTimeRef, lastEatTimeRef, setUiCombo]);
 
+  // 💡 UPGRADE APPLICATION (WITH RARITY SCALING)
   const applyUpgrade = useCallback((id: UpgradeId, rarity: UpgradeRarity = 'COMMON') => {
     const stats = statsRef.current;
+    
+    // Apply stats scalar based on rarity
     const mod = RARITY_MULTIPLIERS[rarity] || 1.0;
     
     stats.acquiredUpgradeIds.push(id);
 
+    // 🛠️ OVERCLOCK EXCEPTION LOGIC
+    if (id === 'OVERCLOCK' && rarity === 'OVERCLOCKED') {
+        stats.maxWeaponSlots = Math.min(UPGRADE_BASES.MAX_WEAPON_SLOTS, stats.maxWeaponSlots + 1);
+        // Also apply the base overclock level bump below
+    }
+
     switch (id) {
+      // ── SCALARS ──
       case 'SCALAR_DAMAGE':
         stats.globalDamageMod += UPGRADE_BASES.SCALAR_DAMAGE * mod;
         break;
@@ -266,9 +297,11 @@ export function useProgression(game: ReturnType<typeof useGameState>): Progressi
         stats.globalAreaMod += UPGRADE_BASES.SCALAR_AREA * mod;
         break;
       
+      // ── WEAPONS (Mod scales damage or stats) ──
       case 'CANNON':
         stats.weapon.cannonLevel++;
         stats.weapon.cannonDamage += UPGRADE_BASES.CANNON_DMG * mod;
+        // Fire rate improvements diminish
         stats.weapon.cannonFireRate = Math.max(100, stats.weapon.cannonFireRate - (UPGRADE_BASES.CANNON_FIRE_RATE_REDUCTION * mod));
         if (stats.weapon.cannonLevel >= 5 && stats.weapon.cannonLevel % 5 === 0) stats.weapon.cannonProjectileCount++;
         if (!stats.activeWeaponIds.includes('CANNON')) stats.activeWeaponIds.push('CANNON');
@@ -318,6 +351,7 @@ export function useProgression(game: ReturnType<typeof useGameState>): Progressi
         if (!stats.activeWeaponIds.includes('PHASE_RAIL')) stats.activeWeaponIds.push('PHASE_RAIL');
         break;
         
+      // ── UTILITY / PASSIVE ──
       case 'SHIELD':
         stats.shieldActive = true;
         setUiShield(true);
@@ -348,7 +382,7 @@ export function useProgression(game: ReturnType<typeof useGameState>): Progressi
         stats.hackSpeedMod *= (1 + (UPGRADE_BASES.HACK_SPEED * mod)); 
         stats.scoreMultiplier += UPGRADE_BASES.SCORE_MULT * mod;
         break;
-      case 'OVERCLOCK_WEAPON_SLOT':
+      case 'OVERRIDE_PROTOCOL':
         stats.maxWeaponSlots = Math.min(4, stats.maxWeaponSlots + 1);
         break;
     }
@@ -360,7 +394,8 @@ export function useProgression(game: ReturnType<typeof useGameState>): Progressi
         setStatus(GameStatus.RESUMING);
     }
     
-    if (rarity === 'LEGENDARY') {
+    // Play sound based on rarity
+    if (rarity === 'MEGA_RARE' || rarity === 'OVERCLOCKED') {
         audioEventsRef.current.push({ type: 'BONUS' });
     } else {
         audioEventsRef.current.push({ type: 'POWER_UP' });

@@ -11,12 +11,13 @@ export const DEFAULT_SETTINGS: GameSettings = {
 };
 
 // Hitbox Configuration (Unit: Grid Cells)
+// Invariant: Player hitbox must be <= 80% of tile size to ensure fair visual clearance.
 export const COLLISION_CONFIG = {
-  PLAYER_HEAD_RADIUS: 0.35, 
-  ENEMY_RADIUS: 0.4,        
-  PROJECTILE_RADIUS: 0.2,   
-  CONFIRMATION_FRAMES: 2,   
-  PROXIMITY_BUFFER: 0.4     
+  PLAYER_HEAD_RADIUS: 0.35, // 70% visual size match (Diameter 0.7 < 0.8)
+  ENEMY_RADIUS: 0.4,        // Standard enemy bulk
+  PROJECTILE_RADIUS: 0.2,   // Projectile core
+  CONFIRMATION_FRAMES: 2,   // Ticks required to confirm a lethal hit
+  PROXIMITY_BUFFER: 0.4     // Extra radius for visual tension (non-lethal)
 };
 
 // ─────────────────────────────────────────────
@@ -28,7 +29,9 @@ export const RARITY_MULTIPLIERS: Record<UpgradeRarity, number> = {
     'UNCOMMON': 1.25,
     'RARE': 1.5,
     'ULTRA_RARE': 2.0,
-    'LEGENDARY': 3.0
+    'MEGA_RARE': 3.0,
+    'LEGENDARY': 1.0, // Fixed / Special
+    'OVERCLOCKED': 1.0 // Special
 };
 
 export const UPGRADE_BASES = {
@@ -45,8 +48,8 @@ export const UPGRADE_BASES = {
     // Weapon Damage Increments (Flat)
     CANNON_DMG: 5,
     AURA_DMG: 3,
-    MINE_DMG: 50,
-    LIGHTNING_DMG: 0.10, 
+    MINE_DMG: 50, // INCREASED: Mines must hurt. Was 15.
+    LIGHTNING_DMG: 0.10, // +10% chaining damage retention
     NANO_DMG: 5,
     PRISM_DMG: 12,
     SCATTER_DMG: 5,
@@ -56,8 +59,8 @@ export const UPGRADE_BASES = {
     // Weapon Utility Increments
     AURA_RADIUS: 0.5,
     LIGHTNING_RANGE: 1.5,
-    MINE_RATE_REDUCTION: 150, 
-    CANNON_FIRE_RATE_REDUCTION: 80, 
+    MINE_RATE_REDUCTION: 150, // ms reduced
+    CANNON_FIRE_RATE_REDUCTION: 80, // ms reduced
     
     // Limits
     MAX_WEAPON_SLOTS: 6
@@ -259,6 +262,7 @@ export const CHARACTERS: CharacterProfile[] = [
     initialStats: {
       magnetRangeMod: 1.5,
       foodQualityMod: 1.6, 
+      slowDurationMod: 1.5,
       weapon: {
         cannonLevel: 1,
         cannonDamage: 10,
@@ -362,9 +366,9 @@ export const CHARACTERS: CharacterProfile[] = [
         nanoSwarmCount: 2,
         nanoSwarmDamage: 15,
         mineLevel: 1,
-        mineDamage: 150, 
+        mineDamage: 150, // High base
         mineRadius: 3.5,
-        mineDropRate: 6000, 
+        mineDropRate: 6000, // 6s drop rate
         chainLightningLevel: 0,
         chainLightningDamage: 0,
         chainLightningRange: 0,
@@ -387,7 +391,7 @@ export const CHARACTERS: CharacterProfile[] = [
   {
     id: 'bulwark',
     name: 'BULWARK',
-    description: 'TANK. High endurance. Rapid System Shock cycling.',
+    description: 'TANK. High endurance. Reinforced structural integrity.',
     traitName: 'COMPOSITE ARMOR',
     traitDescription: 'Tail Integrity damage taken is reduced by 50%.',
     color: '#0088ff',
@@ -483,7 +487,7 @@ export const GRID_ROWS = CANVAS_HEIGHT / DEFAULT_SETTINGS.gridSize;
 
 export const FX_LIMITS = {particles: 150,};
 export const MAGNET_RADIUS = 0.5;
-export const XP_BASE_MAGNET_RADIUS = 4.0; 
+export const XP_BASE_MAGNET_RADIUS = 4.0; // Base magnet for XP
 
 export const COMBO_WINDOW = 5000;
 export const ENEMY_SPAWN_INTERVAL = 2500;
@@ -503,5 +507,6 @@ export const TERMINAL_HACK_TIME = 2500;
 
 export const ENEMY_BASE_HP = 35;
 export const BOSS_BASE_HP = 1800;
+//boss projectile speed
 export const PROJECTILE_SPEED = 10;
 export const SHOCKWAVE_SPEED = 1.6;

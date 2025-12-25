@@ -3,7 +3,7 @@ import { useCallback, RefObject } from 'react';
 import { useGameState } from './useGameState';
 import { DEFAULT_SETTINGS, COLORS, GRID_COLS, GRID_ROWS, CANVAS_WIDTH, CANVAS_HEIGHT } from '../constants';
 import { FoodType, EnemyType, GameStatus, Direction, Point } from '../types';
-import { audio } from './audio';
+import { audio } from '../utils/audio';
 
 // ─────────────────────────────
 // TYPES & CONTEXT
@@ -16,7 +16,7 @@ interface RenderContext {
   height: number;
   gridSize: number;
   halfGrid: number;
-  stageReady: boolean;
+  stageReady: boolean; // NEW: Passed to render functions
 }
 
 // ─────────────────────────────
@@ -364,9 +364,13 @@ const drawSnake = (rc: RenderContext, snake: any[], prevTail: Point | null, dire
 
     // MAGNET/XP GLOW FX (Strict Invariant Check)
     if (isMagnetActive && hasXp) {
+        // Clear any existing glow (make sure you're resetting the drawing state every frame)
         ctx.save();
+        ctx.clearRect(headCx - gridSize * 2, headCy - gridSize * 2, gridSize * 4, gridSize * 4);
+
+        // Apply new effect
         ctx.translate(headCx, headCy);
-        const pulse = 1 + Math.sin(now / 150) * 0.2;
+        const pulse = 1 + Math.sin(Date.now() / 150) * 0.2;
         ctx.beginPath();
         ctx.arc(0, 0, gridSize * 2 * pulse, 0, PI2);
         const gradient = ctx.createRadialGradient(0, 0, gridSize * 0.5, 0, 0, gridSize * 2);
@@ -377,221 +381,254 @@ const drawSnake = (rc: RenderContext, snake: any[], prevTail: Point | null, dire
         ctx.fill();
         ctx.restore();
     }
-
-    // ─────────────────────────────────────────────
-    // 1. TAIL AURA WEAPON (DISTORTION FIELD)
-    // ─────────────────────────────────────────────
-    // Explicit Weapon Visual - Not Character Styling.
-    if (stats.weapon.auraLevel > 0) {
-        ctx.save();
-        ctx.globalCompositeOperation = 'source-over';
-        
-        const level = stats.weapon.auraLevel;
-        // Use true gameplay radius stat for accuracy
-        const gameplayRadius = stats.weapon.auraRadius || (1.5 + (level * 0.5));
-        const areaMod = stats.globalAreaMod || 1.0;
-        const baseRadius = (gameplayRadius * gridSize) * areaMod;
-        
-        // High visibility settings: Deep Void Purple / Crimson
-        const opacity = Math.min(0.65, 0.3 + (level * 0.03)); 
-
-        segments.forEach((seg, i) => {
-            // Skip the head (index 0) so the field lags/drags behind, representing a wake/exhaust
-            if (i === 0) return;
-
-            // Deterministic sine-based jitter for instability
-            const jitterX = Math.sin(now * 0.005 + i * 0.5) * (gridSize * 0.2);
-            const jitterY = Math.cos(now * 0.007 + i * 0.6) * (gridSize * 0.2);
-            
-            const x = seg.x + jitterX;
-            const y = seg.y + jitterY;
-            
-            // Radius pulsation (breathing effect)
-            const pulse = Math.sin(i * 0.4 + now * 0.003);
-            const r = baseRadius + (pulse * gridSize * 0.25);
-
-            // Void Gradient: Rich purple/crimson tones to stand out against black/cyan background
-            const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-            g.addColorStop(0, `rgba(80, 0, 110, ${opacity})`); 
-            g.addColorStop(0.6, `rgba(50, 0, 70, ${opacity * 0.4})`);
-            g.addColorStop(1, 'rgba(0, 0, 0, 0)');
-
-            ctx.fillStyle = g;
-            ctx.beginPath();
-            ctx.arc(x, y, r, 0, Math.PI * 2);
-            ctx.fill();
-        });
-        
-        ctx.restore();
-    }
-
-    // ─────────────────────────────────────────────
-    // SPINE & BODY (Standard Rendering)
-    // ─────────────────────────────────────────────
-    // Note: Previous character-specific aura styling block has been removed 
-    // to ensure the Aura weapon is distinct and doesn't confuse the player.
-
-    // Integrity Effect: If low, flicker
-    if (tailIntegrity < 30) {
-        if (Math.floor(now / 50) % 2 === 0) {
-            ctx.globalAlpha = 0.4; // Glitch flicker
-        } else if (tailIntegrity <= 0) {
-            ctx.globalAlpha = 0.2; // Ghost mode
-        }
-    }
-
-    if (segments.length > 1) {
-        ctx.beginPath();
-        ctx.moveTo(headCx, headCy);
-        for (let i = 1; i < segments.length; i++) {
-            ctx.lineTo(segments[i].x, segments[i].y);
-        }
-        drawNeonStroke(ctx, charColor, 4, 15);
-    }
-
-    // SEGMENTS
-    for (let i = 1; i < segments.length; i++) {
-        const scx = segments[i].x;
-        const scy = segments[i].y;
-        const sizeRatio = 1 - (i / (segments.length + 8));
-        const plateSize = (gridSize * 0.7) * Math.max(0.4, sizeRatio);
-        
-        ctx.fillStyle = '#111'; 
-        ctx.fillRect(scx - plateSize/2, scy - plateSize/2, plateSize, plateSize);
-        ctx.strokeStyle = charColor;
-        ctx.lineWidth = 1;
-        // Integrity feedback on segments
-        if (tailIntegrity < 100) {
-             const opacity = Math.max(0.3, sizeRatio) * (tailIntegrity / 100);
-             ctx.globalAlpha = opacity;
-        } else {
-             ctx.globalAlpha = Math.max(0.3, sizeRatio);
-        }
-        
-        ctx.strokeRect(scx - plateSize/2, scy - plateSize/2, plateSize, plateSize);
-        ctx.globalAlpha = 1.0;
-    }
     
-    // Reset Global Alpha if it was changed for ghosting
-    ctx.globalAlpha = 1.0;
-
-    // HEAD
+// ─────────────────────────────────────────────
+// 1. TAIL AURA DISTORTION FIELD (Expanded AOE)
+// ─────────────────────────────────────────────
+if (stats.weapon.auraLevel > 0) {
     ctx.save();
-    ctx.translate(headCx, headCy);
-    let rot = 0;
-    switch(direction) {
-        case 'RIGHT': rot = 0; break;
-        case 'DOWN': rot = Math.PI/2; break;
-        case 'LEFT': rot = Math.PI; break;
-        case 'UP': rot = -Math.PI/2; break;
-    }
-    ctx.rotate(rot);
-    ctx.fillStyle = '#fff';
-    ctx.shadowColor = charColor;
-    ctx.shadowBlur = 15;
-    ctx.beginPath();
-    ctx.moveTo(8, 0);
-    ctx.lineTo(-6, 7);
-    ctx.lineTo(-4, 0);
-    ctx.lineTo(-6, -7);
-    ctx.closePath();
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = '#0ff'; 
-    ctx.fillRect(2, -3, 2, 2);
-    ctx.fillRect(2, 1, 2, 2);
+    ctx.globalCompositeOperation = 'source-over'; // Ensure aura is drawn normally
     
-    // PHASE RAIL CHARGE INDICATOR (Visual Only)
-    if (stats.weapon.phaseRailLevel > 0) {
-        // Calculate percentage. Max charge time is defined in useCombat as 4000/mod.
-        // We replicate visual ratio here.
-        const maxCharge = 4000 / stats.globalFireRateMod;
-        const pct = Math.min(1, phaseRailCharge / maxCharge);
-        
-        if (pct > 0.1) {
-            ctx.save();
-            ctx.rotate(-rot); // Undo head rotation to keep indicator upright or relative
-            
-            // Draw converging particle lines
-            const count = 4;
-            const dist = 20 * (1 - pct);
-            ctx.globalAlpha = pct;
-            ctx.fillStyle = COLORS.phaseRail;
-            for(let i=0; i<count; i++) {
-                const a = (now / 200) + (i * (PI2/count));
-                const px = Math.cos(a) * dist;
-                const py = Math.sin(a) * dist;
-                ctx.beginPath();
-                ctx.arc(px, py, 2, 0, PI2);
-                ctx.fill();
-            }
-            
-            // Flash when ready
-            if (pct >= 0.95 && Math.floor(now / 50) % 2 === 0) {
-                ctx.strokeStyle = '#fff';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.arc(0,0, 8, 0, PI2);
-                ctx.stroke();
-            }
-            
-            ctx.restore();
-        }
-    }
+    const level = stats.weapon.auraLevel;
+    const gameplayRadius = stats.weapon.auraRadius || (1.5 + (level * 0.5));
+    const areaMod = stats.globalAreaMod || 1.0;
+    const baseRadius = (gameplayRadius * gridSize) * areaMod;
+    
+    const opacity = Math.min(0.6, 0.25 + (level * 0.04)); 
 
-    // ECHO CACHE ACCUMULATOR
-    if (stats.weapon.echoCacheLevel > 0) {
-        const cap = 500 + (stats.weapon.echoCacheLevel * 500);
-        const pct = Math.min(1, echoDamageStored / cap);
+    // Draw AOE around the head (distortion field)
+    const headCx = segments[0].x;
+    const headCy = segments[0].y;
+
+    // Apply AOE as a large, expanding distortion field
+    const g = ctx.createRadialGradient(headCx, headCy, 0, headCx, headCy, baseRadius);
+    g.addColorStop(0, `rgba(60, 0, 80, ${opacity})`);
+    g.addColorStop(0.5, `rgba(40, 0, 60, ${opacity * 0.5})`);
+    g.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    
+    // Draw the distortion around the head (AOE)
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(headCx, headCy, baseRadius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Apply jitter and pulsation to each segment (follows the head's AOE)
+    segments.forEach((seg, i) => {
+        if (i === 0) return;  // Skip the head (index 0) for the AOE
+
+        const jitterX = Math.sin(now * 0.005 + i * 0.5) * (gridSize * 0.15);
+        const jitterY = Math.cos(now * 0.007 + i * 0.6) * (gridSize * 0.15);
         
-        if (pct > 0) {
-            ctx.save();
-            ctx.rotate(now / -300); // Counter-rotate ring
-            ctx.beginPath();
-            ctx.arc(0, 0, 12, 0, PI2 * pct);
-            ctx.strokeStyle = pct >= 1 ? '#ffaa00' : 'rgba(255, 170, 0, 0.5)';
-            ctx.lineWidth = 2;
-            if (pct >= 1) {
-                ctx.shadowColor = '#ffaa00';
-                ctx.shadowBlur = 5;
-            }
-            ctx.stroke();
-            ctx.shadowBlur = 0;
-            ctx.restore();
-        }
-    }
+        const x = seg.x + jitterX;
+        const y = seg.y + jitterY;
+
+        const pulse = Math.sin(i * 0.4 + now * 0.003);
+        const r = baseRadius + (pulse * gridSize * 0.2);
+
+        // Create gradient for each segment
+        const segmentGradient = ctx.createRadialGradient(x, y, 0, x, y, r);
+        segmentGradient.addColorStop(0, `rgba(60, 0, 80, ${opacity})`);
+        segmentGradient.addColorStop(0.5, `rgba(40, 0, 60, ${opacity * 0.5})`);
+        segmentGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+        ctx.fillStyle = segmentGradient;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+    });
 
     ctx.restore();
+}
 
-    // SHIELD
-    if (stats.shieldActive) {
+// ─────────────────────────────────────────────
+// SPINE & BODY (Standard Rendering)
+// ─────────────────────────────────────────────
+if (segments.length > 1) {
+    ctx.beginPath();
+    ctx.moveTo(headCx, headCy);
+    for (let i = 1; i < segments.length; i++) {
+        ctx.lineTo(segments[i].x, segments[i].y);
+    }
+    drawNeonStroke(ctx, charColor, 4, 15);
+}
+
+// SEGMENTS
+for (let i = 1; i < segments.length; i++) {
+    const scx = segments[i].x;
+    const scy = segments[i].y;
+    const sizeRatio = 1 - (i / (segments.length + 8));
+    const plateSize = (gridSize * 0.7) * Math.max(0.4, sizeRatio);
+    
+    ctx.fillStyle = '#111'; 
+    ctx.fillRect(scx - plateSize/2, scy - plateSize/2, plateSize, plateSize);
+    ctx.strokeStyle = charColor;
+    ctx.lineWidth = 1;
+    // Integrity feedback on segments
+    if (tailIntegrity < 100) {
+        const opacity = Math.max(0.3, sizeRatio) * (tailIntegrity / 100);
+        ctx.globalAlpha = opacity;
+    } else {
+        ctx.globalAlpha = Math.max(0.3, sizeRatio);
+    }
+
+    ctx.strokeRect(scx - plateSize/2, scy - plateSize/2, plateSize, plateSize);
+    ctx.globalAlpha = 1.0; // Reset Global Alpha
+}
+
+// HEAD
+ctx.save();
+ctx.translate(headCx, headCy);
+let rot = 0;
+switch(direction) {
+    case 'RIGHT': rot = 0; break;
+    case 'DOWN': rot = Math.PI/2; break;
+    case 'LEFT': rot = Math.PI; break;
+    case 'UP': rot = -Math.PI/2; break;
+}
+ctx.rotate(rot);
+ctx.fillStyle = '#fff';
+ctx.shadowColor = charColor;
+ctx.shadowBlur = 15;
+ctx.beginPath();
+ctx.moveTo(8, 0);
+ctx.lineTo(-6, 7);
+ctx.lineTo(-4, 0);
+ctx.lineTo(-6, -7);
+ctx.closePath();
+ctx.fill();
+ctx.shadowBlur = 0;
+ctx.fillStyle = '#0ff'; 
+ctx.fillRect(2, -3, 2, 2);
+ctx.fillRect(2, 1, 2, 2);
+ctx.restore();
+
+
+// ─────────────────────────────────────────────
+// PHASE RAIL CHARGE INDICATOR (Enhanced Visual)
+// ─────────────────────────────────────────────
+if (stats.weapon.phaseRailLevel > 0) {
+    // Calculate percentage. Max charge time is defined in useCombat as 4000/mod.
+    // We replicate visual ratio here.
+    const maxCharge = 4000 / stats.globalFireRateMod;
+    const pct = Math.min(1, phaseRailCharge / maxCharge);
+    
+    if (pct > 0.1) {
         ctx.save();
-        ctx.translate(headCx, headCy);
-        ctx.rotate(now / 500);
-        const sr = 16 + Math.sin(now / 200) * 1;
+        ctx.rotate(-rot); // Undo head rotation to keep indicator upright or relative
         
-        ctx.beginPath();
-        for (let i = 0; i < 6; i++) {
-            const a = (i / 6) * PI2;
-            const sx = Math.cos(a) * sr;
-            const sy = Math.sin(a) * sr;
-            if (i===0) ctx.moveTo(sx, sy);
-            else ctx.lineTo(sx, sy);
+        // Draw converging particle lines with enhanced visibility
+        const count = 6;  // Increased particle count for more density
+        const dist = 25 * (1 - pct);  // Adjusted for more pronounced effect
+        ctx.globalAlpha = pct;
+        ctx.fillStyle = COLORS.phaseRail;  // Keep the original phase rail color
+        for (let i = 0; i < count; i++) {
+            const a = (now / 150) + (i * (PI2 / count));  // Faster rotation for more dynamic effect
+            const px = Math.cos(a) * dist;
+            const py = Math.sin(a) * dist;
+            ctx.beginPath();
+            ctx.arc(px, py, 4, 0, PI2);  // Larger particles
+            ctx.fill();
         }
-        ctx.closePath();
         
-        ctx.strokeStyle = COLORS.shield;
-        ctx.lineWidth = 2;
-        ctx.shadowColor = COLORS.shield;
-        ctx.shadowBlur = 8;
-        ctx.stroke();
-        ctx.fillStyle = COLORS.shield;
-        ctx.globalAlpha = 0.15;
-        ctx.fill();
-        ctx.globalAlpha = 1.0;
-        ctx.shadowBlur = 0;
+        // Flash effect when ready, with a more intense pulse and larger radius
+        if (pct >= 0.95 && Math.floor(now / 30) % 2 === 0) {
+            const pulse = Math.sin(now / 200) * 0.5 + 1.2;  // Pulsating glow effect
+            ctx.strokeStyle = '#fff';  // Brighter white stroke for contrast
+            ctx.lineWidth = 3;  // Thicker line for visibility
+            ctx.beginPath();
+            ctx.arc(0, 0, 12 * pulse, 0, PI2);  // Larger radius for stronger effect
+            ctx.stroke();
+        }
+        
         ctx.restore();
     }
+}
+
+// ─────────────────────────────────────────────
+// ECHO CACHE ACCUMULATOR (Enhanced Visual)
+// ─────────────────────────────────────────────
+if (stats.weapon.echoCacheLevel > 0) {
+    const cap = 500 + (stats.weapon.echoCacheLevel * 500);
+    const pct = Math.min(1, echoDamageStored / cap);
+    
+    if (pct > 0) {
+        ctx.save();
+        ctx.rotate(now / -300); // Counter-rotate ring
+
+        // Enhanced gradient effect for the ring
+        const gradient = ctx.createConicGradient(now / 500, 0, 0);  // Use time for dynamic shifting
+        gradient.addColorStop(0, 'rgba(255, 170, 0, 0.5)'); // Faded start
+        gradient.addColorStop(pct, '#ffaa00');  // Full charge color
+        gradient.addColorStop(1, 'rgba(255, 170, 0, 0)'); // Faded end
+
+        // Increased ring thickness and pulsating effect
+        const lineWidth = 3 + Math.sin(now / 200) * 1.5;  // Pulsating line width
+        ctx.lineWidth = lineWidth;
+        
+        // Draw the ring with dynamic glow and pulse
+        ctx.beginPath();
+        ctx.arc(0, 0, 12, 0, PI2 * pct);  // Arc size based on charge
+        ctx.strokeStyle = gradient;
+        
+        if (pct >= 1) {
+            // Full charge visual effect: Glow and increased pulse
+            ctx.shadowColor = '#ffaa00';
+            ctx.shadowBlur = 15;
+            ctx.lineWidth = 5; // Thicker line when fully charged
+        } else {
+            ctx.shadowBlur = 0; // No shadow when not fully charged
+        }
+
+        ctx.stroke();
+        ctx.shadowBlur = 0;  // Reset shadow blur after stroke
+        ctx.restore();
+    }
+}
+
+ctx.restore();
+
+
+// ─────────────────────────────────────────────
+// SHIELD (Enhanced with Transparency and No Fill)
+// ─────────────────────────────────────────────
+if (stats.shieldActive) {
+    ctx.save();
+    ctx.translate(headCx, headCy);
+    ctx.rotate(now / 500);
+
+    const sr = 16 + Math.sin(now / 200) * 1;  // Shield radius with pulsating effect
+
+    // Draw the shield outline
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * PI2;
+        const sx = Math.cos(a) * sr;
+        const sy = Math.sin(a) * sr;
+        if (i === 0) ctx.moveTo(sx, sy);
+        else ctx.lineTo(sx, sy);
+    }
+    ctx.closePath();
+
+    // Shield Outline Style
+    ctx.strokeStyle = COLORS.shield;
+    ctx.lineWidth = 2;
+    ctx.shadowColor = COLORS.shield;
+    ctx.shadowBlur = 8;
+
+    // Apply shadow and stroke for visibility
+    ctx.stroke();
+
+    // No fill for shield, only a subtle semi-transparent outline effect
+    ctx.globalAlpha = 0.1;  // Make the shield faint and non-obtrusive
+    ctx.fillStyle = COLORS.shield;
+    ctx.fill();  // Still need to fill for subtle effect but keep it faint
+
+    // Reset Alpha and Shadow
+    ctx.globalAlpha = 1.0;
+    ctx.shadowBlur = 0;
+
+    ctx.restore();
+}
 
     // NANO SWARM
     const nsLevel = stats.weapon.nanoSwarmLevel;
@@ -861,30 +898,39 @@ const drawProjectiles = (rc: RenderContext, projectiles: any[]) => {
         ctx.fillStyle = '#fff'; 
         
         if (p.type === 'LANCE') {
-            // PRISM LANCE VISUAL OVERHAUL
+            // LANCE VISUAL OVERHAUL (Converging Triangle and Laser Beam)
             const hue = (angle * (180 / Math.PI) + now * 0.5) % 360;
             const beamColor = `hsl(${hue}, 100%, 70%)`;
             
             ctx.shadowColor = beamColor;
             ctx.shadowBlur = 15;
             
-            // Core Beam
-            ctx.beginPath();
-            ctx.moveTo(-20, 0);
-            ctx.lineTo(25, 0);
-            ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 2;
-            ctx.stroke();
+            // Converging Triangle Effect
+            const triangleBase = 40; // Base width of the triangle
+            const triangleHeight = 20; // Height of the triangle
+            const triangleTip = Math.max(5, 20 - p.age / 10); // Triangle narrows as it "charges"
             
-            // Outer Glow
             ctx.beginPath();
-            ctx.moveTo(-25, 0);
-            ctx.lineTo(30, 0);
-            ctx.strokeStyle = beamColor;
-            ctx.lineWidth = 6;
-            ctx.globalAlpha = 0.6;
-            ctx.stroke();
-            ctx.globalAlpha = 1.0;
+            ctx.moveTo(-triangleBase / 2, -triangleHeight / 2);
+            ctx.lineTo(triangleBase / 2, -triangleHeight / 2);
+            ctx.lineTo(0, triangleTip); // Tip of the triangle
+            ctx.closePath();
+            ctx.fillStyle = beamColor;
+            ctx.fill();
+
+            // Laser Beam (when fully converged)
+            if (p.age > 20) {  // After the triangle has fully converged
+                const beamLength = Math.min(300, p.age * 3); // Beam extends over time
+                
+                ctx.beginPath();
+                ctx.moveTo(0, 0); // Start from the tip of the triangle
+                ctx.lineTo(0, -beamLength); // Extend the beam forward
+                ctx.lineWidth = 6;
+                ctx.strokeStyle = beamColor;
+                ctx.globalAlpha = 0.8;
+                ctx.stroke();
+                ctx.globalAlpha = 1.0;
+            }
 
         } else if (p.type === 'SHARD') {
             ctx.beginPath();

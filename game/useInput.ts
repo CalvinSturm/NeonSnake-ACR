@@ -1,7 +1,14 @@
 
+/**
+ * ARCHITECTURE LOCK:
+ *
+ * useInput is an INTENT CAPTURE system.
+ */
+
 import { useEffect, useCallback } from 'react';
 import { Direction, GameStatus, UpgradeOption } from '../types';
 import { useGameState } from './useGameState';
+import { useTransitions } from './useTransitions';
 import { UpgradeId } from '../upgrades/types';
 
 export function useInput(
@@ -21,9 +28,11 @@ export function useInput(
     setResumeCountdown
   } = game;
 
+  // Explicit local typing
   const upgrades = upgradeOptions as UpgradeOption[];
 
   const handleInput = useCallback((newDir: Direction) => {
+    // BLOCK INPUT IF MODAL OPEN
     if (modalState !== 'NONE') return;
 
     const lastDir =
@@ -45,19 +54,23 @@ export function useInput(
   }, [directionRef, directionQueueRef, modalState]);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    // 1. SETTINGS OVERRIDE (Must close settings first)
     if (modalState === 'SETTINGS') {
         if (e.key === 'Escape') {
             closeSettings();
         }
-        return; 
+        return; // Block all other input
     }
 
+    // 2. RESUME / PAUSE CONTROLS
+    // Allow skipping countdown with Space or Enter
     if (status === GameStatus.RESUMING && (e.key === ' ' || e.key === 'Enter')) {
          setResumeCountdown(0);
          setStatus(GameStatus.PLAYING);
          return;
     }
 
+    // Toggle Pause with Escape, P, or Space
     if (e.key === 'Escape' || e.key === 'p' || e.key === 'P' || e.key === ' ') {
         if (status === GameStatus.PLAYING || status === GameStatus.PAUSED) {
             togglePause();
@@ -65,6 +78,7 @@ export function useInput(
         }
     }
 
+    // 3. GAME OVER
     if (status === GameStatus.GAME_OVER) {
       if (e.key === ' ' || e.key === 'Enter') {
         handleStartClick();
@@ -72,6 +86,7 @@ export function useInput(
       return;
     }
 
+    // 4. LEVEL UP
     if (status === GameStatus.LEVEL_UP) {
       if (e.key === '1' && upgrades[0])
         applyUpgrade(upgrades[0].id as UpgradeId);
@@ -82,6 +97,7 @@ export function useInput(
       return;
     }
 
+    // 5. GAMEPLAY (Only if playing and no modal)
     if (status !== GameStatus.PLAYING || modalState !== 'NONE') return;
 
     switch (e.key) {

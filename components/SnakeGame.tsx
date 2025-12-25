@@ -1,6 +1,6 @@
 
 import React, { useRef, useEffect, useCallback, useState } from 'react';
-import { useGameState } from '../game/useGameState';
+import { useGameState, UserSettings } from '../game/useGameState';
 import { useGameLoop } from '../game/useGameLoop';
 import { useRendering } from '../game/useRendering';
 import { useInput } from '../game/useInput';
@@ -24,10 +24,11 @@ import {
   TRANSITION_DURATION,
   COMBO_DECAY_DURATION
 } from '../constants';
+import { audio } from '../utils/audio';
 import { formatTime, getThreatLevel } from '../game/gameUtils';
-import { DESCRIPTOR_REGISTRY } from '../game/descriptors';
-import { audio } from '../game/audio';
+import { DESCRIPTOR_REGISTRY, Descriptor } from '../game/descriptors';
 
+// Map legacy weapon keys to new Registry IDs for UI Lookup
 const WEAPON_STAT_MAP: Record<string, keyof WeaponStats> = {
   CANNON: 'cannonLevel',
   AURA: 'auraLevel',
@@ -51,32 +52,14 @@ const PASSIVE_CHECK_MAP: { id: string, check: (s: any) => boolean }[] = [
     { id: 'CRIT', check: (s: any) => s.critChance > 0.05 },
 ];
 
-// ─────────────────────────────────────────────
-// RARITY VISUAL CONTRACT (STRICT CONTAINMENT)
-// ─────────────────────────────────────────────
-
-const RARITY_CONTAINER_STYLES: Record<UpgradeRarity, string> = {
-    'COMMON': 'border bg-gray-900/95 border-gray-700 hover:border-gray-500', 
-    'UNCOMMON': 'border-2 bg-green-950/20 border-green-800/80 hover:border-green-500 shadow-[0_0_10px_rgba(34,197,94,0.1)]', 
-    'RARE': 'border-[3px] bg-gradient-to-br from-blue-950/40 to-gray-900/80 border-blue-600 hover:border-blue-400 shadow-[0_0_20px_rgba(59,130,246,0.2)]', 
-    'ULTRA_RARE': 'border-4 bg-gradient-to-b from-purple-900/60 to-black border-purple-500 hover:border-purple-300 shadow-[0_0_30px_rgba(168,85,247,0.5)]', 
-    'LEGENDARY': 'border-0 z-50 bg-black shadow-[0_0_100px_rgba(255,140,0,0.6)] ring-2 ring-orange-500/80', 
-};
-
-const RARITY_ANIMATION_STYLES: Record<UpgradeRarity, string> = {
-    'COMMON': '',
-    'UNCOMMON': '',
-    'RARE': 'group-hover:animate-pulse',
-    'ULTRA_RARE': 'animate-[pulse_3s_ease-in-out_infinite]', // Scale removed
-    'LEGENDARY': 'animate-none'
-};
-
-const RARITY_LABEL_STYLES: Record<UpgradeRarity, string> = {
-    'COMMON': 'bg-gray-800 text-gray-400 border-gray-600',
-    'UNCOMMON': 'bg-green-900/60 text-green-400 border-green-700',
-    'RARE': 'bg-blue-900/60 text-blue-300 border-blue-500 font-bold',
-    'ULTRA_RARE': 'bg-purple-600 text-white border-purple-300 font-black tracking-[0.25em] shadow-[0_0_10px_rgba(168,85,247,0.8)]',
-    'LEGENDARY': 'text-transparent bg-clip-text bg-gradient-to-b from-yellow-200 to-orange-600 font-black tracking-[0.2em] text-3xl drop-shadow-[0_0_25px_rgba(255,140,0,0.8)]' // Size reduced for containment
+const RARITY_STYLES: Record<UpgradeRarity, string> = {
+    'COMMON': 'border-gray-600 bg-gray-900/95 hover:border-gray-400',
+    'UNCOMMON': 'border-green-600 bg-green-950/40 hover:border-green-400 shadow-[0_0_15px_rgba(34,197,94,0.2)]',
+    'RARE': 'border-blue-600 bg-blue-950/40 hover:border-blue-400 shadow-[0_0_20px_rgba(59,130,246,0.3)]',
+    'ULTRA_RARE': 'border-purple-500 bg-purple-950/40 hover:border-purple-300 shadow-[0_0_25px_rgba(168,85,247,0.4)] animate-pulse',
+    'MEGA_RARE': 'border-yellow-500 bg-yellow-950/40 hover:border-yellow-300 shadow-[0_0_30px_rgba(234,179,8,0.5)]',
+    'LEGENDARY': 'border-yellow-500 bg-yellow-950/40', // Legacy fallback
+    'OVERCLOCKED': 'border-red-600 bg-red-950/60 hover:border-red-400 shadow-[0_0_40px_rgba(220,38,38,0.6)] animate-pulse'
 };
 
 const RARITY_TEXT_COLORS: Record<UpgradeRarity, string> = {
@@ -84,7 +67,9 @@ const RARITY_TEXT_COLORS: Record<UpgradeRarity, string> = {
     'UNCOMMON': 'text-green-300',
     'RARE': 'text-blue-300',
     'ULTRA_RARE': 'text-purple-300',
-    'LEGENDARY': 'text-orange-100'
+    'MEGA_RARE': 'text-yellow-300',
+    'LEGENDARY': 'text-yellow-300',
+    'OVERCLOCKED': 'text-red-400'
 };
 
 const RARITY_LABELS: Record<UpgradeRarity, string> = {
@@ -92,10 +77,10 @@ const RARITY_LABELS: Record<UpgradeRarity, string> = {
     'UNCOMMON': 'UNCOMMON',
     'RARE': 'RARE',
     'ULTRA_RARE': 'ULTRA RARE',
-    'LEGENDARY': 'LEGENDARY'
+    'MEGA_RARE': 'MEGA RARE',
+    'LEGENDARY': 'LEGENDARY',
+    'OVERCLOCKED': '/// OVERCLOCKED ///'
 };
-
-const HIGH_TIER_RARITIES = ['ULTRA_RARE', 'LEGENDARY'];
 
 const SnakeGame: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -103,8 +88,12 @@ const SnakeGame: React.FC = () => {
   const scoreDisplayRef = useRef<HTMLDivElement>(null);
   const visualScoreRef = useRef<number>(0);
   
+  // UI State
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
+  /* ─────────────────────────────
+     GAME STATE
+     ───────────────────────────── */
   const game = useGameState();
   const {
     status,
@@ -158,6 +147,7 @@ const SnakeGame: React.FC = () => {
     runIdRef
   } = game;
 
+  // ... (Systems init)
   const progression = useProgression(game);
   const fx = useFX(game);
   const spawner = useSpawner(game, fx.triggerShake);
@@ -166,25 +156,31 @@ const SnakeGame: React.FC = () => {
   const collisions = useCollisions(game, combat, spawner, fx, progression);
   const stage = useStageController(game, spawner, fx, progression);
   
+  // ── MUSIC SYSTEM ──
   const music = useMusic(game);
   
   const rendering = useRendering(canvasRef, game);
 
+  // ── DRAW LOOP WRAPPER (Updates UI Timer & Score) ──
   const draw = useCallback((alpha: number) => {
+      // Pass the smooth movement progress to the renderer
       const progress = movement.getMoveProgress();
       rendering.draw(alpha, progress);
       
+      // Update Timer
       if (timerRef.current) {
           timerRef.current.innerText = formatTime(gameTimeRef.current, true);
       }
 
+      // Update Score (Lerp)
       const rawScore = scoreRef.current;
       const targetScore = Number.isFinite(rawScore) ? rawScore : 0;
       
       const diff = targetScore - visualScoreRef.current;
       
+      // Interpolate if difference is significant, else snap
       if (Math.abs(diff) > 0.5) {
-          visualScoreRef.current += diff * 0.1; 
+          visualScoreRef.current += diff * 0.1; // 10% ease per frame
       } else {
           visualScoreRef.current = targetScore;
       }
@@ -195,19 +191,21 @@ const SnakeGame: React.FC = () => {
 
   }, [rendering, gameTimeRef, scoreRef, movement]);
 
+  // ── VISUAL SCORE RESET (ON RUN CHANGE) ──
   useEffect(() => {
       visualScoreRef.current = 0;
       if (scoreDisplayRef.current) {
           scoreDisplayRef.current.innerText = "0000000";
       }
-  }, [runIdRef.current]);
+  }, [runIdRef.current]); // React to runId increment
 
+  // ── AUDIO LIFECYCLE (ORCHESTRATOR OWNED) ──
   useEffect(() => {
       audio.onBeat(() => fx.pulseBeat());
       audio.onBar(() => fx.pulseBar());
       return () => audio.clearCallbacks();
   }, [fx]);
-  
+
   useEffect(() => {
       audio.setMusicVolume(settings.musicVolume);
       audio.setSfxVolume(settings.sfxVolume);
@@ -237,6 +235,9 @@ const SnakeGame: React.FC = () => {
       }
   }, [status]);
 
+  /* ─────────────────────────────
+     INPUT
+     ───────────────────────────── */
   const handleStartClick = useCallback(() => {
     setStatus(GameStatus.DIFFICULTY_SELECT);
   }, [setStatus]);
@@ -247,6 +248,9 @@ const SnakeGame: React.FC = () => {
     handleStartClick
   );
 
+  /* ─────────────────────────────
+     DIFFICULTY / CHARACTER
+     ───────────────────────────── */
   const handleDifficultySelect = useCallback((id: Difficulty) => {
     setDifficulty(id);
     audio.setDifficulty(id); 
@@ -271,6 +275,9 @@ const SnakeGame: React.FC = () => {
       setIsMuted(!!muted);
   }, [setIsMuted]);
 
+  /* ─────────────────────────────
+     RESUME COUNTDOWN
+     ───────────────────────────── */
   useEffect(() => {
     if (status === GameStatus.RESUMING) {
       if (resumeCountdown > 0) {
@@ -285,6 +292,9 @@ const SnakeGame: React.FC = () => {
     }
   }, [status, resumeCountdown, setResumeCountdown, setStatus, game.stageArmedRef]);
 
+  /* ─────────────────────────────
+     STAGE TRANSITION
+     ───────────────────────────── */
   useEffect(() => {
     if (status !== GameStatus.STAGE_TRANSITION) return;
     audio.play('POWER_UP');
@@ -293,6 +303,9 @@ const SnakeGame: React.FC = () => {
   }, [status, stage]);
 
 
+  /* ─────────────────────────────
+     HIGH SCORE PERSISTENCE
+     ───────────────────────────── */
   useEffect(() => {
     if (status === GameStatus.GAME_OVER) {
       if (scoreRef.current > highScore) {
@@ -303,12 +316,17 @@ const SnakeGame: React.FC = () => {
     }
   }, [status, highScore, setHighScore, scoreRef]);
 
+  /* ─────────────────────────────
+     AUTHORITATIVE UPDATE
+     ───────────────────────────── */
   const update = useCallback((dt: number) => {
+    // 1. TIMERS
     if (invulnerabilityTimeRef.current > 0) {
       invulnerabilityTimeRef.current = Math.max(0, invulnerabilityTimeRef.current - dt);
     }
 
-    collisions.updateCollisionLogic(dt); 
+    // 2. SIMULATION
+    collisions.updateCollisionLogic(dt); // Replaced updateTerminals
     spawner.update(dt);
     combat.update(dt); 
     progression.applyPassiveScore(dt);
@@ -320,6 +338,7 @@ const SnakeGame: React.FC = () => {
 
     collisions.checkDynamicCollisions();
 
+    // Snake Movement & Static Collisions
     const newHead = movement.getNextHead(dt);
     if (newHead) {
       const hit = collisions.checkMoveCollisions(newHead);
@@ -329,11 +348,14 @@ const SnakeGame: React.FC = () => {
       }
     }
 
+    // 3. ORCHESTRATION
     stage.cacheBossRef();
     stage.checkStageCompletion();
 
+    // ── REACTIVE AUDIO ──
     music.updateMusic();
 
+    // Discrete Audio Events
     terminalsRef.current.forEach(t => {
         if (t.justDisconnected) {
             audioEventsRef.current.push({ type: 'HACK_LOST' });
@@ -345,6 +367,7 @@ const SnakeGame: React.FC = () => {
         }
     });
 
+    // Audio Event Queue
     if (audioEventsRef.current.length > 0) {
       const events = audioEventsRef.current;
       audioEventsRef.current = []; 
@@ -353,9 +376,11 @@ const SnakeGame: React.FC = () => {
       });
     }
 
+    // 4. FX UPDATE
     fx.tickTranslation(dt);
     fx.updateFX();
 
+    // 5. DEFERRED ENTITY CLEANUP
     spawner.cleanupFood();
     spawner.pruneEnemies();
     
@@ -371,8 +396,14 @@ const SnakeGame: React.FC = () => {
 
   }, [game, music, collisions, spawner, combat, progression, fx, movement, stage]); 
 
+  /* ─────────────────────────────
+     GAME LOOP
+     ───────────────────────────── */
   useGameLoop(game, update, draw);
 
+  /* ─────────────────────────────
+     UI STATE / HELPERS
+     ───────────────────────────── */
   const currentTheme = STAGE_THEMES[((uiStage - 1) % 4) + 1] || STAGE_THEMES[1];
 
   const getComboPct = (now: number, lastEat: number) =>
@@ -393,9 +424,13 @@ const SnakeGame: React.FC = () => {
 
   const activePassives = PASSIVE_CHECK_MAP.filter(p => p.check(game.statsRef.current));
 
+  /* ─────────────────────────────
+     RENDER
+     ───────────────────────────── */
   return (
     <div className={`relative w-full h-full bg-[#050505] flex flex-col items-center justify-center p-2 overflow-hidden selection:bg-cyan-500/30 ${settings.highContrast ? 'contrast-125' : ''}`}>
       
+      {/* ────────────────── TOOLTIP LAYER ────────────────── */}
       {hoveredId && DESCRIPTOR_REGISTRY[hoveredId] && (
           <div className="absolute z-50 pointer-events-none transform -translate-x-1/2 -translate-y-full mb-2 bottom-20 left-1/2 w-64">
               <div className={`bg-gray-900 border border-gray-600 p-3 rounded shadow-2xl relative ${settings.uiScale > 1.2 ? 'scale-125 origin-bottom' : ''}`}>
@@ -411,6 +446,7 @@ const SnakeGame: React.FC = () => {
           </div>
       )}
 
+      {/* ────────────────── SETTINGS MODAL ────────────────── */}
       {modalState === 'SETTINGS' && (
           <div className="absolute inset-0 bg-black/80 z-50 flex items-center justify-center backdrop-blur-sm p-4">
               <div className="bg-gray-900 border border-cyan-900 p-6 w-full max-w-md rounded shadow-[0_0_30px_rgba(0,0,0,0.8)]">
@@ -466,9 +502,14 @@ const SnakeGame: React.FC = () => {
           </div>
       )}
 
-      {/* GLOBAL HUD - REMOVED TRANSFORM SCALE */}
-      <div className="w-full max-w-[800px] flex flex-col items-center">
+      {/* ────────────────── SCALABLE HUD CONTAINER ────────────────── */}
+      <div 
+        style={{ transform: `scale(${settings.uiScale})`, transformOrigin: 'top center' }} 
+        className="w-full max-w-[800px] flex flex-col items-center transition-transform duration-200"
+      >
+          {/* HEADER HUD */}
           <div className="w-full grid grid-cols-12 gap-4 mb-4 items-end relative z-10">
+            {/* LEFT: Score & Combo */}
             <div className="col-span-3 flex flex-col items-start">
               <div className="text-[10px] text-cyan-700 tracking-[0.2em] font-bold mb-1">RUNTIME_METRICS</div>
               <div className="relative group">
@@ -498,7 +539,9 @@ const SnakeGame: React.FC = () => {
               </div>
             </div>
 
+            {/* CENTER: Status & Objectives */}
             <div className="col-span-6 flex flex-col items-center justify-end pb-1">
+               {/* Boss Health Overlay */}
                {bossActive && bossEnemyRef && bossEnemyRef.current ? (
                   <div className="w-full mb-2 animate-in fade-in zoom-in duration-300">
                      <div className="flex justify-between text-[9px] text-red-400 font-bold tracking-widest mb-1 px-1">
@@ -528,6 +571,7 @@ const SnakeGame: React.FC = () => {
                   </div>
                )}
 
+               {/* XP Bar */}
                <div className="w-full max-w-[300px] group relative">
                   <div className="flex justify-between text-[9px] text-gray-500 font-mono mb-0.5 px-0.5 uppercase">
                      <span>Lv.{uiLevel}</span>
@@ -542,10 +586,16 @@ const SnakeGame: React.FC = () => {
                   </div>
                </div>
 
+               {/* Active Buffs Row */}
                <div className="flex gap-2 mt-2 h-5">
                   {uiShield && (
                      <div className="flex items-center gap-1 px-1.5 py-0.5 bg-blue-950/40 border border-blue-500/30 rounded text-[9px] text-blue-300">
                         <span className="text-[10px]">🛡️</span> SHIELD
+                     </div>
+                  )}
+                  {activePowerUps.slow && (
+                     <div className="px-1.5 py-0.5 bg-indigo-950/40 border border-indigo-500/30 rounded text-[9px] text-indigo-300">
+                        CHRONO
                      </div>
                   )}
                   {activePowerUps.magnet && (
@@ -556,6 +606,7 @@ const SnakeGame: React.FC = () => {
                </div>
             </div>
 
+            {/* RIGHT: High Score */}
             <div className="col-span-3 flex flex-col items-end">
                <div className="text-[10px] text-cyan-700 tracking-[0.2em] font-bold mb-1">PEAK_PERFORMANCE</div>
                <div className="text-xl font-mono text-gray-400 mb-2">
@@ -575,7 +626,9 @@ const SnakeGame: React.FC = () => {
           </div>
       </div>
 
+      {/* ────────────────── MAIN CANVAS FRAME ────────────────── */}
       <div className="relative group p-1 bg-gradient-to-b from-gray-800 to-gray-900 rounded-md shadow-[0_0_40px_rgba(0,0,0,0.8)] border border-gray-700 origin-center" style={{ borderColor: currentTheme.wall }}>
+         {/* Decoration Bolts */}
          <div className="absolute top-0 left-0 w-2 h-2 border-l border-t border-cyan-500 m-1"></div>
          <div className="absolute top-0 right-0 w-2 h-2 border-r border-t border-cyan-500 m-1"></div>
          <div className="absolute bottom-0 left-0 w-2 h-2 border-l border-b border-cyan-500 m-1"></div>
@@ -590,6 +643,7 @@ const SnakeGame: React.FC = () => {
          
          <div className="scanlines pointer-events-none rounded opacity-50"></div>
          
+         {/* OVERLAYS */}
          {status === GameStatus.IDLE && (
           <div className="absolute inset-0 bg-black/95 flex flex-col items-center justify-center z-30 backdrop-blur-sm p-6 text-center">
             <h1 className="text-5xl md:text-8xl font-display text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-600 mb-2 drop-shadow-[0_0_15px_rgba(0,255,255,0.4)] text-center tracking-tighter">
@@ -652,6 +706,7 @@ const SnakeGame: React.FC = () => {
                              </div>
                              <p className="text-sm text-gray-400 mb-4 font-mono leading-snug text-left">{char.description}</p>
                              
+                             {/* TRAIT BOX */}
                              <div className="w-full bg-black/40 border border-white/10 p-2 mb-4 rounded text-left">
                                  <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">INTRINSIC TRAIT</div>
                                  <div className="text-xs font-bold text-white mb-0.5">{char.traitName}</div>
@@ -674,176 +729,57 @@ const SnakeGame: React.FC = () => {
              <div className="absolute inset-0 bg-black/95 flex flex-col items-center justify-center z-40 backdrop-blur-lg p-10">
                 <h2 className="text-5xl font-display text-yellow-400 mb-2 animate-pulse tracking-tighter">AUGMENTATION_READY</h2>
                 <p className="text-gray-500 font-mono text-sm mb-12 tracking-widest uppercase">Decryption successful // Choose modification</p>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-6xl items-center">
-                    {upgradeOptions.map((opt, idx) => {
-                        // ─────────────────────────────────────────────
-                        // OVERCLOCK_WEAPON_SLOT: STRICT CONTAINMENT OVERRIDE
-                        // ─────────────────────────────────────────────
-                        if (opt.id === 'OVERCLOCK_WEAPON_SLOT') {
-                            return (
-                                <button
-                                    key={opt.id}
-                                    onClick={() => progression.applyUpgrade(opt.id as UpgradeId, opt.rarity)}
-                                    className="relative flex flex-col h-full min-h-[400px] z-50 bg-black shadow-[0_0_100px_rgba(220,20,60,0.8)] ring-4 ring-red-600/80 transition-all text-left group"
-                                >
-                                    {/* Layer 2: FX (Absolute, Overflow-Visible if needed, but handled by root shadow/ring) */}
-                                    <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0IiBoZWlnaHQ9IjQiPgo8cmVjdCB3aWR0aD0iNCIgaGVpZ2h0PSI0IiBfi49IiMwMDAiIC8+CjxyZWN0IHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9InJnYmEoMjU1LCAwLCAwLCAwLjIpIiIC8+Cjwvc3ZnPg==')] opacity-50 z-0 pointer-events-none"></div>
-                                    <div className="absolute inset-0 bg-gradient-to-b from-red-950/80 via-black to-red-900/60 z-0 animate-pulse pointer-events-none"></div>
-                                    <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-red-600 to-transparent shadow-[0_0_20px_#ff0000] z-10 pointer-events-none"></div>
-                                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-red-600 to-transparent shadow-[0_0_20px_#ff0000] z-10 pointer-events-none"></div>
-
-                                    {/* Layer 3: Content Shell (CLIPPING ENFORCED) */}
-                                    <div className="relative z-20 w-full h-full flex flex-col p-8 justify-between items-center text-center overflow-hidden">
-                                        
-                                        {/* Header */}
-                                        <div className="w-full border-b border-red-600/50 pb-6 mb-4">
-                                            <div className="text-3xl font-black tracking-[0.2em] text-red-500 drop-shadow-[0_0_20px_rgba(255,0,0,0.8)] leading-tight break-words">
-                                                SYSTEM<br/>ALTERATION
-                                            </div>
-                                        </div>
-
-                                        {/* Icon */}
-                                        <div className="text-8xl my-6 filter drop-shadow-[0_0_30px_rgba(255,0,0,0.8)] animate-[bounce_0.5s_infinite]">
-                                            {opt.icon}
-                                        </div>
-
-                                        {/* Title */}
-                                        <h3 className="text-lg font-mono text-red-300 bg-red-950/50 px-4 py-2 rounded border border-red-600/40 mb-4 tracking-widest w-full truncate">
-                                            {opt.title}
-                                        </h3>
-
-                                        {/* Stats */}
-                                        <div className="space-y-2 mb-4 w-full">
-                                            {opt.stats.map((stat, i) => (
-                                                <div key={i} className="text-xl font-bold font-display text-white tracking-widest drop-shadow-md truncate">
-                                                    {stat}
-                                                </div>
-                                            ))}
-                                        </div>
-
-                                        {/* Desc */}
-                                        <p className="text-xs font-mono text-red-500/80 uppercase tracking-[0.2em] w-full animate-pulse line-clamp-3">
-                                            {opt.description}
-                                        </p>
-                                    </div>
-                                    
-                                    {/* Glitch Overlay (Layer 2.5) */}
-                                    <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(18,16,10,0)_50%,rgba(255,0,0,0.1)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(255,0,0,0.02),rgba(255,0,0,0.06))] z-10 bg-[length:100%_4px,3px_100%]"></div>
-                                </button>
-                            );
-                        }
-
-                        return (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-6xl">
+                    {upgradeOptions.map((opt, idx) => (
                         <button 
                             key={opt.id} 
                             onClick={() => progression.applyUpgrade(opt.id as UpgradeId, opt.rarity)} 
-                            className={`flex flex-col h-full relative transition-all text-left group min-h-[400px]
-                                ${RARITY_CONTAINER_STYLES[opt.rarity]} 
-                                ${RARITY_ANIMATION_STYLES[opt.rarity]}
-                            `}
+                            className={`flex flex-col h-full relative overflow-hidden p-0 border-2 transition-all text-left group ${RARITY_STYLES[opt.rarity] || 'border-gray-700 bg-gray-900/80 hover:border-white'}`}
                         >
-                            {/* LEGENDARY STRUCTURAL VIOLATION (CONTAINED) */}
-                            {opt.rarity === 'LEGENDARY' ? (
-                                <>
-                                    {/* Layer 2: FX */}
-                                    <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0IiBoZWlnaHQ9IjQiPgo8cmVjdCB3aWR0aD0iNCIgaGVpZ2h0PSI0IiBfi49IiMwMDAiIC8+CjxyZWN0IHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9InJnYmEoMjU1LCAxNDAsIDAsIDAuMSkiIC8+Cjwvc3ZnPg==')] opacity-50 z-0 pointer-events-none"></div>
-                                    <div className="absolute inset-0 bg-gradient-to-b from-orange-900/20 via-black to-orange-900/40 z-0 pointer-events-none"></div>
-                                    <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-orange-500 to-transparent shadow-[0_0_20px_#ff8c00] z-10 animate-pulse pointer-events-none"></div>
-                                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-orange-500 to-transparent shadow-[0_0_20px_#ff8c00] z-10 animate-pulse pointer-events-none"></div>
+                            {/* Rarity Header Bar */}
+                            <div className="flex justify-between items-center bg-black/40 px-4 py-2 border-b border-inherit">
+                                <div className="text-[10px] font-bold tracking-widest uppercase px-2 py-0.5 rounded bg-black/50 border border-white/10 text-white/90">
+                                    {RARITY_LABELS[opt.rarity]}
+                                </div>
+                                <div className="text-xs font-bold text-gray-500 font-mono group-hover:text-white transition-colors">{idx+1}</div>
+                            </div>
 
-                                    {/* Layer 3: Content Shell (CLIPPING ENFORCED) */}
-                                    <div className="relative z-20 w-full h-full flex flex-col p-8 justify-between items-center text-center overflow-hidden">
-                                        
-                                        <div className="w-full border-b border-orange-500/30 pb-4 mb-4">
-                                            <div className={RARITY_LABEL_STYLES['LEGENDARY']}>
-                                                SYSTEM<br/>ALTERATION
+                            {/* Content Body */}
+                            <div className="flex flex-col p-6 h-full">
+                                {/* Title & Icon */}
+                                <div className="flex items-center gap-4 mb-6">
+                                    <div className="text-4xl filter drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]">{opt.icon}</div>
+                                    <h3 className={`text-2xl font-bold font-display leading-none ${opt.color}`}>{opt.title}</h3>
+                                </div>
+
+                                {/* Dedicated Stat Zone */}
+                                {opt.stats && opt.stats.length > 0 && (
+                                    <div className="flex flex-col gap-1 mb-6">
+                                        {opt.stats.map((stat, i) => (
+                                            <div key={i} className={`text-lg font-bold font-mono tracking-wide ${RARITY_TEXT_COLORS[opt.rarity] || 'text-gray-200'}`}>
+                                                {stat}
                                             </div>
-                                        </div>
-
-                                        <div className="text-8xl my-6 filter drop-shadow-[0_0_30px_rgba(255,140,0,0.6)] animate-[bounce_3s_infinite]">
-                                            {opt.icon}
-                                        </div>
-
-                                        <h3 className="text-xl font-mono text-orange-300 bg-orange-900/30 px-6 py-2 rounded-full border border-orange-500/40 mb-4 w-full truncate">
-                                            {opt.title}
-                                        </h3>
-
-                                        <div className="space-y-2 mb-4 w-full">
-                                            {Array.isArray(opt.stats) && opt.stats.map((stat, i) => (
-                                                <div key={i} className="text-lg font-bold font-display text-white tracking-widest drop-shadow-md truncate">
-                                                    {stat}
-                                                </div>
-                                            ))}
-                                        </div>
-
-                                        <p className="text-xs font-mono text-orange-400/60 uppercase tracking-[0.2em] w-full line-clamp-3">
-                                            {opt.description}
-                                        </p>
+                                        ))}
                                     </div>
-                                    
-                                    <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(18,16,10,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] z-10 bg-[length:100%_2px,3px_100%]"></div>
-                                </>
-                            ) : (
-                                /* STANDARD LAYOUT (Common -> Ultra Rare) */
-                                <>
-                                    {/* Layer 2: FX (Ultra Rare Only) */}
-                                    {opt.rarity === 'ULTRA_RARE' && (
-                                        <>
-                                            <div className="absolute inset-0 bg-gradient-to-t from-purple-900/20 to-transparent opacity-30 pointer-events-none mix-blend-overlay"></div>
-                                            <div className="absolute -inset-full bg-gradient-to-tr from-transparent via-purple-500/10 to-transparent rotate-45 animate-[pulse_4s_linear_infinite] pointer-events-none"></div>
-                                        </>
-                                    )}
+                                )}
 
-                                    {/* Layer 3: Content Shell (CLIPPING ENFORCED) */}
-                                    <div className="relative z-10 w-full h-full flex flex-col overflow-hidden">
-                                        <div className={`flex justify-between items-center border-b border-inherit px-4 
-                                            ${HIGH_TIER_RARITIES.includes(opt.rarity) ? 'py-4 bg-black/60' : 'py-2 bg-black/40'}
-                                        `}>
-                                            <div className={`text-[10px] uppercase rounded border flex items-center justify-center
-                                                ${RARITY_LABEL_STYLES[opt.rarity]}
-                                                ${HIGH_TIER_RARITIES.includes(opt.rarity) ? 'px-3 py-1 text-xs' : 'px-2 py-0.5'}
-                                            `}>
-                                                {RARITY_LABELS[opt.rarity]}
-                                            </div>
-                                            <div className="text-xs font-bold text-gray-500 font-mono group-hover:text-white transition-colors">{idx+1}</div>
-                                        </div>
-
-                                        <div className="flex flex-col p-6 h-full">
-                                            <div className="flex items-center gap-4 mb-6">
-                                                <div className={`text-4xl filter drop-shadow-[0_0_8px_rgba(255,255,255,0.3)] 
-                                                    ${HIGH_TIER_RARITIES.includes(opt.rarity) ? 'scale-125' : ''}
-                                                `}>{opt.icon}</div>
-                                                <h3 className={`text-2xl font-bold font-display leading-none ${opt.color}
-                                                    ${HIGH_TIER_RARITIES.includes(opt.rarity) ? 'text-3xl tracking-wide drop-shadow-md' : ''}
-                                                    line-clamp-2
-                                                `}>{opt.title}</h3>
-                                            </div>
-
-                                            {opt.stats && opt.stats.length > 0 && (
-                                                <div className="flex flex-col gap-1 mb-6">
-                                                    {opt.stats.map((stat, i) => (
-                                                        <div key={i} className={`text-lg font-bold font-mono tracking-wide truncate ${RARITY_TEXT_COLORS[opt.rarity] || 'text-gray-200'}`}>
-                                                            {stat}
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-
-                                            <div className="mt-auto pt-4 border-t border-white/5">
-                                                <p className={`font-mono leading-relaxed text-gray-400 line-clamp-3
-                                                    ${HIGH_TIER_RARITIES.includes(opt.rarity) ? 'text-base font-bold text-gray-300' : 'text-sm'}
-                                                `}>{opt.description}</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </>
+                                {/* Description (Pushed to bottom) */}
+                                <div className="mt-auto pt-4 border-t border-white/5">
+                                    <p className="text-sm text-gray-400 font-mono leading-relaxed">{opt.description}</p>
+                                </div>
+                            </div>
+                            
+                            {/* Rarity Flare Overlay */}
+                            {(opt.rarity === 'MEGA_RARE' || opt.rarity === 'OVERCLOCKED') && (
+                                <div className="absolute inset-0 bg-gradient-to-t from-white/5 to-transparent pointer-events-none animate-pulse"></div>
                             )}
                         </button>
-                    )})}
+                    ))}
                 </div>
              </div>
         )}
 
+        {/* PAUSE MODAL - REPLACES SETTINGS */}
         {modalState === 'PAUSE' && status === GameStatus.PAUSED && (
             <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-50 backdrop-blur-sm">
                 <div className="text-5xl font-display text-white tracking-[0.5em] animate-pulse border-4 border-white p-8">SUSPENDED</div>
@@ -885,9 +821,12 @@ const SnakeGame: React.FC = () => {
         )}
       </div>
 
+      {/* ────────────────── HUD BOTTOM STRIP (SCALABLE) ────────────────── */}
       <div 
+        style={{ transform: `scale(${settings.uiScale})`, transformOrigin: 'top center' }}
         className="w-full max-w-[800px] mt-2 flex flex-col gap-2 transition-transform duration-200"
       >
+          {/* WEAPON LOADOUT */}
           <div className="w-full flex gap-2">
             {Array.from({ length: Math.max(1, game.statsRef.current.maxWeaponSlots || 3) }).map((_, i) => {
                 const weaponId = game.statsRef.current.activeWeaponIds[i];
@@ -925,6 +864,7 @@ const SnakeGame: React.FC = () => {
             })}
           </div>
 
+          {/* PASSIVE UPGRADE STRIP */}
           {activePassives.length > 0 && (
               <div className="w-full flex flex-wrap gap-2 items-center justify-center bg-gray-950/50 p-1.5 rounded border-t border-gray-800">
                   <div className="text-[9px] text-gray-600 font-mono tracking-widest mr-2">SYSTEM_MODS //</div>
@@ -950,7 +890,9 @@ const SnakeGame: React.FC = () => {
           )}
       </div>
 
+      {/* ────────────────── MOBILE CONTROLS (CONDITIONAL) ────────────────── */}
       <div className="w-full max-w-[400px] mt-6 grid grid-cols-3 gap-3 md:hidden h-40 select-none">
+          {/* Enhanced Mobile Buttons */}
           <div className="col-start-2 bg-gradient-to-b from-gray-800 to-gray-900 rounded-lg border-b-4 border-gray-950 active:border-b-0 active:translate-y-1 transition-all flex items-center justify-center shadow-lg active:bg-cyan-900/30" onPointerDown={(e) => { e.preventDefault(); handleMobileControl(Direction.UP); }}> 
             <span className="text-2xl text-cyan-400">▲</span> 
           </div>
@@ -968,6 +910,7 @@ const SnakeGame: React.FC = () => {
           </div>
       </div>
 
+      {/* ────────────────── DESKTOP CONTROLS FOOTER ────────────────── */}
       <div className="mt-6 hidden md:flex w-full max-w-[800px] justify-between items-center text-[10px] text-gray-500 font-mono border-t border-gray-800/50 pt-4">
           
           <div className="flex gap-6">

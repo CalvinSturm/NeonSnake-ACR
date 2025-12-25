@@ -83,6 +83,7 @@ export interface WeaponStats {
 
 export interface UpgradeStats {
   weapon: WeaponStats;
+  slowDurationMod: number;
   magnetRangeMod: number;
   shieldActive: boolean;
   scoreMultiplier: number;
@@ -105,8 +106,8 @@ export interface CharacterProfile {
   id: string;
   name: string;
   description: string;
-  traitName: string; 
-  traitDescription: string;
+  traitName: string; // NEW: Display name for intrinsic trait
+  traitDescription: string; // NEW: Description of the trait
   color: string;
   tag: 'STABLE' | 'ADAPTIVE' | 'VOLATILE';
   payoff: string;
@@ -273,7 +274,7 @@ export type AudioEvent =
   | 'ENEMY_DESTROY' | 'HACK_LOST' | 'HACK_COMPLETE' | 'ENEMY_SPAWN' | 'COMPRESS';
 
 export type UpgradeCategory = 'WEAPON' | 'DEFENSE' | 'UTILITY' | 'SYSTEM' | 'HACKING' | 'MOBILITY' | 'THREAT' | 'ECONOMY' | 'REACTIVE' | 'SCALAR';
-export type UpgradeRarity = 'COMMON' | 'UNCOMMON' | 'RARE' | 'ULTRA_RARE' | 'LEGENDARY';
+export type UpgradeRarity = 'COMMON' | 'UNCOMMON' | 'RARE' | 'ULTRA_RARE' | 'MEGA_RARE' | 'LEGENDARY' | 'OVERCLOCKED';
 
 export interface UpgradeOption {
   id: string;
@@ -284,7 +285,7 @@ export interface UpgradeOption {
   rarity: UpgradeRarity;
   icon: string;
   isNewWeapon?: boolean;
-  stats: string[];
+  stats: string[]; // NEW: Structured data for UI visualization
 }
 
 export interface AudioRequest {

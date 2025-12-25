@@ -22,6 +22,20 @@ const createOption = (id: UpgradeId, rarity: UpgradeRarity): UpgradeOption => {
         };
     }
 
+    // SPECIAL EXCEPTION: OVERCLOCKED
+    if (id === 'OVERCLOCK' && rarity === 'OVERCLOCKED') {
+        return {
+            id: desc.id,
+            title: 'OVERCLOCK // BREAK',
+            description: desc.description,
+            color: 'text-red-500',
+            category: desc.category,
+            rarity,
+            icon: desc.icon,
+            stats: ['+1 WEAPON SLOT', 'UNSANCTIONED']
+        };
+    }
+
     const mod = RARITY_MULTIPLIERS[rarity] || 1.0;
     const stats: string[] = [];
 
@@ -45,10 +59,6 @@ const createOption = (id: UpgradeId, rarity: UpgradeRarity): UpgradeOption => {
             break;
         case 'TERMINAL_PROTOCOL':
             stats.push(`${formatPct(UPGRADE_BASES.HACK_SPEED * mod)} Hack Speed`);
-            break;
-        case 'OVERCLOCK_WEAPON_SLOT':
-            stats.push(`+1 WEAPON SLOT`);
-            stats.push(`SYSTEM BREAK`);
             break;
         
         // WEAPONS
@@ -116,7 +126,7 @@ export const UPGRADE_DEFINITIONS: Record<string, (context: UpgradeContext, rarit
   OVERCLOCK: (c, r) => createOption('OVERCLOCK', r),
   ECHO_CACHE: (c, r) => createOption('ECHO_CACHE', r),
   TERMINAL_PROTOCOL: (c, r) => createOption('TERMINAL_PROTOCOL', r),
-  OVERCLOCK_WEAPON_SLOT: (c, r) => createOption('OVERCLOCK_WEAPON_SLOT', r),
+  OVERRIDE_PROTOCOL: (c, r) => createOption('OVERRIDE_PROTOCOL', r),
   SCALAR_DAMAGE: (c, r) => createOption('SCALAR_DAMAGE', r),
   SCALAR_FIRE_RATE: (c, r) => createOption('SCALAR_FIRE_RATE', r),
   SCALAR_AREA: (c, r) => createOption('SCALAR_AREA', r)

@@ -30,24 +30,29 @@ export function useCollisions(
     statsRef,
     terminalsHackedRef,
     invulnerabilityTimeRef,
-    powerUpsRef, 
+    powerUpsRef, // Use REF, not state, to avoid stale closures in frozen loops
     ghostCoilCooldownRef,
     tailIntegrityRef, 
     chromaticAberrationRef,
-    traitsRef 
+    traitsRef // NEW: Access traits via Resolver
   } = game;
 
   const { createParticles, triggerShake, spawnFloatingText, triggerShockwave, triggerLightning } = fx;
   const { onTerminalHacked, onFoodConsumed } = progression;
-  const { damageEnemy } = combat; 
+  const { damageEnemy } = combat; // Import combat function for reactive damage
 
+  // NEW: Track lethal overlapping frames per enemy ID for "Confirmation" logic
   const collisionCandidatesRef = useRef<Record<string, number>>({});
 
+  // NEW: Update loop for collision-related logic (Regeneration)
   const updateCollisionLogic = useCallback((dt: number) => {
+      // 1. Regenerate Tail Integrity
+      // +15% per second (Full regen in ~7s)
       if (tailIntegrityRef.current < 100) {
           tailIntegrityRef.current = Math.min(100, tailIntegrityRef.current + (dt / 1000) * 15);
       }
       
+      // 2. Terminals Logic
       const head = snakeRef.current[0];
       if (!head) return;
 
@@ -79,9 +84,12 @@ export function useCollisions(
 
           if (t.progress >= t.totalTime) {
             
+            // 🔒 REWARD DELEGATION
+            // Call central handler with type. No food spawning allowed here.
             onTerminalHacked(t.type);
             terminalsHackedRef.current += 1;
 
+            // 🎨 VISUAL FX (Local Responsibility)
             if (t.type === 'OVERRIDE') {
                 const boss = enemiesRef.current.find(e => e.type === EnemyType.BOSS);
                 if (boss) {
@@ -101,6 +109,7 @@ export function useCollisions(
                     });
                 }
             } else {
+                // RESOURCE Terminal FX
                 const xpAmount = Math.floor(300 * statsRef.current.hackSpeedMod);
                 spawnFloatingText(
                     t.x * DEFAULT_SETTINGS.gridSize, 
@@ -133,7 +142,9 @@ export function useCollisions(
       }
   }, [snakeRef, terminalsRef, terminalsHackedRef, tailIntegrityRef, gameTimeRef, statsRef, createParticles, triggerShake, spawnFloatingText, triggerShockwave, onTerminalHacked, enemiesRef]);
 
+  // 1. Move Collisions (Walls, Self, Shield)
   const checkMoveCollisions = useCallback((head: Point): boolean => {
+    // Wall Collision Logic
     if (
       head.x < 0 || head.x >= GRID_COLS ||
       head.y < 0 || head.y >= GRID_ROWS ||
@@ -163,6 +174,7 @@ export function useCollisions(
       return true;
     }
 
+    // Self Collision
     for (let i = 0; i < snakeRef.current.length - 1; i++) {
       const segment = snakeRef.current[i];
       if (head.x === segment.x && head.y === segment.y) {
@@ -191,10 +203,12 @@ export function useCollisions(
     audioEventsRef, setStatus, failureMessageRef, invulnerabilityTimeRef
   ]);
 
+  // 2. Dynamic Collisions (Enemies, Projectiles)
   const checkDynamicCollisions = useCallback(() => {
     const head = snakeRef.current[0];
     if (!head) return;
     
+    // Safety check: Clear overlap candidates if invulnerable to prevent latching
     if (invulnerabilityTimeRef.current > 0) {
         collisionCandidatesRef.current = {};
         return;
@@ -202,7 +216,7 @@ export function useCollisions(
 
     const now = gameTimeRef.current;
     const neck = snakeRef.current[1] || head;
-    const traits = traitsRef.current; 
+    const traits = traitsRef.current; // Access traits
 
     const distToSegment = (p: Point, a: Point, b: Point) => {
         const l2 = (a.x - b.x)**2 + (a.y - b.y)**2;
@@ -212,9 +226,11 @@ export function useCollisions(
         return Math.hypot(p.x - (a.x + t * (b.x - a.x)), p.y - (a.y + t * (b.y - a.y)));
     };
 
+    // Snake vs Enemies (Head Contact = Death)
     const lethalHitThreshold = COLLISION_CONFIG.PLAYER_HEAD_RADIUS + COLLISION_CONFIG.ENEMY_RADIUS;
     const proximityThreshold = lethalHitThreshold + COLLISION_CONFIG.PROXIMITY_BUFFER;
     
+    // Set of enemies currently overlapping lethal zone this frame
     const currentLethalOverlaps = new Set<string>();
 
     for (const enemy of enemiesRef.current) {
@@ -223,30 +239,39 @@ export function useCollisions(
         
         const dist = distToSegment(enemy, head, neck);
         
+        // 1. Proximity Check (Visual Warning Zone)
         if (dist < proximityThreshold && dist >= lethalHitThreshold) {
+             // Reset lethal counter since we are safe but close
              delete collisionCandidatesRef.current[enemy.id];
              
+             // Trigger visual tension (micro shake)
              if (Math.random() < 0.3) {
                  triggerShake(1, 1);
              }
-             continue; 
+             continue; // Safe for now
         }
 
+        // 2. Lethal Check (Confirmation Logic)
         if (dist < lethalHitThreshold) {
             currentLethalOverlaps.add(enemy.id);
             
+            // Increment frame counter
             const currentFrames = (collisionCandidatesRef.current[enemy.id] || 0) + 1;
             collisionCandidatesRef.current[enemy.id] = currentFrames;
 
+            // HIT CONFIRMED
             if (currentFrames >= COLLISION_CONFIG.CONFIRMATION_FRAMES) {
+                // Reset candidates on hit to prevent double-triggering
                 collisionCandidatesRef.current = {};
 
+                // TRAIT: PHANTOM DRIFT (Spectre)
                 if (traits.collisionDodgeChance > 0 && Math.random() < traits.collisionDodgeChance) {
                     invulnerabilityTimeRef.current = 500;
                     spawnFloatingText(head.x * DEFAULT_SETTINGS.gridSize, head.y * DEFAULT_SETTINGS.gridSize, "DODGE", '#00ffcc', 14);
                     return;
                 }
 
+                // GHOST COIL
                 if (statsRef.current.weapon.ghostCoilLevel > 0 && now > ghostCoilCooldownRef.current) {
                     ghostCoilCooldownRef.current = now + 10000;
                     invulnerabilityTimeRef.current = 1500;
@@ -257,6 +282,7 @@ export function useCollisions(
                     return;
                 }
 
+                // SHIELD
                 if (statsRef.current.shieldActive) {
                     statsRef.current.shieldActive = false;
                     setUiShield(false);
@@ -275,12 +301,14 @@ export function useCollisions(
         }
     }
 
+    // Prune candidates that are no longer overlapping the lethal zone
     for (const id in collisionCandidatesRef.current) {
         if (!currentLethalOverlaps.has(id)) {
             delete collisionCandidatesRef.current[id];
         }
     }
 
+    // TAIL COLLISION LOGIC (Physical Blocking)
     if (snakeRef.current.length > 1 && tailIntegrityRef.current > 0) {
         for (const enemy of enemiesRef.current) {
             if (enemy.hp <= 0 || enemy.state !== 'ACTIVE') continue;
@@ -288,6 +316,7 @@ export function useCollisions(
             let nearestSeg: Point | null = null;
             let minDist = Infinity;
 
+            // Find closest tail segment
             for (let i = 1; i < snakeRef.current.length; i++) {
                 const seg = snakeRef.current[i];
                 const dx = enemy.x - seg.x;
@@ -302,13 +331,15 @@ export function useCollisions(
             }
 
             if (nearestSeg && minDist < 0.8) {
+                // COLLISION RESOLVED
                 
+                // 1. Calculate Damage to Integrity
                 let integrityDmg = 20;
                 let pushStrength = 0.5;
                 let stunTime = 200;
 
                 if (enemy.type === EnemyType.BOSS) {
-                    integrityDmg = 100; 
+                    integrityDmg = 100; // Instantly break
                     pushStrength = 0; 
                     stunTime = 0;
                 } else if (enemy.type === EnemyType.DASHER) {
@@ -319,10 +350,12 @@ export function useCollisions(
                     integrityDmg = 30;
                 }
 
+                // TRAIT: COMPOSITE ARMOR (Bulwark)
                 integrityDmg *= traits.tailIntegrityDamageMod;
 
                 tailIntegrityRef.current = Math.max(0, tailIntegrityRef.current - integrityDmg);
 
+                // TRAIT: REACTIVE VOLTAGE (Volt)
                 if (traits.reactiveLightningChance > 0 && Math.random() < traits.reactiveLightningChance) {
                     damageEnemy(enemy, 25, false, false);
                     triggerLightning({
@@ -336,6 +369,7 @@ export function useCollisions(
                     });
                 }
 
+                // 2. Apply Physical Pushback (Recoil)
                 if (pushStrength > 0) {
                     const dx = enemy.x - nearestSeg.x;
                     const dy = enemy.y - nearestSeg.y;
@@ -352,10 +386,12 @@ export function useCollisions(
                     }
                 }
 
+                // 3. Stun
                 if (stunTime > 0) {
                     enemy.stunTimer = stunTime;
                 }
 
+                // 4. FX
                 createParticles(enemy.x, enemy.y, '#ffffff', 4);
                 
                 if (tailIntegrityRef.current <= 0) {
@@ -369,6 +405,7 @@ export function useCollisions(
         }
     }
 
+    // Snake vs Projectiles
     const projectileHitThreshold = COLLISION_CONFIG.PLAYER_HEAD_RADIUS + COLLISION_CONFIG.PROJECTILE_RADIUS;
 
     for (const p of projectilesRef.current) {

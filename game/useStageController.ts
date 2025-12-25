@@ -1,4 +1,3 @@
-/// <reference types="vite/client" />
 
 import { useCallback, useMemo } from 'react';
 import { useGameState } from './useGameState';
@@ -125,7 +124,7 @@ export function useStageController(
 
   const advanceStage = useCallback(() => {
     // 🛡️ DEV-ONLY INVARIANT: Stats Reference Integrity
-    if (import.meta.env.DEV) {
+    if (process.env.NODE_ENV !== 'production') {
         if (!statsRef.current || !statsRef.current.activeWeaponIds) {
             console.error("CRITICAL: Stats reference lost or corrupted during stage transition!");
         }

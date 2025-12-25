@@ -1,8 +1,8 @@
 
 import { useRef, useCallback } from 'react';
 import { useGameState } from './useGameState';
+import { audio } from '../utils/audio';
 import { GameStatus } from '../types';
-import { audio } from './audio';
 
 export function useMusic(game: ReturnType<typeof useGameState>) {
   const { 
@@ -80,4 +80,3 @@ export function useMusic(game: ReturnType<typeof useGameState>) {
 
   return { updateMusic };
 }
-
