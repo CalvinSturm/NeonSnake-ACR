@@ -24,7 +24,6 @@ import {
   TRANSITION_DURATION,
   COMBO_DECAY_DURATION
 } from '../constants';
-import { audio } from '../utils/audio';
 import { formatTime, getThreatLevel } from '../game/gameUtils';
 import { DESCRIPTOR_REGISTRY } from '../game/descriptors';
 
@@ -207,11 +206,6 @@ const SnakeGame: React.FC = () => {
       audio.onBar(() => fx.pulseBar());
       return () => audio.clearCallbacks();
   }, [fx]);
-
-  useEffect(() => {
-      audio.setMusicVolume(settings.musicVolume);
-      audio.setSfxVolume(settings.sfxVolume);
-  }, [settings.musicVolume, settings.sfxVolume]);
 
   useEffect(() => {
       switch (status) {
