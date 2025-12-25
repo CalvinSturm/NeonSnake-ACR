@@ -1,0 +1,5 @@
+{
+  "name": "worker-name",
+  "compatibility_date": "2025-12-25",
+  "main": "src/index.ts"  // Replace with the path to your Worker script
+}
