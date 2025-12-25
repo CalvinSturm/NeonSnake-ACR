@@ -3,7 +3,7 @@ import { useCallback, RefObject } from 'react';
 import { useGameState } from './useGameState';
 import { DEFAULT_SETTINGS, COLORS, GRID_COLS, GRID_ROWS, CANVAS_WIDTH, CANVAS_HEIGHT } from '../constants';
 import { FoodType, EnemyType, GameStatus, Direction, Point } from '../types';
-import { audio } from '../utils/audio';
+import { audio } from './audio';
 
 // ─────────────────────────────
 // TYPES & CONTEXT

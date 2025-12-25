@@ -102,10 +102,6 @@ const SnakeGame = () => {
         return () => audio.clearCallbacks();
     }, [fx]);
     useEffect(() => {
-        audio.setMusicVolume(settings.musicVolume);
-        audio.setSfxVolume(settings.sfxVolume);
-    }, [settings.musicVolume, settings.sfxVolume]);
-    useEffect(() => {
         switch (status) {
             case GameStatus.DIFFICULTY_SELECT:
                 audio.resume();

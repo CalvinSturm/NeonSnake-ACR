@@ -19,7 +19,7 @@ import {
   XP_BASE_MAGNET_RADIUS
 } from '../constants';
 import { useSpawner } from './useSpawner';
-import { audio } from '../utils/audio';
+import { audio } from '../game/audio';
 
 export function useMovement(
   game: ReturnType<typeof useGameState>,

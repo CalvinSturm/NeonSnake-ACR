@@ -26,6 +26,7 @@ import {
 } from '../constants';
 import { formatTime, getThreatLevel } from '../game/gameUtils';
 import { DESCRIPTOR_REGISTRY } from '../game/descriptors';
+import { audio } from '../game/audio';
 
 const WEAPON_STAT_MAP: Record<string, keyof WeaponStats> = {
   CANNON: 'cannonLevel',
