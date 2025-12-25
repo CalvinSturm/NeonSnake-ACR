@@ -1,5 +1,5 @@
 
-import { AudioEvent, Difficulty } from './types';
+import { AudioEvent, Difficulty } from '../types';
 
 // 🎹 D Dorian Harmonic Foundation
 const ROOT_FREQ = 146.83; // D3
