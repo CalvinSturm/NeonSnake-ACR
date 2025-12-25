@@ -207,6 +207,11 @@ const SnakeGame: React.FC = () => {
       audio.onBar(() => fx.pulseBar());
       return () => audio.clearCallbacks();
   }, [fx]);
+  
+  useEffect(() => {
+      audio.setMusicVolume(settings.musicVolume);
+      audio.setSfxVolume(settings.sfxVolume);
+  }, [settings.musicVolume, settings.sfxVolume]);
 
   useEffect(() => {
       switch (status) {
@@ -764,7 +769,7 @@ const SnakeGame: React.FC = () => {
                                         </h3>
 
                                         <div className="space-y-2 mb-4 w-full">
-                                            {opt.stats.map((stat, i) => (
+                                            {Array.isArray(opt.stats) && opt.stats.map((stat, i) => (
                                                 <div key={i} className="text-lg font-bold font-display text-white tracking-widest drop-shadow-md truncate">
                                                     {stat}
                                                 </div>
