@@ -32,7 +32,8 @@ export function useFX(game: ReturnType<typeof useGameState>) {
     lightningArcsRef,
     shakeRef,
     digitalRainRef,
-    chromaticAberrationRef
+    chromaticAberrationRef,
+    settings // Access settings
   } = game;
 
   // ─────────────────────────────────────────────
@@ -42,12 +43,20 @@ export function useFX(game: ReturnType<typeof useGameState>) {
   const velocityRef = useRef({ x: 0, y: 0 });
 
   const triggerShake = useCallback((x: number, y: number) => {
-    // Camera shake disabled by request
-  }, []);
+    // Only apply shake if enabled in settings
+    if (settings.screenShake) {
+        shakeRef.current.x += (Math.random() - 0.5) * x;
+        shakeRef.current.y += (Math.random() - 0.5) * y;
+    }
+  }, [shakeRef, settings.screenShake]);
 
   const tickTranslation = useCallback((dt: number) => {
-    // Ensure shake remains zeroed
-    shakeRef.current = { x: 0, y: 0 };
+    // Simple decay
+    shakeRef.current.x *= 0.9;
+    shakeRef.current.y *= 0.9;
+    
+    if (Math.abs(shakeRef.current.x) < 0.5) shakeRef.current.x = 0;
+    if (Math.abs(shakeRef.current.y) < 0.5) shakeRef.current.y = 0;
   }, [shakeRef]);
 
   // ─────────────────────────────────────────────
@@ -55,13 +64,17 @@ export function useFX(game: ReturnType<typeof useGameState>) {
   // ─────────────────────────────────────────────
   const pulseBeat = useCallback(() => {
       // Small chromatic bump on every beat
-      chromaticAberrationRef.current = 0.4; 
-  }, [chromaticAberrationRef]);
+      if (settings.fxIntensity > 0.5) {
+          chromaticAberrationRef.current = 0.4 * settings.fxIntensity; 
+      }
+  }, [chromaticAberrationRef, settings.fxIntensity]);
 
   const pulseBar = useCallback(() => {
       // Large chromatic slam on bar start
-      chromaticAberrationRef.current = 1.2;
-  }, [chromaticAberrationRef]);
+      if (settings.fxIntensity > 0.5) {
+          chromaticAberrationRef.current = 1.2 * settings.fxIntensity;
+      }
+  }, [chromaticAberrationRef, settings.fxIntensity]);
 
   // ─────────────────────────────────────────────
   // FX EMITTERS
@@ -81,10 +94,14 @@ export function useFX(game: ReturnType<typeof useGameState>) {
 
   const createParticles = useCallback(
     (x: number, y: number, color: string, count = 12) => {
+      // Scale count by FX intensity setting
+      const adjustedCount = Math.floor(count * settings.fxIntensity);
+      if (adjustedCount <= 0) return;
+
       const available = FX_LIMITS.particles - particlesRef.current.length;
       if (available <= 0) return;
       
-      const spawnCount = Math.min(count, available);
+      const spawnCount = Math.min(adjustedCount, available);
       
       for (let i = 0; i < spawnCount; i++) {
         particlesRef.current.push({
@@ -98,7 +115,7 @@ export function useFX(game: ReturnType<typeof useGameState>) {
           
       }
     },
-    [particlesRef]
+    [particlesRef, settings.fxIntensity]
   );
 
   const triggerShockwave = useCallback(
@@ -115,6 +132,8 @@ export function useFX(game: ReturnType<typeof useGameState>) {
   // DIGITAL RAIN (FULLSCREEN FX)
   // ─────────────────────────────────────────────
   const initDigitalRain = useCallback(() => {
+      if (settings.fxIntensity < 0.2) return; // Optimization for low FX
+
       digitalRainRef.current = [];
       const fontSize = 16;
       const columns = Math.ceil(CANVAS_WIDTH / fontSize);
@@ -128,12 +147,14 @@ export function useFX(game: ReturnType<typeof useGameState>) {
               speed: 5 + Math.random() * 15,
               chars: katakana.charAt(Math.floor(Math.random() * katakana.length)),
               size: fontSize,
-              opacity: 0.1 + Math.random() * 0.5
+              opacity: (0.1 + Math.random() * 0.5) * settings.fxIntensity
           });
       }
-  }, [digitalRainRef]);
+  }, [digitalRainRef, settings.fxIntensity]);
 
   const updateDigitalRain = useCallback(() => {
+      if (digitalRainRef.current.length === 0) return;
+      
       digitalRainRef.current.forEach(drop => {
           drop.y += drop.speed;
           if (Math.random() < 0.05) {

@@ -187,6 +187,8 @@ class MusicEngine {
   private layers: Record<string, GainNode> = {};
   public isMuted: boolean = false;
   private baseVolume: number = 0.3;
+  private musicVolume: number = 0.3;
+  private sfxVolume: number = 0.4;
   
   // 🧠 State
   private bpm: number = 132;
@@ -227,9 +229,11 @@ class MusicEngine {
       this.masterGain.connect(this.ctx.destination);
 
       this.sfxGain = this.ctx.createGain();
+      this.sfxGain.gain.value = this.sfxVolume;
       this.sfxGain.connect(this.masterGain);
 
       this.musicGain = this.ctx.createGain();
+      this.musicGain.gain.value = this.musicVolume;
       this.musicGain.connect(this.masterGain);
       
       ['bass', 'drums', 'lead', 'pad', 'arp'].forEach(layer => {
@@ -269,6 +273,20 @@ class MusicEngine {
     }
   }
 
+  public setMusicVolume(vol: number) {
+      this.musicVolume = Math.max(0, Math.min(1, vol));
+      if (this.musicGain && this.ctx) {
+          this.musicGain.gain.setTargetAtTime(this.musicVolume, this.ctx.currentTime, 0.1);
+      }
+  }
+
+  public setSfxVolume(vol: number) {
+      this.sfxVolume = Math.max(0, Math.min(1, vol));
+      if (this.sfxGain && this.ctx) {
+          this.sfxGain.gain.setTargetAtTime(this.sfxVolume, this.ctx.currentTime, 0.1);
+      }
+  }
+
   public toggleMute() {
       if (!this.ctx || !this.masterGain) return;
       this.isMuted = !this.isMuted;
@@ -280,6 +298,10 @@ class MusicEngine {
           this.masterGain.gain.setTargetAtTime(this.baseVolume, this.ctx.currentTime, 0.1);
       }
       return this.isMuted;
+  }
+
+  public getBpm() {
+      return this.bpm;
   }
 
   public resume() {

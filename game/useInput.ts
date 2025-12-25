@@ -1,39 +1,12 @@
 
-/**
- * ARCHITECTURE LOCK:
- *
- * useInput is an INTENT CAPTURE system.
- *
- * It may:
- * - Translate player input into intents
- * - Route intents to authoritative systems
- * - Gate input based on GameStatus
- *
- * It must NOT:
- * - Mutate game simulation state directly
- * - Decide game flow transitions
- * - Apply upgrades or progression itself
- *
- * All state mutation must occur in owned systems.
- */
-
-/**
- * ARCHITECTURE LOCK:
- *
- * useInput is an INTENT CAPTURE system.
- */
-
 import { useEffect, useCallback } from 'react';
 import { Direction, GameStatus, UpgradeOption } from '../types';
 import { useGameState } from './useGameState';
-import { useTransitions } from './useTransitions';
 import { UpgradeId } from '../upgrades/types';
 
 export function useInput(
   game: ReturnType<typeof useGameState>,
   applyUpgrade: (id: UpgradeId) => void,
-  triggerSystemShock: () => void,
-  triggerChronoSurge: () => void,
   handleStartClick: () => void
 ) {
   const {
@@ -41,15 +14,18 @@ export function useInput(
     setStatus,
     directionRef,
     directionQueueRef,
-    upgradeOptions
+    upgradeOptions,
+    modalState,
+    togglePause,
+    closeSettings,
+    setResumeCountdown
   } = game;
 
-  // Explicit local typing (does NOT fix id by itself)
   const upgrades = upgradeOptions as UpgradeOption[];
 
-  const transitions = useTransitions(game);
-
   const handleInput = useCallback((newDir: Direction) => {
+    if (modalState !== 'NONE') return;
+
     const lastDir =
       directionQueueRef.current.length > 0
         ? directionQueueRef.current[directionQueueRef.current.length - 1]
@@ -66,33 +42,29 @@ export function useInput(
         directionQueueRef.current.push(newDir);
       }
     }
-  }, [directionRef, directionQueueRef]);
+  }, [directionRef, directionQueueRef, modalState]);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    // 1. RESUME SKIP
-    if (status === GameStatus.RESUMING) {
-       if (e.key === ' ' || e.key === 'Enter') {
-           game.setResumeCountdown(0);
-           setStatus(GameStatus.PLAYING);
-       }
-       return;
+    if (modalState === 'SETTINGS') {
+        if (e.key === 'Escape') {
+            closeSettings();
+        }
+        return; 
     }
 
-    // 2. PAUSE TOGGLE
-    // Only allow pausing if we are strictly playing or paused.
+    if (status === GameStatus.RESUMING && (e.key === ' ' || e.key === 'Enter')) {
+         setResumeCountdown(0);
+         setStatus(GameStatus.PLAYING);
+         return;
+    }
+
     if (e.key === 'Escape' || e.key === 'p' || e.key === 'P' || e.key === ' ') {
-        if (status === GameStatus.PLAYING) {
-            setStatus(GameStatus.PAUSED);
+        if (status === GameStatus.PLAYING || status === GameStatus.PAUSED) {
+            togglePause();
             return;
         }
-        if (status === GameStatus.PAUSED) {
-            setStatus(GameStatus.PLAYING);
-            return;
-        }
-        // If GAME_OVER, fall through to step 3
     }
 
-    // 3. GAME OVER
     if (status === GameStatus.GAME_OVER) {
       if (e.key === ' ' || e.key === 'Enter') {
         handleStartClick();
@@ -100,7 +72,6 @@ export function useInput(
       return;
     }
 
-    // 4. LEVEL UP
     if (status === GameStatus.LEVEL_UP) {
       if (e.key === '1' && upgrades[0])
         applyUpgrade(upgrades[0].id as UpgradeId);
@@ -111,7 +82,7 @@ export function useInput(
       return;
     }
 
-    if (status !== GameStatus.PLAYING) return;
+    if (status !== GameStatus.PLAYING || modalState !== 'NONE') return;
 
     switch (e.key) {
       case 'ArrowUp':
@@ -138,27 +109,18 @@ export function useInput(
         e.preventDefault();
         handleInput(Direction.RIGHT);
         break;
-      case 'Shift':
-        e.preventDefault();
-        triggerSystemShock();
-        break;
-      case 'q':
-      case 'Q':
-        e.preventDefault();
-        triggerChronoSurge();
-        break;
     }
   }, [
     status,
-    setStatus,
+    modalState,
     upgrades,
     applyUpgrade,
     handleStartClick,
     handleInput,
-    triggerSystemShock,
-    triggerChronoSurge,
-    transitions,
-    game
+    togglePause,
+    closeSettings,
+    setResumeCountdown,
+    setStatus
   ]);
 
   useEffect(() => {

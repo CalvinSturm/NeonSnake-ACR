@@ -42,11 +42,3 @@ export var FoodType;
     FoodType["COMPRESSOR"] = "COMPRESSOR";
     FoodType["XP_ORB"] = "XP_ORB";
 })(FoodType || (FoodType = {}));
-export var MusicSection;
-(function (MusicSection) {
-    MusicSection["AMBIENT"] = "AMBIENT";
-    MusicSection["COMBAT"] = "COMBAT";
-    MusicSection["INTENSE"] = "INTENSE";
-    MusicSection["HACKING"] = "HACKING";
-    MusicSection["BOSS"] = "BOSS";
-})(MusicSection || (MusicSection = {}));

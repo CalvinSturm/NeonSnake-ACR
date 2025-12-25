@@ -39,8 +39,8 @@ export function useGameLoop(
       accumulatorRef.current += frameDt;
 
       while (accumulatorRef.current >= FIXED_DT) {
-        // Update logic based on state
-        if (game.status === GameStatus.PLAYING) {
+        // SIMULATION GATE: Update only if playing and NO modal is open
+        if (game.status === GameStatus.PLAYING && game.modalState === 'NONE') {
           game.gameTimeRef.current += FIXED_DT;
           updateRef.current(FIXED_DT);
         } else if (game.status === GameStatus.STAGE_TRANSITION) {
@@ -58,5 +58,5 @@ export function useGameLoop(
 
     rafRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [game.status, game.gameTimeRef]); 
+  }, [game.status, game.gameTimeRef, game.modalState]); 
 }

@@ -6,7 +6,6 @@ export type UpgradeId =
   | 'AURA'
   | 'MINES'
   | 'LIGHTNING'
-  | 'SHOCKWAVE'
   | 'NANO_SWARM'
   | 'SHIELD'
   | 'CRITICAL'
@@ -17,15 +16,18 @@ export type UpgradeId =
   | 'PHASE_RAIL'
   | 'REFLECTOR_MESH'
   | 'GHOST_COIL'
-  | 'EMP_BLOOM'
   | 'NEURAL_MAGNET'
   | 'OVERCLOCK'
   | 'ECHO_CACHE'
-  | 'TERMINAL_PROTOCOL';
+  | 'TERMINAL_PROTOCOL'
+  | 'OVERCLOCK_WEAPON_SLOT'
+  | 'SCALAR_DAMAGE'
+  | 'SCALAR_FIRE_RATE'
+  | 'SCALAR_AREA';
 
 export type UpgradeContext = {
   weapon: WeaponStats;
   critChance: number;
   shieldActive: boolean;
-  hackSpeedMod: number; // Added context for factories
+  hackSpeedMod: number; 
 };

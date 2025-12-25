@@ -4,15 +4,38 @@ import { useGameState } from './useGameState';
 import { useSpawner } from './useSpawner';
 import { useFX } from './useFX';
 import { ProgressionAPI } from './useProgression';
-import { Enemy, EnemyType, Projectile } from '../types';
+import { Enemy, EnemyType, Projectile, Difficulty } from '../types';
 import {
   DEFAULT_SETTINGS,
   COLORS,
-  ABILITIES,
   CANVAS_WIDTH,
   CANVAS_HEIGHT,
-  SHOCKWAVE_SPEED
+  SHOCKWAVE_SPEED,
+  GRID_COLS,
+  GRID_ROWS,
+  PROJECTILE_SPEED
 } from '../constants';
+
+  function findNearestEnemy(
+  enemies: readonly Enemy[],
+  from: { x: number; y: number }
+            ): Enemy | null {
+              let nearest: Enemy | null = null;
+              let minDistSq = Infinity;
+
+              for (const e of enemies) {
+                const dx = e.x - from.x;
+                const dy = e.y - from.y;
+                const d2 = dx * dx + dy * dy;
+
+                if (d2 < minDistSq) {
+                  minDistSq = d2;
+                  nearest = e;
+                }
+              }
+
+              return nearest;
+            }
 
 export function useCombat(
   game: ReturnType<typeof useGameState>,
@@ -26,7 +49,6 @@ export function useCombat(
     snakeRef,
     foodRef,
     gameTimeRef,
-    abilityCooldownsRef,
     powerUpsRef,
     projectilesRef,
     shockwavesRef,
@@ -38,14 +60,17 @@ export function useCombat(
     audioEventsRef,
     bossDefeatedRef,
     enemiesKilledRef, 
-    // NEW REFS
     prismLanceTimerRef,
     neonScatterTimerRef,
     voltSerpentTimerRef,
     phaseRailChargeRef,
     echoDamageStoredRef,
     overclockActiveRef,
-    overclockTimerRef
+    overclockTimerRef,
+    nanoSwarmAngleRef,
+    difficulty,
+    terminalsRef,
+    traitsRef 
   } = game;
 
   const {
@@ -58,43 +83,34 @@ export function useCombat(
 
   const shootAudioThrottleRef = useRef(0);
 
-  function isPlayerHomingProjectile(
-    p: Projectile
-    ): p is Projectile & { targetId?: string } {
-    return p.owner === 'PLAYER' && p.homing === true;
-  }
-
   /* ─────────────────────────────
      Internal Combat Logic
      ───────────────────────────── */
 
   const applyDamage = useCallback((enemy: Enemy, amount: number) => {
       enemy.hp -= amount;
-      enemy.flash = 5; // Visual flash
+      enemy.flash = 5; 
   }, []);
+
+
 
   const processDeath = useCallback((enemy: Enemy) => {
       enemiesKilledRef.current += 1;
       
-      // Spawn XP Orbs (Reward)
       spawner.spawnXpOrbs(enemy.x, enemy.y, 40); 
       
-      // Grant Score (Event), but XP is now 0 (handled by orbs)
       progression.onEnemyDefeated({ xp: 0 });
       
-      // Neural Magnet Logic
       if (statsRef.current.weapon.neuralMagnetLevel > 0) {
           const pullRadius = 10 + (statsRef.current.weapon.neuralMagnetLevel * 5);
           const snakeHead = snakeRef.current[0];
           
-          // Check food within radius of DEAD ENEMY
           foodRef.current.forEach(f => {
               const dist = Math.hypot(f.x - enemy.x, f.y - enemy.y);
               if (dist < pullRadius) {
-                  // Teleport close to player for pickup
                   if (snakeHead) {
                       const angle = Math.random() * Math.PI * 2;
-                      const r = 2; // Close range
+                      const r = 2; 
                       f.x = snakeHead.x + Math.cos(angle) * r;
                       f.y = snakeHead.y + Math.sin(angle) * r;
                   }
@@ -103,11 +119,10 @@ export function useCombat(
       }
 
       if (enemy.type === EnemyType.BOSS) {
-        bossDefeatedRef.current = true; // Mark defeated
+        bossDefeatedRef.current = true; 
         triggerShake(20, 20);
         audioEventsRef.current.push({ type: 'EMP' }); 
       } else {
-        // Standard enemy death sound handled here if needed, or by orchestration
         audioEventsRef.current.push({ type: 'ENEMY_DESTROY' });
       }
   }, [enemiesKilledRef, spawner, progression, statsRef, snakeRef, foodRef, bossDefeatedRef, triggerShake, audioEventsRef]);
@@ -124,7 +139,7 @@ export function useCombat(
       allowChain = true
     ) => {
       const stats = statsRef.current;
-      let damage = baseDamage;
+      let damage = baseDamage * stats.globalDamageMod;
       let isCrit = forceCrit;
 
       if (!forceCrit && Math.random() < stats.critChance) {
@@ -149,8 +164,8 @@ export function useCombat(
                       x: head.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
                       y: head.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
                       currentRadius: 0,
-                      maxRadius: 150 + (stats.weapon.echoCacheLevel * 25),
-                      damage: cap * 0.5,
+                      maxRadius: (150 + (stats.weapon.echoCacheLevel * 25)) * stats.globalAreaMod,
+                      damage: cap * 0.5 * stats.globalDamageMod,
                       opacity: 0.8
                   });
                   audioEventsRef.current.push({ type: 'EMP' });
@@ -181,8 +196,7 @@ export function useCombat(
       if (allowChain && stats.weapon.chainLightningLevel > 0) {
         let nearest: Enemy | null = null;
         let minDistSq = Infinity;
-        const rangeSq = stats.weapon.chainLightningRange ** 2;
-
+        const rangeSq = (stats.weapon.chainLightningRange * stats.globalAreaMod) ** 2;
         for (const other of enemiesRef.current) {
           if (other === enemy) continue;
           const d2 = (other.x - enemy.x) ** 2 + (other.y - enemy.y) ** 2;
@@ -193,7 +207,6 @@ export function useCombat(
         }
 
         if (nearest) {
-          // Recursive call is safe here because chain lightning decays damage or we pass allowChain=false
           damageEnemy(
             nearest,
             damage * stats.weapon.chainLightningDamage,
@@ -214,7 +227,6 @@ export function useCombat(
       }
 
       // 5. Audio (Throttled Hit)
-      // Only play hit sound if not dead, death sound handled in processDeath
       if (enemy.hp > 0) {
           audioEventsRef.current.push({ type: 'HIT' });
       }
@@ -239,105 +251,17 @@ export function useCombat(
   );
 
   /* ─────────────────────────────
-     EMP Ability (System Shock)
-     ───────────────────────────── */
-
-  const triggerSystemShock = useCallback(() => {
-    const now = gameTimeRef.current;
-    if (now < abilityCooldownsRef.current.systemShock) return;
-
-    const cooldown = ABILITIES.SYSTEM_SHOCK.COOLDOWN * statsRef.current.empCooldownMod;
-    abilityCooldownsRef.current.systemShock = now + cooldown;
-
-    const head = snakeRef.current[0];
-    if (!head) return;
-
-    const cx = head.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2;
-    const cy = head.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2;
-
-    const radiusMod = statsRef.current.weapon.shockwaveRadius;
-
-    triggerShockwave({
-      id: Math.random().toString(36),
-      x: cx,
-      y: cy,
-      currentRadius: 0,
-      maxRadius: (ABILITIES.SYSTEM_SHOCK.RADIUS + radiusMod) * DEFAULT_SETTINGS.gridSize,
-      damage: statsRef.current.weapon.shockwaveDamage,
-      opacity: 0.85,
-      stunDuration: ABILITIES.SYSTEM_SHOCK.DURATION
-    });
-
-    triggerShake(15, 15);
-    audioEventsRef.current.push({ type: 'EMP' });
-  }, [statsRef, snakeRef, gameTimeRef, abilityCooldownsRef, triggerShockwave, triggerShake, audioEventsRef]);
-
-  /* ─────────────────────────────
-     Chrono Surge
-     ───────────────────────────── */
-
-  const triggerChronoSurge = useCallback(() => {
-    const now = gameTimeRef.current;
-    if (now < abilityCooldownsRef.current.chrono) return;
-
-    powerUpsRef.current.slowUntil = now + ABILITIES.CHRONO.DURATION;
-    abilityCooldownsRef.current.chrono = now + ABILITIES.CHRONO.COOLDOWN;
-
-    audioEventsRef.current.push({ type: 'POWER_UP' });
-    triggerShake(5, 5);
-
-    const head = snakeRef.current[0];
-    if (!head) return;
-
-    const hx = head.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2;
-    const hy = head.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2;
-
-    triggerShockwave({
-      id: Math.random().toString(),
-      x: hx,
-      y: hy,
-      currentRadius: 0,
-      maxRadius: ABILITIES.CHRONO.RADIUS * DEFAULT_SETTINGS.gridSize,
-      damage: 0,
-      opacity: 0.4
-    });
-  }, [gameTimeRef, abilityCooldownsRef, powerUpsRef, snakeRef, triggerShockwave, triggerShake, audioEventsRef]);
-
-  const triggerTacticalPing = useCallback(
-  (gx: number, gy: number) => {
-    const now = gameTimeRef.current;
-    if (now < abilityCooldownsRef.current.ping) return;
-
-    abilityCooldownsRef.current.ping = now + ABILITIES.PING.COOLDOWN;
-
-    const px = gx * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2;
-    const py = gy * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2;
-
-    triggerShockwave({
-      id: Math.random().toString(36),
-      x: px,
-      y: py,
-      currentRadius: 0,
-      maxRadius: ABILITIES.PING.RADIUS * DEFAULT_SETTINGS.gridSize,
-      damage: ABILITIES.PING.DAMAGE,
-      opacity: 0.65
-    });
-
-    audioEventsRef.current.push({ type: 'SHOOT' });
-    triggerShake(6, 6);
-  },
-  [gameTimeRef, abilityCooldownsRef, triggerShockwave, triggerShake, audioEventsRef]);
-
-  /* ─────────────────────────────
      Main Combat Loop
      ───────────────────────────── */
   const update = useCallback((dt: number) => {
-    const head = snakeRef.current[0];
-    if (!head) return;
+      const head = snakeRef.current[0];
+      if (!head) return;
 
-    const frame = dt / 16.667;
-    const now = gameTimeRef.current;
-    const wStats = statsRef.current.weapon;
+      const frame = dt / 16.667;
+      const now = gameTimeRef.current;
+      const stats = statsRef.current;
+      const wStats = stats.weapon;
+      const traits = traitsRef.current; 
 
       // ── OVERCLOCK UPDATE ──
       if (wStats.overclockLevel > 0) {
@@ -366,546 +290,427 @@ export function useCombat(
           }
       }
 
-// 1. AUTO CANNON
-if (wStats.cannonLevel > 0) {
-  weaponFireTimerRef.current += dt;
+      // 1. AUTO CANNON
+      if (wStats.cannonLevel > 0) {
+          weaponFireTimerRef.current += dt;
+          let fireRate = wStats.cannonFireRate / stats.globalFireRateMod;
+          if (overclockActiveRef.current) fireRate *= 0.5;
 
-  let fireRate = wStats.cannonFireRate;
-  if (overclockActiveRef.current) fireRate *= 0.5;
-
-  if (weaponFireTimerRef.current >= fireRate) {
-    const enemies = enemiesRef.current;
-    if (enemies.length === 0) return;
-
-    let nearest: Enemy | null = null;
-    let minDist = Infinity;
-
-    for (const e of enemies) {
-      const dx = e.x - head.x;
-      const dy = e.y - head.y;
-      const d = dx * dx + dy * dy;
-
-      if (d < minDist) {
-        minDist = d;
-        nearest = e;
-      }
-    }
-
-    if (!nearest) return;
-
-    const angle = Math.atan2(
-      nearest.y - head.y,
-      nearest.x - head.x
-    );
-
-    const count = wStats.cannonProjectileCount;
-    const spread = 0.15;
-
-    for (let i = 0; i < count; i++) {
-      const offset = (i - (count - 1) / 2) * spread;
-      const finalAngle = angle + offset;
-
-      projectilesRef.current.push({
-        id: Math.random().toString(36),
-        x: head.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2,
-        y: head.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2,
-        vx:
-          Math.cos(finalAngle) *
-          wStats.cannonProjectileSpeed *
-          (DEFAULT_SETTINGS.gridSize / 20),
-        vy:
-          Math.sin(finalAngle) *
-          wStats.cannonProjectileSpeed *
-          (DEFAULT_SETTINGS.gridSize / 20),
-        damage: wStats.cannonDamage,
-        color: COLORS.projectile,
-        size: 3 + Math.min(wStats.cannonLevel, 4),
-        type: 'STANDARD',
-        owner: 'PLAYER'
-      });
-    }
-
-    if (now - shootAudioThrottleRef.current > 100) {
-      audioEventsRef.current.push({ type: 'SHOOT' });
-      shootAudioThrottleRef.current = now;
-    }
-
-    weaponFireTimerRef.current = 0;
-  }
-}
+          if (weaponFireTimerRef.current >= fireRate) {
+              if (enemiesRef.current.length > 0) {
+                  const nearest = findNearestEnemy(enemiesRef.current, head);
+                  if (!nearest) return;
 
 
+                  if (nearest) {
+                    const dx = nearest.x - head.x;
+                    const dy = nearest.y - head.y;
 
-// 2. PRISM LANCE
-if (wStats.prismLanceLevel > 0) {
-  prismLanceTimerRef.current += dt;
-  const fireRate = overclockActiveRef.current ? 1000 : 2000;
+                      const angle = Math.atan2(dy, dx);
+                      const count = wStats.cannonProjectileCount;
+                      const spread = 0.15;
+                      
+                      for(let i=0; i<count; i++) {
+                          const offset = (i - (count-1)/2) * spread;
+                          const finalAngle = angle + offset;
+                          const speedMod = stats.globalProjectileSpeedMod * traits.projectileSpeedMod;
+                          const vx = Math.cos(finalAngle) * wStats.cannonProjectileSpeed * speedMod;
+                          const vy = Math.sin(finalAngle) * wStats.cannonProjectileSpeed * speedMod;
 
-  if (prismLanceTimerRef.current >= fireRate) {
-    const enemies: Enemy[] = enemiesRef.current;
-
-    let nearest: Enemy | null = null;
-    let minDist = Infinity;
-
-    const hx = head.x * DEFAULT_SETTINGS.gridSize;
-    const hy = head.y * DEFAULT_SETTINGS.gridSize;
-
-    for (const e of enemies) {
-      const ex = e.x * DEFAULT_SETTINGS.gridSize;
-      const ey = e.y * DEFAULT_SETTINGS.gridSize;
-
-      const dx = ex - hx;
-      const dy = ey - hy;
-      const d = dx * dx + dy * dy;
-
-      if (d < minDist) {
-        minDist = d;
-        nearest = e;
-      }
-    }
-
-    if (nearest !== null) {
-      const angle = Math.atan2(
-        nearest.y * DEFAULT_SETTINGS.gridSize - hy,
-        nearest.x * DEFAULT_SETTINGS.gridSize - hx
-      );
-
-      const speed = 30;
-
-      projectilesRef.current.push({
-        id: Math.random().toString(36),
-        x: hx + DEFAULT_SETTINGS.gridSize / 2,
-        y: hy + DEFAULT_SETTINGS.gridSize / 2,
-        vx: Math.cos(angle) * speed * (DEFAULT_SETTINGS.gridSize / 20),
-        vy: Math.sin(angle) * speed * (DEFAULT_SETTINGS.gridSize / 20),
-        damage: wStats.prismLanceDamage,
-        color: COLORS.prismLance,
-        size: 4,
-        type: 'LANCE',
-        piercing: true,
-        hitIds: [],
-        owner: 'PLAYER'
-      });
-
-      audioEventsRef.current.push({ type: 'SHOOT' });
-      prismLanceTimerRef.current = 0;
-    }
-  }
-}
-
-// 3. NEON SCATTER
-if (wStats.neonScatterLevel > 0) {
-  neonScatterTimerRef.current += dt;
-
-  let fireRate = 1200;
-  if (overclockActiveRef.current) fireRate = 600;
-
-  if (neonScatterTimerRef.current >= fireRate) {
-    const enemies = enemiesRef.current;
-    if (enemies.length === 0) {
-      neonScatterTimerRef.current = 0;
-    } else {
-      let nearest: Enemy | null = null;
-      let minDist = Infinity;
-
-      for (const e of enemies) {
-        const dx = e.x - head.x;
-        const dy = e.y - head.y;
-        const d = dx * dx + dy * dy;
-
-        if (d < 100 && d < minDist) {
-          minDist = d;
-          nearest = e;
-        }
+                          projectilesRef.current.push({
+                              id: Math.random().toString(36),
+                              x: head.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
+                              y: head.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
+                              vx: vx * (DEFAULT_SETTINGS.gridSize / 20),
+                              vy: vy * (DEFAULT_SETTINGS.gridSize / 20),
+                              damage: wStats.cannonDamage * stats.globalDamageMod,
+                              color: COLORS.projectile,
+                              size: (3 + Math.min(wStats.cannonLevel, 4)) * stats.globalAreaMod,
+                              type: 'STANDARD',
+                              owner: 'PLAYER'
+                          });
+                      }
+                      
+                      if (now - shootAudioThrottleRef.current > 100) {
+                          audioEventsRef.current.push({ type: 'SHOOT' });
+                          shootAudioThrottleRef.current = now;
+                      }
+                      
+                      weaponFireTimerRef.current = 0;
+                  }
+              }
+          }
       }
 
-      const target = nearest ?? enemies[0];
-      if (!target) {
-        neonScatterTimerRef.current = 0;
-      } else {
-        const baseAngle = Math.atan2(
-          target.y - head.y,
-          target.x - head.x
-        );
+      // 2. PRISM LANCE
+      if (wStats.prismLanceLevel > 0) {
+          prismLanceTimerRef.current += dt;
+          let fireRate = 2000 / stats.globalFireRateMod;
+          if (overclockActiveRef.current) fireRate *= 0.5;
 
-        const shards = 3 + wStats.neonScatterLevel;
-        const spread = 0.5;
+          if (prismLanceTimerRef.current >= fireRate) {
+              const nearest = findNearestEnemy(enemiesRef.current, head);
+              if (!nearest) return;
 
-        for (let i = 0; i < shards; i++) {
-          const a =
-            baseAngle - spread / 2 + Math.random() * spread;
-          const speed = 15 + Math.random() * 5;
 
-          projectilesRef.current.push({
-            id: Math.random().toString(36),
-            x:
-              head.x * DEFAULT_SETTINGS.gridSize +
-              DEFAULT_SETTINGS.gridSize / 2,
-            y:
-              head.y * DEFAULT_SETTINGS.gridSize +
-              DEFAULT_SETTINGS.gridSize / 2,
-            vx:
-              Math.cos(a) *
-              speed *
-              (DEFAULT_SETTINGS.gridSize / 20),
-            vy:
-              Math.sin(a) *
-              speed *
-              (DEFAULT_SETTINGS.gridSize / 20),
-            damage: wStats.neonScatterDamage,
-            color: COLORS.neonScatter,
-            size: 3,
-            type: 'SHARD',
-            life: 25,
-            owner: 'PLAYER'
-          });
-        }
-
-        audioEventsRef.current.push({ type: 'SHOOT' });
-        neonScatterTimerRef.current = 0;
-      }
-    }
-  }
-}
-
-// 5. PHASE RAIL
-if (wStats.phaseRailLevel > 0) {
-  phaseRailChargeRef.current += dt;
-  const chargeTime = 4000;
-
-  if (phaseRailChargeRef.current >= chargeTime) {
-    const enemies = enemiesRef.current;
-    if (enemies.length === 0) {
-      phaseRailChargeRef.current = 0;
-    } else {
-      let nearest: Enemy | null = null;
-      let minDist = Infinity;
-
-      for (const e of enemies) {
-        const dx = e.x - head.x;
-        const dy = e.y - head.y;
-        const d = dx * dx + dy * dy;
-
-        if (d < minDist) {
-          minDist = d;
-          nearest = e;
-        }
+              if (nearest) {
+                  const angle = Math.atan2(nearest.y - head.y, nearest.x - head.x);
+                  const projectileSpeed = 30 * stats.globalProjectileSpeedMod * traits.projectileSpeedMod;
+                  const vx = Math.cos(angle) * projectileSpeed;
+                  const vy = Math.sin(angle) * projectileSpeed;
+                  
+                  projectilesRef.current.push({
+                      id: Math.random().toString(36),
+                      x: head.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
+                      y: head.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
+                      vx: vx * (DEFAULT_SETTINGS.gridSize / 20),
+                      vy: vy * (DEFAULT_SETTINGS.gridSize / 20),
+                      damage: wStats.prismLanceDamage * stats.globalDamageMod,
+                      color: COLORS.prismLance,
+                      size: 4 * stats.globalAreaMod,
+                      type: 'LANCE',
+                      piercing: true,
+                      hitIds: [],
+                      owner: 'PLAYER'
+                  });
+                  audioEventsRef.current.push({ type: 'SHOOT' });
+                  prismLanceTimerRef.current = 0;
+              }
+          }
       }
 
-      if (nearest) {
-        const angle = Math.atan2(
-          nearest.y - head.y,
-          nearest.x - head.x
-        );
+      // 3. NEON SCATTER
+      if (wStats.neonScatterLevel > 0) {
+          neonScatterTimerRef.current += dt;
+          let fireRate = 1200 / stats.globalFireRateMod;
+          if (overclockActiveRef.current) fireRate *= 0.5;
 
-        const speed = 60;
+          if (neonScatterTimerRef.current >= fireRate) {
+              const target =
+              findNearestEnemy(enemiesRef.current, head) ??
+              enemiesRef.current[0];
+              if (!target) return;
 
-        projectilesRef.current.push({
-          id: Math.random().toString(36),
-          x:
-            head.x * DEFAULT_SETTINGS.gridSize +
-            DEFAULT_SETTINGS.gridSize / 2,
-          y:
-            head.y * DEFAULT_SETTINGS.gridSize +
-            DEFAULT_SETTINGS.gridSize / 2,
-          vx:
-            Math.cos(angle) *
-            speed *
-            (DEFAULT_SETTINGS.gridSize / 20),
-          vy:
-            Math.sin(angle) *
-            speed *
-            (DEFAULT_SETTINGS.gridSize / 20),
-          damage: wStats.phaseRailDamage,
-          color: COLORS.phaseRail,
-          size: 6,
-          type: 'RAIL',
-          piercing: true,
-          hitIds: [],
-          owner: 'PLAYER'
-        });
+                  const baseAngle = Math.atan2(target.y - head.y, target.x - head.x);
+                  const shards = 3 + wStats.neonScatterLevel;
+                  const spread = 0.5;
 
-        audioEventsRef.current.push({ type: 'SHOOT' });
-        triggerShake(10, 10);
-        phaseRailChargeRef.current = 0;
+                  for(let i=0; i<shards; i++) {
+                      const a = baseAngle - (spread/2) + (Math.random() * spread);
+                      const speed = (15 + Math.random() * 5) * stats.globalProjectileSpeedMod * traits.projectileSpeedMod;
+                      
+                      projectilesRef.current.push({
+                          id: Math.random().toString(36),
+                          x: head.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
+                          y: head.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
+                          vx: Math.cos(a) * speed * (DEFAULT_SETTINGS.gridSize / 20),
+                          vy: Math.sin(a) * speed * (DEFAULT_SETTINGS.gridSize / 20),
+                          damage: wStats.neonScatterDamage * stats.globalDamageMod,
+                          color: COLORS.neonScatter,
+                          size: 3 * stats.globalAreaMod,
+                          type: 'SHARD',
+                          life: 25,
+                          owner: 'PLAYER'
+                      });
+                  }
+                  audioEventsRef.current.push({ type: 'SHOOT' });
+                  neonScatterTimerRef.current = 0;
+              }
+          }
+      
+
+      // 4. VOLT SERPENT
+      if (wStats.voltSerpentLevel > 0) {
+          voltSerpentTimerRef.current += dt;
+          const fireRate = 3000 / stats.globalFireRateMod;
+
+          if (voltSerpentTimerRef.current >= fireRate) {
+              projectilesRef.current.push({
+                  id: Math.random().toString(36),
+                  x: head.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
+                  y: head.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
+                  vx: (Math.random() - 0.5) * 10 * stats.globalProjectileSpeedMod * traits.projectileSpeedMod,
+                  vy: (Math.random() - 0.5) * 10 * stats.globalProjectileSpeedMod * traits.projectileSpeedMod,
+                  damage: wStats.voltSerpentDamage * stats.globalDamageMod,
+                  color: COLORS.voltSerpent,
+                  size: 5 * stats.globalAreaMod,
+                  type: 'SERPENT',
+                  homing: true,
+                  owner: 'PLAYER'
+              });
+              voltSerpentTimerRef.current = 0;
+          }
       }
-    }
-  }
-}
+
+      // 5. PHASE RAIL
+      if (wStats.phaseRailLevel > 0) {
+          phaseRailChargeRef.current += dt;
+          const chargeTime = 4000 / stats.globalFireRateMod;
+
+          if (phaseRailChargeRef.current >= chargeTime) {
+              const nearest = findNearestEnemy(enemiesRef.current, head);
+              if (!nearest) return;
+
+              if (nearest) {
+                  const angle = Math.atan2(nearest.y - head.y, nearest.x - head.x);
+                  const speed = 60 * stats.globalProjectileSpeedMod * traits.projectileSpeedMod;
+                  projectilesRef.current.push({
+                      id: Math.random().toString(36),
+                      x: head.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
+                      y: head.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
+                      vx: Math.cos(angle) * speed * (DEFAULT_SETTINGS.gridSize / 20),
+                      vy: Math.sin(angle) * speed * (DEFAULT_SETTINGS.gridSize / 20),
+                      damage: wStats.phaseRailDamage * stats.globalDamageMod,
+                      color: COLORS.phaseRail,
+                      size: 6 * stats.globalAreaMod,
+                      type: 'RAIL',
+                      piercing: true,
+                      hitIds: [],
+                      owner: 'PLAYER'
+                  });
+                  audioEventsRef.current.push({ type: 'SHOOT' });
+                  triggerShake(10, 10);
+                  phaseRailChargeRef.current = 0;
+              }
+          }
+      }
 
       // 6. NANO SWARM
       if (wStats.nanoSwarmLevel > 0) {
           const count = wStats.nanoSwarmCount;
           const radius = 3.8 * DEFAULT_SETTINGS.gridSize;
-          const speed = now / (350 - wStats.nanoSwarmLevel * 10);
+          
+          const speed = 1 / (350 - wStats.nanoSwarmLevel * 10); 
+          nanoSwarmAngleRef.current += speed * dt;
+          
           const cx = head.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2;
           const cy = head.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2;
 
           for(let i=0; i<count; i++) {
-              const angle = speed + (i * (Math.PI * 2 / count));
+              const angle = nanoSwarmAngleRef.current + (i * (Math.PI * 2 / count));
               const sx = cx + Math.cos(angle) * radius;
-              // FIX: Use CY center reference for correct orbiting, not raw head.y
               const sy = cy + Math.sin(angle) * radius;
 
-              (enemiesRef.current as Enemy[]).forEach(e => {
-                  // Debounce: NANO
+              enemiesRef.current.forEach(e => {
                   if (e.hitCooldowns && e.hitCooldowns['NANO'] > 0) return;
                   
                   const ex = e.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2;
                   const ey = e.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2;
                   const d = Math.hypot(ex - sx, ey - sy);
                   
-                  if (d < DEFAULT_SETTINGS.gridSize) {
-                      damageEnemy(e, wStats.nanoSwarmDamage);
+                  if (d < DEFAULT_SETTINGS.gridSize * stats.globalAreaMod) {
+                      damageEnemy(e, wStats.nanoSwarmDamage * stats.globalDamageMod);
                       createParticles(e.x, e.y, COLORS.nanoSwarm, 3);
                       if (!e.hitCooldowns) e.hitCooldowns = {};
-                      e.hitCooldowns['NANO'] = 15; // ~250ms cooldown
+                      e.hitCooldowns['NANO'] = 15; 
                   }
               });
           }
       }
 
-// 7. PLASMA MINES
-if (wStats.mineLevel > 0) {
-    mineDropTimerRef.current += dt;
+      // 7. PLASMA MINES (UPDATED FOR RIGGER TRAIT)
+      if (wStats.mineLevel > 0) {
+          mineDropTimerRef.current += dt;
+          if (mineDropTimerRef.current >= (wStats.mineDropRate / stats.globalFireRateMod)) {
+              const tail = snakeRef.current[snakeRef.current.length - 1];
+              if (tail) {
+                  const radMult = traits.mineRadiusMod;
+                  const blastMult = traits.mineBlastMod;
 
-    if (mineDropTimerRef.current >= wStats.mineDropRate) {
-        const snake = snakeRef.current;
-        if (snake.length > 0) {
-            const tail = snake[snake.length - 1];
+                  minesRef.current.push({
+                      id: Math.random().toString(36),
+                      x: tail.x,
+                      y: tail.y,
+                      damage: wStats.mineDamage * stats.globalDamageMod,
+                      radius: wStats.mineRadius * stats.globalAreaMod * blastMult,
+                      triggerRadius: 1.5 * stats.globalAreaMod * radMult,
+                      createdAt: now
+                  });
+              }
+              mineDropTimerRef.current = 0;
+          }
 
-            minesRef.current.push({
-                id: Math.random().toString(36),
-                x: tail.x,
-                y: tail.y,
-                damage: wStats.mineDamage,
-                radius: wStats.mineRadius,
-                triggerRadius: 1.5,
-                createdAt: now
-            });
-        }
+          for (let i = minesRef.current.length - 1; i >= 0; i--) {
+              const mine = minesRef.current[i];
+              if (mine.shouldRemove) continue;
 
-        mineDropTimerRef.current = 0;
-    }
+              let triggered = false;
+              for (const e of enemiesRef.current) {
+                  const dist = Math.hypot(e.x - mine.x, e.y - mine.y);
+                  if (dist <= mine.triggerRadius) {
+                      triggered = true;
+                      break;
+                  }
+              }
 
-    const enemies = enemiesRef.current as Enemy[];
+              if (triggered) {
+                  triggerShockwave({
+                      id: Math.random().toString(),
+                      x: mine.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
+                      y: mine.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
+                      currentRadius: 0,
+                      maxRadius: mine.radius * DEFAULT_SETTINGS.gridSize,
+                      damage: mine.damage,
+                      opacity: 1.0
+                  });
+                  createParticles(mine.x, mine.y, COLORS.mine, 20);
+                  audioEventsRef.current.push({ type: 'COMPRESS' });
+                  mine.shouldRemove = true;
+              }
+          }
+      }
 
-    for (let i = minesRef.current.length - 1; i >= 0; i--) {
-        const mine = minesRef.current[i];
-        if (mine.shouldRemove) continue;
-
-        let triggered = false;
-
-        for (const e of enemies) {
-            const dx = e.x - mine.x;
-            const dy = e.y - mine.y;
-            if (dx * dx + dy * dy <= mine.triggerRadius * mine.triggerRadius) {
-                triggered = true;
-                break;
-            }
-        }
-
-        if (triggered) {
-            triggerShockwave({
-                id: Math.random().toString(36),
-                x: mine.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2,
-                y: mine.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2,
-                currentRadius: 0,
-                maxRadius: mine.radius * DEFAULT_SETTINGS.gridSize,
-                damage: mine.damage,
-                opacity: 1
-            });
-
-            createParticles(mine.x, mine.y, COLORS.mine, 20);
-            audioEventsRef.current.push({ type: 'COMPRESS' });
-
-            mine.shouldRemove = true;
-        }
-    }
-}
-
-
-// 8. AURA
-if (wStats.auraLevel > 0) {
-    auraTickTimerRef.current += dt;
-
-    if (auraTickTimerRef.current >= 250) {
-        const enemies = enemiesRef.current as Enemy[];
-        const snake = snakeRef.current;
-        const r2 = wStats.auraRadius * wStats.auraRadius;
-
-        for (const e of enemies) {
-            let hit = false;
-
-            for (const seg of snake) {
-                const dx = e.x - seg.x;
-                const dy = e.y - seg.y;
-                if (dx * dx + dy * dy <= r2) {
-                    hit = true;
-                    break;
-                }
-            }
-
-            if (hit) {
-                damageEnemy(e, wStats.auraDamage);
-                createParticles(e.x, e.y, COLORS.aura, 1);
-            }
-        }
-
-        auraTickTimerRef.current = 0;
-    }
-}
-
+      // 8. AURA (AND VOLT TRAIT)
+      if (wStats.auraLevel > 0) {
+          auraTickTimerRef.current += dt;
+          if (auraTickTimerRef.current >= (250 / stats.globalFireRateMod)) {
+              const r2 = (wStats.auraRadius * stats.globalAreaMod) ** 2;
+              enemiesRef.current.forEach(e => {
+                  const hit = snakeRef.current.some(seg => {
+                      const d2 = Math.pow(e.x - seg.x, 2) + Math.pow(e.y - seg.y, 2);
+                      return d2 <= r2;
+                  });
+                  if (hit) {
+                      damageEnemy(e, wStats.auraDamage * stats.globalDamageMod);
+                      createParticles(e.x, e.y, COLORS.aura, 1);
+                  }
+              });
+              auraTickTimerRef.current = 0;
+          }
+      }
 
       // 9. PROJECTILES UPDATE
       const margin = 100;
-
+      
       for (const p of projectilesRef.current) {
-        if (p.shouldRemove) {
-          continue;
-        }
+          if (p.shouldRemove) continue;
 
-if (isPlayerHomingProjectile(p)) {
-  if (!p.targetId) {
-    let nearest: Enemy | null = null;
-    let minDist = Infinity;
+          // Homing Logic (Stable Steering — No Velocity Decay)
+          if (p.homing && p.owner === 'PLAYER') {
+          if (!p.targetId) {
+            const nearest = findNearestEnemy(
+              enemiesRef.current,
+              {
+                x: p.x / DEFAULT_SETTINGS.gridSize,
+                y: p.y / DEFAULT_SETTINGS.gridSize
+              }
+            );
 
-for (const e of enemiesRef.current) {
-  const dx = e.x * DEFAULT_SETTINGS.gridSize - p.x;
-  const dy = e.y * DEFAULT_SETTINGS.gridSize - p.y;
-  const d = dx * dx + dy * dy;
-
-  if (d < minDist) {
-    minDist = d;
-    nearest = e;
-  }
-}
-
-
-    if (nearest) p.targetId = nearest.id;
-  }
-
-  const enemies = enemiesRef.current as Enemy[];
-
-  const target: Enemy | undefined = p.targetId
-    ? enemies.find((e: Enemy) => e.id === p.targetId)
-    : undefined;
-
-  if (!target) {
-    p.shouldRemove = true;
-  } else {
-    const tx =
-      target.x * DEFAULT_SETTINGS.gridSize +
-      DEFAULT_SETTINGS.gridSize / 2;
-    const ty =
-      target.y * DEFAULT_SETTINGS.gridSize +
-      DEFAULT_SETTINGS.gridSize / 2;
-
-    const dx = tx - p.x;
-    const dy = ty - p.y;
-    const angle = Math.atan2(dy, dx);
-    const speed = Math.hypot(p.vx, p.vy);
-
-    p.vx = p.vx * 0.9 + Math.cos(angle) * speed * 0.1;
-    p.vy = p.vy * 0.9 + Math.sin(angle) * speed * 0.1;
-  }
-}
-
-    // ── Movement ───────────────────────────────
-    p.x += p.vx * frame;
-    p.y += p.vy * frame;
-
-    if (p.life !== undefined) {
-        p.life -= frame;
-        if (p.life <= 0) p.shouldRemove = true;
-    }
-
-    if (
-        p.x < -margin ||
-        p.x > CANVAS_WIDTH + margin ||
-        p.y < -margin ||
-        p.y > CANVAS_HEIGHT + margin
-    ) {
-        p.shouldRemove = true;
-        continue;
-    }
-
-// ── Player Projectile vs Enemy ─────────────
-if (p.owner === 'PLAYER') {
-  const enemies = enemiesRef.current as Enemy[];
-
-  for (const e of enemies) {
-    if (p.piercing && p.hitIds?.includes(e.id)) continue;
-
-    const ex =
-      e.x * DEFAULT_SETTINGS.gridSize +
-      DEFAULT_SETTINGS.gridSize / 2;
-    const ey =
-      e.y * DEFAULT_SETTINGS.gridSize +
-      DEFAULT_SETTINGS.gridSize / 2;
-
-    if (
-      Math.abs(p.x - ex) < 25 &&
-      Math.abs(p.y - ey) < 25
-    ) {
-      damageEnemy(e, p.damage);
-      createParticles(e.x, e.y, p.color, 3);
-
-      if (p.piercing) {
-        p.hitIds ??= [];
-        p.hitIds.push(e.id);
-      } else {
-        p.shouldRemove = true;
-      }
-      break;
-    }
-  }
-}
-}
-
-  // 10. SHOCKWAVES
-  shockwavesRef.current.forEach(s => {
-    if (s.shouldRemove) return;
-
-    // Normalize growth
-    s.currentRadius += SHOCKWAVE_SPEED * frame * 10;
-    s.opacity -= 0.02 * frame;
-
-    if (s.damage > 0 || s.stunDuration) {
-      const rSq = s.currentRadius ** 2;
-      (enemiesRef.current as Enemy[]).forEach(e => {
-          // Debounce: SHOCKWAVE
-        if (e.hitCooldowns && e.hitCooldowns['SHOCKWAVE'] > 0) return;
-        const ex = e.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2;
-        const ey = e.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2;
-        const dSq = Math.pow(ex - s.x, 2) + Math.pow(ey - s.y, 2);
-
-        if (dSq <= rSq && dSq >= (s.currentRadius - 20)**2) {
-          if (s.damage > 0) damageEnemy(e, s.damage, true);
-          if (s.stunDuration) {
-            e.stunTimer = s.stunDuration;
-            createParticles(e.x, e.y, '#00ffff', 5);
+            if (nearest) {
+              p.targetId = nearest.id;
+            }
           }
-          const angle = Math.atan2(ey - s.y, ex - s.x);
-          e.x += Math.cos(angle) * 1.5;
-          e.y += Math.sin(angle) * 1.5;
 
-          if (!e.hitCooldowns) e.hitCooldowns = {};
-          e.hitCooldowns['SHOCKWAVE'] = 20; // 300ms cooldown
-        }
+
+              const target: Enemy | undefined = enemiesRef.current.find(e => e.id === p.targetId);
+              if (target) {
+                  const tx = target.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2;
+                  const ty = target.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2;
+
+                  const dx = tx - p.x;
+                  const dy = ty - p.y;
+                  const angle = Math.atan2(dy, dx);
+
+                  const speed = Math.max(Math.hypot(p.vx, p.vy), 0.001);
+
+                  const desiredVx = Math.cos(angle) * speed;
+                  const desiredVy = Math.sin(angle) * speed;
+
+                  const turnRate = 0.08; // steering strength
+
+                  p.vx += (desiredVx - p.vx) * turnRate;
+                  p.vy += (desiredVy - p.vy) * turnRate;
+              }
+          }
+
+
+          p.x += p.vx * frame;
+          p.y += p.vy * frame;
+          
+          if (p.life !== undefined) {
+              p.life -= frame;
+              if (p.life <= 0) p.shouldRemove = true;
+          }
+
+          if (p.type === 'SERPENT' && Math.random() < 0.4) {
+              createParticles(p.x / DEFAULT_SETTINGS.gridSize, p.y / DEFAULT_SETTINGS.gridSize, p.color, 1);
+          }
+
+          if (
+              p.x < -margin || p.x > CANVAS_WIDTH + margin ||
+              p.y < -margin || p.y > CANVAS_HEIGHT + margin
+          ) {
+              p.shouldRemove = true;
+              continue;
+          }
+
+          // PLAYER PROJECTILE vs ENEMY
+          if (p.owner === 'PLAYER') {
+              for (const e of enemiesRef.current) {
+                  if (p.piercing && p.hitIds?.includes(e.id)) continue;
+
+                  const ex = e.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2;
+                  const ey = e.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2;
+                  
+                  if (Math.abs(p.x - ex) < 25 && Math.abs(p.y - ey) < 25) {
+                      damageEnemy(e, p.damage);
+                      createParticles(e.x, e.y, p.color, 3);
+                      
+                      if (p.piercing) {
+                          p.hitIds?.push(e.id);
+                      } else {
+                          p.shouldRemove = true;
+                      }
+                      break;
+                  }
+              }
+          }
+      }
+
+      // 10. SHOCKWAVES
+      shockwavesRef.current.forEach(s => {
+          if (s.shouldRemove) return;
+
+          s.currentRadius += SHOCKWAVE_SPEED * frame * 10;
+          s.opacity -= 0.02 * frame;
+
+          if (s.damage > 0 || s.stunDuration) {
+              const rSq = s.currentRadius ** 2;
+              enemiesRef.current.forEach(e => {
+                  if (e.hitCooldowns && e.hitCooldowns['SHOCKWAVE'] > 0) return;
+
+                  const ex = e.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2;
+                  const ey = e.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2;
+                  const dSq = Math.pow(ex - s.x, 2) + Math.pow(ey - s.y, 2);
+                  
+                  if (dSq <= rSq && dSq >= (s.currentRadius - 20)**2) {
+                      if (s.damage > 0) damageEnemy(e, s.damage, true);
+                      if (s.stunDuration) {
+                          e.stunTimer = s.stunDuration;
+                          createParticles(e.x, e.y, '#00ffff', 5);
+                      }
+                      
+                      const angle = Math.atan2(ey - s.y, ex - s.x);
+                      e.x += Math.cos(angle) * 1.5;
+                      e.y += Math.sin(angle) * 1.5;
+                      
+                      if (!e.hitCooldowns) e.hitCooldowns = {};
+                      e.hitCooldowns['SHOCKWAVE'] = 20; 
+                  }
+              });
+          }
+
+          if (s.opacity <= 0 || s.currentRadius >= s.maxRadius) {
+              s.shouldRemove = true;
+          }
       });
-    }
-    if (s.opacity <= 0 || s.currentRadius >= s.maxRadius) {
-      s.shouldRemove = true;
-    }
-  });
 
-  // 11. LIGHTNING
-  lightningArcsRef.current.forEach(arc => { 
-    if (arc.shouldRemove) return;
-    arc.life -= frame * 0.08; // Normalized decay
-    if (arc.life <= 0) arc.shouldRemove = true;
-  });
+      // 11. LIGHTNING
+      lightningArcsRef.current.forEach(arc => { 
+          if (arc.shouldRemove) return;
+          arc.life -= frame * 0.08; 
+          if (arc.life <= 0) arc.shouldRemove = true;
+      });
 
   }, [
       statsRef,
@@ -926,14 +731,15 @@ if (p.owner === 'PLAYER') {
       triggerShake,
       spawnFloatingText,
       applyDamage,
-      processDeath
+      processDeath,
+      difficulty,
+      spawner,
+      terminalsRef,
+      traitsRef 
   ]);
 
   return {
     damageEnemy,
-    triggerSystemShock,
-    triggerChronoSurge,
-    triggerTacticalPing,
     update
   };
 }

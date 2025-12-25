@@ -9,15 +9,24 @@ export function useMovement(game, spawner) {
     // ─────────────────────────────
     const moveAccumulatorRef = useRef(0);
     const bossAudioThrottleRef = useRef(0);
-    const getNextHead = useCallback((dt) => {
-        // Determine speed
+    const getMoveInterval = useCallback(() => {
         let interval = DEFAULT_SETTINGS.initialSpeed;
-        // Apply Overclock Speed Buff (50% faster at level 1, +10% per level)
         if (overclockActiveRef.current) {
             const lvl = statsRef.current.weapon.overclockLevel;
             const speedBoost = 1.5 + (lvl * 0.1);
             interval /= speedBoost;
         }
+        return interval;
+    }, [overclockActiveRef, statsRef]);
+    const getMoveProgress = useCallback(() => {
+        const interval = getMoveInterval();
+        // Returns 0.0 to 1.0 representing progress TOWARDS the next grid cell
+        // Since logic commits instantly at 1.0 and resets to 0, 
+        // 0.0 means "Just arrived at new cell", 0.9 means "About to move"
+        return Math.min(1, Math.max(0, moveAccumulatorRef.current / interval));
+    }, [getMoveInterval]);
+    const getNextHead = useCallback((dt) => {
+        const interval = getMoveInterval();
         moveAccumulatorRef.current += dt;
         if (moveAccumulatorRef.current < interval) {
             return null;
@@ -42,8 +51,15 @@ export function useMovement(game, spawner) {
                 break;
         }
         return head;
-    }, [directionRef, directionQueueRef, snakeRef, overclockActiveRef, statsRef]);
+    }, [directionRef, directionQueueRef, snakeRef, getMoveInterval]);
     const commitMove = useCallback((newHead, grew) => {
+        // 🛑 INVARIANT CHECK: HEAD OVERLAP
+        // Ensure the new head is not identical to the current head (zero velocity frame glitch)
+        const currentHead = snakeRef.current[0];
+        if (currentHead && newHead.x === currentHead.x && newHead.y === currentHead.y) {
+            console.warn("Snake invariant violated: Head didn't move. Skipping frame.");
+            return;
+        }
         snakeRef.current.unshift(newHead);
         if (!grew)
             snakeRef.current.pop();
@@ -52,19 +68,17 @@ export function useMovement(game, spawner) {
     // LOOT MAGNETISM (PHYSICS)
     // ─────────────────────────────
     const updateLoot = useCallback((dt, head) => {
-        // Determine Magnet Range
-        // If Global Magnet active: Very large range
-        // If Normal: XP Orbs have small range, others zero (unless char stats)
         const now = gameTimeRef.current;
         const isMagnetActive = now < powerUpsRef.current.magnetUntil;
         const globalRange = isMagnetActive ? 100 : 0; // Effectively global
         const baseMagnetRange = XP_BASE_MAGNET_RADIUS + (statsRef.current.magnetRangeMod || 0);
-        // We use grid units for distance checks
-        // speed is in grid-units per second
+        // Dynamic Speed Calculation
+        const moveInterval = getMoveInterval();
+        const snakeSpeed = 1000 / moveInterval; // Tiles per second
+        const chaseSpeed = snakeSpeed * 1.5; // Always faster than snake
         for (const f of foodRef.current) {
             if (f.shouldRemove)
                 continue;
-            // Only XP Orbs or Magnet Active affects movement
             if (f.type !== FoodType.XP_ORB && !isMagnetActive)
                 continue;
             const dx = head.x - f.x;
@@ -75,20 +89,23 @@ export function useMovement(game, spawner) {
                 effectiveRange = Math.max(baseMagnetRange, globalRange);
             }
             else {
-                effectiveRange = globalRange; // Normal food only responds to powerup
+                effectiveRange = globalRange;
             }
             if (dist < effectiveRange) {
-                // Pull towards player
-                // Lerp factor
-                const speed = 8 * (dt / 1000);
-                // Normalize and move
-                if (dist > 0.1) {
+                // SNAP LOGIC
+                if (dist < 0.5) {
+                    f.x = head.x;
+                    f.y = head.y;
+                    continue;
+                }
+                const speed = chaseSpeed * (dt / 1000);
+                if (dist > 0.01) {
                     f.x += (dx / dist) * speed;
                     f.y += (dy / dist) * speed;
                 }
             }
         }
-    }, [foodRef, powerUpsRef, gameTimeRef, statsRef]);
+    }, [foodRef, powerUpsRef, gameTimeRef, statsRef, getMoveInterval]);
     // ─────────────────────────────
     // ENEMY LOGIC (SMOOTH MOVEMENT)
     // ─────────────────────────────
@@ -371,12 +388,14 @@ export function useMovement(game, spawner) {
         projectilesRef,
         gameTimeRef,
         updateLoot,
-        audioEventsRef
+        audioEventsRef,
+        getMoveInterval
     ]);
     return {
         getNextHead,
         commitMove,
         updateEnemies,
-        updateLoot
+        updateLoot,
+        getMoveProgress
     };
 }

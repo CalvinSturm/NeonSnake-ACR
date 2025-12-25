@@ -1,157 +1,139 @@
-# 🐍 NEON SNAKE: **CYBER_PROTOCOL**
+# **Neon Snake: Cyber Protocol**
 
-**SNK_PROTOCOL // ADAPTIVE CONTAINMENT ROUTINE**
+![Version](https://img.shields.io/badge/version-1.0.0-cyan)
+![Tech](https://img.shields.io/badge/built%20with-React%20%7C%20TypeScript%20%7C%20Vite-blue)
 
-A high‑performance, cyberpunk arcade game that blends classic *Snake* inspiration with modern real‑time combat systems, adaptive AI, procedural audio, and a custom **Engine‑in‑React** architecture.
+**Neon Snake: Cyber Protocol** is a high-fidelity, cyberpunk-themed evolution of the classic Snake game. It blends arcade reflexes with RPG progression, bullet-hell combat elements, and a reactive synthwave aesthetic.
 
-Neon Snake: **CYBER_PROTOCOL** is an experimental, systems‑driven project that explores how far these ideas can be pushed within a fast, responsive arcade experience.
-
----
-
-## 🎮 Core Concept
-
-You are a sentient combat construct navigating a hostile neon grid.
-
-The system evolves.
-The network responds.
-Enemies adapt.
-Terminals resist.
-
-Progress through escalating **Threat Levels**, breach **Variant Terminals**, and confront autonomous **Sentinels** that react to how you play rather than following fixed scripts.
+Players control a cybernetic protocol designed to contain digital anomalies, hacking terminals, destroying drones, and evolving through distinct character classes and weapon upgrades.
 
 ---
 
-## ⚙️ Key Features
+## **Table of Contents**
 
-### 🔥 High‑Performance Engine‑in‑React
-
-* Custom game loop decoupled from React reconciliation
-* Deterministic simulation with clearly defined authoritative systems
-* UI and input hooks designed to observe and express state, not mutate it
-* Explicit **ownership boundaries** to keep systems predictable and debuggable
-
-### 🧠 Adaptive Difficulty & Threat Levels
-
-* **4 Threat Levels**: Neophyte → (Mid) → (High) → Cyberpsycho
-* Each Threat Level contains **4 Stages**
-* Enemy behaviors, spawn logic, and aggression scale dynamically
-* Difficulty responds to player performance, encouraging learning and adaptation
-
-### 🧬 Variant Terminal System (Risk / Reward)
-
-Interacting with the network offers powerful benefits — and meaningful trade‑offs.
-
-**Terminal Types:**
-
-* 🟣 **Resource Terminal (R)** – Gain upgrades, energy, or temporary buffs
-* 🟡 **Clearance Terminal (C)** – Unlock progression paths or gated systems
-* 🔵 **Override Terminal (O)** – Temporarily bend core rules of the simulation
-
-**Security Response:**
-
-* Hacking progress raises system awareness
-* Aggressive actions can trigger **Interceptor** spawns
-* Audio and visual intensity builds until the terminal collapses
-
-### 🤖 Advanced Enemy & Boss Design
-
-* Enemies operate on intent‑driven behavior trees
-* Firewalls, Interceptors, and Sentinels adapt during encounters
-* Boss fights unfold as multi‑phase system events rather than simple endurance tests
-* Firewall Sentinel mechanics evolve across difficulty tiers
-
-### 🔊 Procedural Audio System
-
-* BPM‑synced combat layers
-* Stable musical states that avoid rapid, distracting transitions
-* Distinct audio identities for menu, exploration, combat, hacking, and bosses
-* Terminals feature escalating hack audio that resolves in a focused implosion effect
-
-### 🎨 Visual Effects (No Shaders Required)
-
-* Chromatic aberration via multi‑offset rendering
-* Tunnel and grid‑collapse stage transitions
-* Glitch effects reserved for corrupted or locked content
-* Color‑coded visual feedback tied directly to gameplay systems
+1. [Game Overview](#overview)
+2. [Key Features](#features)
+3. [Classes & Protocols](#classes--protocols)
+4. [Controls](#controls)
+5. [Installation & Setup](#installation--setup)
+6. [Game Mechanics](#game-mechanics)
+7. [System Terminology](#system-terminology)
+8. [License](#license)
 
 ---
 
-## 🧱 Architecture Philosophy
+## **Overview**
 
-The project is guided by a few consistent architectural principles:
+In **Neon Snake**, you are not just growing a snake; you are upgrading a combat unit. As you consume data (food), you gain XP to level up and install augmentations—from auto-cannons and lightning arcs to nano-swarms and plasma mines.
 
-* **Input represents intent, not direct state changes**
-* **Rendering presents the simulation; it does not control it**
-* **Each system owns its data and responsibilities**
-* **Game flow is explicit, observable, and traceable**
-
-These constraints are intended to support clarity, scalability, and experimentation as the project grows.
+The game features a dynamic difficulty system, unlocking harder tiers like **Veteran** and **Cyberpsycho** as you prove your stability. Every 5 stages, you must confront a **Firewall Sentinel (Boss)** to proceed.
 
 ---
 
-## 🗂️ Project Structure (High Level)
+## **Features**
 
-```
-src/
-├─ engine/          # Core simulation systems
-├─ hooks/           # Intent capture & view adapters
-├─ systems/         # AI, combat, spawning, progression
-├─ rendering/       # Canvas & effect layers
-├─ audio/           # Procedural music & SFX routing
-├─ ui/              # Reactive HUD & menus
-├─ constants/       # Tunables, enums, configuration
-└─ types/           # Shared contracts
-```
+*   **6 Distinct Classes**: Choose your playstyle—from the heavy-hitting **Striker** to the loot-focused **Spectre**.
+*   **RPG Progression**: Earn XP, level up, and draft from 3 random upgrades each level. Build your snake into a war machine.
+*   **Active Combat**: Use your tail to whip enemies, fire automated projectiles, or trigger a massive **EMP System Shock**.
+*   **Dynamic Enemies**: Face Hunters, Interceptors, Shooters, and Dashers, each with unique AI behaviors.
+*   **Boss Battles**: Multi-phase boss fights with bullet-hell mechanics every 5 stages.
+*   **Hacking Minigame**: Locate and orbit proximity terminals to hack them for massive rewards before they despawn.
+*   **Reactive Audio/Visuals**: CRT scanlines, chromatic aberration, and a synthesized audio engine that requires no external assets.
 
 ---
 
-## 🚧 Status
+## **Classes & Protocols**
 
-🟢 **Active Development**
+Before starting a run, select a specialized protocol:
 
-Current focus areas include:
-
-* Expanding Sentinel behavioral depth
-* Refining weapon and upgrade synergy systems
-* Developing advanced boss introductions and transitions
-* Ongoing playtesting and balance across all Threat Levels
-
----
-
-## 🧪 Experimental Design Goals
-
-* Explore React as a *host environment* for real‑time simulations
-* Treat audio, UI, and visual effects as first‑class gameplay systems
-* Create enemies that feel responsive and situational
-* Make difficulty progression feel understandable, fair, and earned
+| Class | Role | Specialization |
+| :--- | :--- | :--- |
+| **STRIKER** | Heavy Gunner | Starts with high-level Auto-Cannons. High fire rate. |
+| **SPECTRE** | Looter | Semi-transparent (harder to see, cooler to look at). Increased Magnet range and XP gain. |
+| **VOLT** | Crowd Control | Attacks chain lightning between enemies. High chaos. |
+| **RIGGER** | Tactician | Deploys stationary Mines and orbiting Nano Drones. |
+| **BULWARK** | Tank | Starts with a Shield. Recharges EMP (System Shock) faster. |
+| **OVERDRIVE** | Berserker | High score multiplier and damaging Tail Aura. High risk, high reward. |
 
 ---
 
-## 📦 Repository
+## **Controls**
 
-**GitHub:** `NeonSnake-ACR`
+The game supports both Keyboard and Touch controls.
 
----
+*   **Movement**: `Arrow Keys` or `W / A / S / D`
+*   **System Shock (EMP)**: `Shift` (Clears screen of small enemies and projectiles)
+*   **Pause**: `Spacebar` or `P`
+*   **Select Upgrade**: `1`, `2`, or `3` (during Level Up screen)
+*   **Confirm/Restart**: `Enter`
 
-## 🧠 Inspiration
-
-* Classic Snake (mechanical clarity)
-* Arcade difficulty curves
-* Cyberpunk systems and control theory
-* Modern roguelike risk/reward design
-
----
-
-## ℹ️ Notes for Readers
-
-While inspired by Snake, this project intentionally explores a broader, more systemic direction. The codebase favors explicit structure and clear ownership to support experimentation and long‑term iteration.
+> **Mobile Note**: Touch controls appear automatically on smaller screens with a D-Pad and EMP button.
 
 ---
 
-## ✨ Final Note
+## **Installation & Setup**
 
-Neon Snake: **CYBER_PROTOCOL** is a simulation about adaptation under pressure.
+This project is built with **Vite** and **React**.
 
-Learning the system — and learning how it reacts to you — is part of the experience.
+1.  **Clone the repository:**
+    ```bash
+    git clone https://github.com/yourusername/neon-snake.git
+    cd neon-snake
+    ```
 
-**Welcome to the grid.**
+2.  **Install dependencies:**
+    ```bash
+    npm install
+    ```
+
+3.  **Run the development server:**
+    ```bash
+    npm run dev
+    ```
+
+4.  **Build for production:**
+    ```bash
+    npm run build
+    ```
+
+---
+
+## **Game Mechanics**
+
+### **Food Types**
+*   **Normal (Green)**: Standard XP and Score.
+*   **Bonus (Gold)**: High XP/Score. Disappears quickly.
+*   **Slow (Blue)**: Temporarily slows down time (Enemies move slower, Snake moves normally).
+*   **Magnet (White)**: Attracts food from a distance.
+*   **Compressor (Cyan)**: **Shrinks** your snake by removing tail segments. Vital for late-game survival.
+*   **Poison (Purple)**: Damages score, reduces EMP charge, and removes tail segments. Avoid.
+
+### **Weapons & Upgrades**
+*   **Auto Cannon**: Fires projectiles at nearest enemies.
+*   **Tail Aura**: Damages enemies that touch your body.
+*   **Nano Swarm**: Orbiting drones that deal contact damage.
+*   **Plasma Mines**: Drops explosive mines from your tail.
+*   **Voltaic Arc**: Chance to chain lightning on hit.
+*   **System Shock**: Increases the radius and damage of your EMP blast.
+
+### **The Combo System**
+Eating food quickly builds a **Combo Multiplier** (up to 8x). Keep the rhythm going to maximize your **Runtime Score**.
+
+---
+
+## **System Terminology**
+
+The UI uses immersive terminology consistent with the lore:
+
+*   **Runtime Score**: Your current score.
+*   **Longest Stable Runtime**: High Score.
+*   **System Shock**: Your EMP charge meter. Must be 100% to use.
+*   **Containment Failure**: Game Over.
+*   **Initiate Rollback**: Retry/Restart.
+*   **Sector Decryption**: Stage Transition.
+
+---
+
+## **License**
+
+This project is open-source and available under the MIT License.

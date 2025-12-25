@@ -3,7 +3,7 @@ import { GameStatus, EnemyType, Direction, FoodType } from '../types';
 import { DIFFICULTY_CONFIGS, POINTS_PER_STAGE } from '../constants';
 import { generateWalls } from './gameUtils';
 export function useStageController(game, spawner, fx, progression) {
-    const { stageRef, stageScoreRef, setUiStage, wallsRef, snakeRef, directionRef, directionQueueRef, foodRef, enemiesRef, projectilesRef, terminalsRef, minesRef, digitalRainRef, bossActiveRef, bossEnemyRef, bossDefeatedRef, difficulty, enemySpawnTimerRef, terminalSpawnTimerRef, setStatus, pendingStatusRef, transitionStartTimeRef, status, setResumeCountdown, gameTimeRef } = game;
+    const { stageRef, stageScoreRef, setUiStage, wallsRef, snakeRef, directionRef, directionQueueRef, foodRef, enemiesRef, projectilesRef, terminalsRef, minesRef, digitalRainRef, bossActiveRef, bossEnemyRef, bossDefeatedRef, difficulty, enemySpawnTimerRef, terminalSpawnTimerRef, setStatus, pendingStatusRef, transitionStartTimeRef, status, setResumeCountdown, gameTimeRef, stageArmedRef, settings, statsRef, setUiShield } = game;
     const { unlockNextDifficulty } = progression;
     const cacheBossRef = useCallback(() => {
         bossEnemyRef.current = bossActiveRef.current
@@ -11,8 +11,13 @@ export function useStageController(game, spawner, fx, progression) {
             : null;
     }, [bossActiveRef, enemiesRef, bossEnemyRef]);
     const checkStageCompletion = useCallback(() => {
+        // 1. Must be PLAYING
         if (status !== GameStatus.PLAYING)
             return;
+        // 2. Must be ARMED (No implicit completion)
+        if (!stageArmedRef.current)
+            return;
+        // 3. Must not already be transitioning
         if (pendingStatusRef.current !== null)
             return;
         // Check condition based on Stage Type
@@ -45,9 +50,17 @@ export function useStageController(game, spawner, fx, progression) {
         pendingStatusRef,
         setStatus,
         transitionStartTimeRef,
-        gameTimeRef
+        gameTimeRef,
+        stageArmedRef
     ]);
     const advanceStage = useCallback(() => {
+        // 🛡️ DEV-ONLY INVARIANT: Stats Reference Integrity
+        // Ensure statsRef is not being reassigned or wiped
+        if (process.env.NODE_ENV !== 'production') {
+            if (!statsRef.current || !statsRef.current.activeWeaponIds) {
+                console.error("CRITICAL: Stats reference lost or corrupted during stage transition!");
+            }
+        }
         stageRef.current += 1;
         setUiStage(stageRef.current);
         wallsRef.current = generateWalls(stageRef.current);
@@ -71,9 +84,23 @@ export function useStageController(game, spawner, fx, progression) {
         terminalSpawnTimerRef.current = 0;
         fx.clearTransientFX();
         pendingStatusRef.current = null;
+        stageArmedRef.current = false; // Disarm for next stage
         transitionStartTimeRef.current = 0;
-        setStatus(GameStatus.RESUMING);
-        setResumeCountdown(3);
+        // 🛡️ REGENERATE SHIELD IF ACQUIRED
+        // Check acquisition via permanent upgrade ID list
+        if (statsRef.current.acquiredUpgradeIds.includes('SHIELD')) {
+            statsRef.current.shieldActive = true;
+            setUiShield(true);
+        }
+        if (settings.skipCountdown) {
+            setStatus(GameStatus.PLAYING);
+            // CRITICAL: Immediately arm stage if skipping countdown
+            stageArmedRef.current = true;
+        }
+        else {
+            setStatus(GameStatus.RESUMING);
+            setResumeCountdown(3);
+        }
     }, [
         stageRef,
         setUiStage,
@@ -93,7 +120,11 @@ export function useStageController(game, spawner, fx, progression) {
         pendingStatusRef,
         transitionStartTimeRef,
         setResumeCountdown,
-        bossDefeatedRef
+        bossDefeatedRef,
+        stageArmedRef,
+        settings.skipCountdown,
+        statsRef,
+        setUiShield
     ]);
     return useMemo(() => ({
         checkStageCompletion,

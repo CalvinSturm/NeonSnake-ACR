@@ -67,7 +67,13 @@ export const generateWalls = (stage) => {
             }
         }
     }
-    return walls.filter(w => Math.abs(w.x - GRID_COLS / 2) > 6 || Math.abs(w.y - GRID_ROWS / 2) > 6);
+    // SAFE SPAWN RESOLVER: Enforce 3-tile radius around (10,10)
+    // This satisfies "Bug 2: Stage 3 Spawns Block on Player"
+    return walls.filter(w => {
+        const distFromCenter = Math.abs(w.x - GRID_COLS / 2) > 6 || Math.abs(w.y - GRID_ROWS / 2) > 6;
+        const distFromSpawn = Math.abs(w.x - 10) > 3 || Math.abs(w.y - 10) > 3;
+        return distFromCenter && distFromSpawn;
+    });
 };
 export const getTheme = (stage) => {
     const idx = ((stage - 1) % 4) + 1;

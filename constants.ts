@@ -1,5 +1,5 @@
 
-import { GameSettings, StageTheme, CharacterProfile, Difficulty, DifficultyConfig, EnemyType } from './types';
+import { GameSettings, StageTheme, CharacterProfile, Difficulty, DifficultyConfig, EnemyType, UpgradeRarity } from './types';
 
 export const CANVAS_WIDTH = 800;
 export const CANVAS_HEIGHT = 600;
@@ -10,24 +10,57 @@ export const DEFAULT_SETTINGS: GameSettings = {
   volume: 0.3
 };
 
-// Ability Configs
-export const ABILITIES = {
-  CHRONO: {
-    COOLDOWN: 15000,
-    DURATION: 4000,
-    RADIUS: 12 // Grid units
-  },
-  PING: {
-    COOLDOWN: 2000,
-    RADIUS: 6, // Grid units
-    KICKBACK: 3.5, // Grid units of push force
-    DAMAGE: 25
-  },
-  SYSTEM_SHOCK: {
-    COOLDOWN: 8000,
-    RADIUS: 8, // Base radius, adds to weapon stats
-    DURATION: 2000
-  }
+// Hitbox Configuration (Unit: Grid Cells)
+export const COLLISION_CONFIG = {
+  PLAYER_HEAD_RADIUS: 0.35, 
+  ENEMY_RADIUS: 0.4,        
+  PROJECTILE_RADIUS: 0.2,   
+  CONFIRMATION_FRAMES: 2,   
+  PROXIMITY_BUFFER: 0.4     
+};
+
+// ─────────────────────────────────────────────
+// UPGRADE SCALING CONSTANTS (DATA TRUTH)
+// ─────────────────────────────────────────────
+
+export const RARITY_MULTIPLIERS: Record<UpgradeRarity, number> = {
+    'COMMON': 1.0,
+    'UNCOMMON': 1.25,
+    'RARE': 1.5,
+    'ULTRA_RARE': 2.0,
+    'LEGENDARY': 3.0
+};
+
+export const UPGRADE_BASES = {
+    // Scalars
+    SCALAR_DAMAGE: 0.10, // +10%
+    SCALAR_FIRE_RATE: 0.10, // +10%
+    SCALAR_AREA: 0.15, // +15%
+    CRIT_CHANCE: 0.05, // +5%
+    CRIT_MULT: 0.25, // +25%
+    FOOD_QUALITY: 0.2, // +20%
+    HACK_SPEED: 0.25, // +25%
+    SCORE_MULT: 0.1, // +10%
+    
+    // Weapon Damage Increments (Flat)
+    CANNON_DMG: 5,
+    AURA_DMG: 3,
+    MINE_DMG: 50,
+    LIGHTNING_DMG: 0.10, 
+    NANO_DMG: 5,
+    PRISM_DMG: 12,
+    SCATTER_DMG: 5,
+    SERPENT_DMG: 10,
+    RAIL_DMG: 60,
+    
+    // Weapon Utility Increments
+    AURA_RADIUS: 0.5,
+    LIGHTNING_RANGE: 1.5,
+    MINE_RATE_REDUCTION: 150, 
+    CANNON_FIRE_RATE_REDUCTION: 80, 
+    
+    // Limits
+    MAX_WEAPON_SLOTS: 6
 };
 
 // Base Colors (Fallbacks)
@@ -38,12 +71,7 @@ export const COLORS = {
   snakeHead: '#ffffff',
   projectile: '#ffff00',
   foodNormal: '#39ff14',
-  foodBonus: '#ffd700',
-  foodPoison: '#ff00ff',
-  foodSlow: '#00bfff',
-  foodMagnet: '#ffffff',
-  foodCompressor: '#00ffff',
-  xpOrb: '#00ffff', // NEW
+  xpOrb: '#00ffff',
   text: '#ffffff',
   uiPanel: 'rgba(10, 20, 30, 0.85)',
   hpBarBg: '#330000',
@@ -177,10 +205,13 @@ export const CHARACTERS: CharacterProfile[] = [
     id: 'striker',
     name: 'STRIKER',
     description: 'HEAVY GUNNER. High fire rate and projectile count.',
+    traitName: 'BALLISTIC MASTERY',
+    traitDescription: '+20% Projectile Speed.',
     color: '#ffdd00',
     tag: 'STABLE',
     payoff: 'Win by firepower.',
     initialStats: {
+      globalProjectileSpeedMod: 1.2, 
       weapon: {
         cannonLevel: 3, 
         cannonDamage: 18,
@@ -190,9 +221,6 @@ export const CHARACTERS: CharacterProfile[] = [
         auraLevel: 0,
         auraRadius: 0,
         auraDamage: 0,
-        shockwaveLevel: 0,
-        shockwaveRadius: 0,
-        shockwaveDamage: 0,
         nanoSwarmLevel: 0,
         nanoSwarmCount: 0,
         nanoSwarmDamage: 0,
@@ -213,7 +241,6 @@ export const CHARACTERS: CharacterProfile[] = [
         phaseRailDamage: 0,
         reflectorMeshLevel: 0,
         ghostCoilLevel: 0,
-        empBloomLevel: 0,
         neuralMagnetLevel: 0,
         overclockLevel: 0,
         echoCacheLevel: 0
@@ -224,13 +251,14 @@ export const CHARACTERS: CharacterProfile[] = [
     id: 'spectre',
     name: 'SPECTRE',
     description: 'LOOTER. High magnet range and XP gain. Adaptive transparency.',
+    traitName: 'PHANTOM DRIFT',
+    traitDescription: '15% Chance to dodge lethal collision damage.',
     color: '#00ffcc',
     tag: 'ADAPTIVE',
     payoff: 'Win by positioning.',
     initialStats: {
       magnetRangeMod: 1.5,
       foodQualityMod: 1.6, 
-      slowDurationMod: 1.5,
       weapon: {
         cannonLevel: 1,
         cannonDamage: 10,
@@ -240,9 +268,6 @@ export const CHARACTERS: CharacterProfile[] = [
         auraLevel: 0,
         auraRadius: 0,
         auraDamage: 0,
-        shockwaveLevel: 0,
-        shockwaveRadius: 0,
-        shockwaveDamage: 0,
         nanoSwarmLevel: 0,
         nanoSwarmCount: 0,
         nanoSwarmDamage: 0,
@@ -263,7 +288,6 @@ export const CHARACTERS: CharacterProfile[] = [
         phaseRailDamage: 0,
         reflectorMeshLevel: 0,
         ghostCoilLevel: 0,
-        empBloomLevel: 0,
         neuralMagnetLevel: 0,
         overclockLevel: 0,
         echoCacheLevel: 0
@@ -274,6 +298,8 @@ export const CHARACTERS: CharacterProfile[] = [
     id: 'volt',
     name: 'VOLT',
     description: 'CROWD CONTROL. Attacks chain lightning to nearby threats.',
+    traitName: 'REACTIVE VOLTAGE',
+    traitDescription: 'Enemies that damage you trigger a defensive lightning strike.',
     color: '#bd00ff',
     tag: 'VOLATILE',
     payoff: 'Win by chaos.',
@@ -287,9 +313,6 @@ export const CHARACTERS: CharacterProfile[] = [
         auraLevel: 0,
         auraRadius: 0,
         auraDamage: 0,
-        shockwaveLevel: 1,
-        shockwaveRadius: 10,
-        shockwaveDamage: 60,
         nanoSwarmLevel: 0,
         nanoSwarmCount: 0,
         nanoSwarmDamage: 0,
@@ -310,7 +333,6 @@ export const CHARACTERS: CharacterProfile[] = [
         phaseRailDamage: 0,
         reflectorMeshLevel: 0,
         ghostCoilLevel: 0,
-        empBloomLevel: 0,
         neuralMagnetLevel: 0,
         overclockLevel: 0,
         echoCacheLevel: 0
@@ -321,6 +343,8 @@ export const CHARACTERS: CharacterProfile[] = [
     id: 'rigger',
     name: 'RIGGER',
     description: 'TACTICIAN. Automates containment via Mines and Nano Swarms.',
+    traitName: 'PROXIMITY OPTIMIZATION',
+    traitDescription: 'Mines have increased trigger and blast radius.',
     color: '#ff8800',
     tag: 'ADAPTIVE',
     payoff: 'Win by preparation.',
@@ -334,16 +358,13 @@ export const CHARACTERS: CharacterProfile[] = [
         auraLevel: 0,
         auraRadius: 0,
         auraDamage: 0,
-        shockwaveLevel: 0,
-        shockwaveRadius: 0,
-        shockwaveDamage: 0,
         nanoSwarmLevel: 1,
         nanoSwarmCount: 2,
         nanoSwarmDamage: 15,
         mineLevel: 1,
-        mineDamage: 45,
+        mineDamage: 150, 
         mineRadius: 3.5,
-        mineDropRate: 2500,
+        mineDropRate: 6000, 
         chainLightningLevel: 0,
         chainLightningDamage: 0,
         chainLightningRange: 0,
@@ -357,7 +378,6 @@ export const CHARACTERS: CharacterProfile[] = [
         phaseRailDamage: 0,
         reflectorMeshLevel: 0,
         ghostCoilLevel: 0,
-        empBloomLevel: 0,
         neuralMagnetLevel: 0,
         overclockLevel: 0,
         echoCacheLevel: 0
@@ -368,12 +388,13 @@ export const CHARACTERS: CharacterProfile[] = [
     id: 'bulwark',
     name: 'BULWARK',
     description: 'TANK. High endurance. Rapid System Shock cycling.',
+    traitName: 'COMPOSITE ARMOR',
+    traitDescription: 'Tail Integrity damage taken is reduced by 50%.',
     color: '#0088ff',
     tag: 'STABLE',
     payoff: 'Win by endurance.',
     initialStats: {
       shieldActive: true,
-      empCooldownMod: 0.6,
       weapon: {
         cannonLevel: 1,
         cannonDamage: 10,
@@ -383,9 +404,6 @@ export const CHARACTERS: CharacterProfile[] = [
         auraLevel: 0,
         auraRadius: 0,
         auraDamage: 0,
-        shockwaveLevel: 2, 
-        shockwaveRadius: 12,
-        shockwaveDamage: 90,
         nanoSwarmLevel: 0,
         nanoSwarmCount: 0,
         nanoSwarmDamage: 0,
@@ -406,7 +424,6 @@ export const CHARACTERS: CharacterProfile[] = [
         phaseRailDamage: 0,
         reflectorMeshLevel: 0,
         ghostCoilLevel: 0,
-        empBloomLevel: 0,
         neuralMagnetLevel: 0,
         overclockLevel: 0,
         echoCacheLevel: 0
@@ -417,6 +434,8 @@ export const CHARACTERS: CharacterProfile[] = [
     id: 'overdrive',
     name: 'OVERDRIVE',
     description: 'BERSERKER. Lethal proximity aura. High-risk score output.',
+    traitName: 'SYNTH ADRENALINE',
+    traitDescription: 'Movement Speed increases with Combo Multiplier.',
     color: '#ff0044',
     tag: 'VOLATILE',
     payoff: 'Win by speed.',
@@ -431,9 +450,6 @@ export const CHARACTERS: CharacterProfile[] = [
         auraLevel: 2,
         auraRadius: 2.5,
         auraDamage: 18,
-        shockwaveLevel: 0,
-        shockwaveRadius: 0,
-        shockwaveDamage: 0,
         nanoSwarmLevel: 0,
         nanoSwarmCount: 0,
         nanoSwarmDamage: 0,
@@ -454,7 +470,6 @@ export const CHARACTERS: CharacterProfile[] = [
         phaseRailDamage: 0,
         reflectorMeshLevel: 0,
         ghostCoilLevel: 0,
-        empBloomLevel: 0,
         neuralMagnetLevel: 0,
         overclockLevel: 0,
         echoCacheLevel: 0
@@ -466,27 +481,19 @@ export const CHARACTERS: CharacterProfile[] = [
 export const GRID_COLS = CANVAS_WIDTH / DEFAULT_SETTINGS.gridSize;
 export const GRID_ROWS = CANVAS_HEIGHT / DEFAULT_SETTINGS.gridSize;
 
-export const CHANCE_BONUS = 6;
-export const CHANCE_POISON = 4;
-export const CHANCE_SLOW = 3;
-export const CHANCE_MAGNET = 3;
-export const CHANCE_COMPRESSOR = 4;
-
 export const FX_LIMITS = {particles: 150,};
-export const DURATION_SLOW = 5000;
-export const DURATION_MAGNET = 5000;
 export const MAGNET_RADIUS = 0.5;
-export const XP_BASE_MAGNET_RADIUS = 4.0; // Base magnet for XP
+export const XP_BASE_MAGNET_RADIUS = 4.0; 
 
 export const COMBO_WINDOW = 5000;
 export const ENEMY_SPAWN_INTERVAL = 2500;
 export const ENEMY_MOVE_TICK = 320;
 export const EMP_CHARGE_PER_FOOD = 9; 
 
-export const XP_TO_LEVEL_UP = 500;
+export const XP_TO_LEVEL_UP = 200;
 export const PASSIVE_SCORE_PER_SEC = 8;
 export const POINTS_PER_STAGE = 10000;
-export const TRANSITION_DURATION = 4000;
+export const TRANSITION_DURATION = 2500;
 export const COMBO_DECAY_DURATION = 4000;
 
 
@@ -496,5 +503,5 @@ export const TERMINAL_HACK_TIME = 2500;
 
 export const ENEMY_BASE_HP = 35;
 export const BOSS_BASE_HP = 1800;
-export const PROJECTILE_SPEED = 18;
+export const PROJECTILE_SPEED = 10;
 export const SHOCKWAVE_SPEED = 1.6;

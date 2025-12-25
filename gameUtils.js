@@ -1,8 +1,13 @@
 import { GRID_COLS, GRID_ROWS, STAGE_THEMES } from './constants';
-export const formatTime = (ms) => {
+export const formatTime = (ms, includeMs = false) => {
     const totalSec = Math.floor(ms / 1000);
     const m = Math.floor(totalSec / 60).toString().padStart(2, '0');
     const s = (totalSec % 60).toString().padStart(2, '0');
+    if (includeMs) {
+        // Centiseconds (00-99)
+        const cs = Math.floor((ms % 1000) / 10).toString().padStart(2, '0');
+        return `${m}:${s}.${cs}`;
+    }
     return `${m}:${s}`;
 };
 export const getRandomPos = (snake, exclude = [], walls = []) => {

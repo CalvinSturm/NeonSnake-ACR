@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 
 import { useCallback, useMemo } from 'react';
 import { useGameState } from './useGameState';
@@ -5,7 +6,7 @@ import { useSpawner } from './useSpawner';
 import { useProgression } from './useProgression';
 import { useFX } from './useFX';
 import { GameStatus, EnemyType, Direction, FoodType } from '../types';
-import { DIFFICULTY_CONFIGS, POINTS_PER_STAGE, TRANSITION_DURATION } from '../constants';
+import { DIFFICULTY_CONFIGS, POINTS_PER_STAGE, TRANSITION_DURATION, DEFAULT_SETTINGS } from '../constants';
 import { generateWalls } from './gameUtils';
 
 export function useStageController(
@@ -20,6 +21,8 @@ export function useStageController(
     setUiStage,
     wallsRef,
     snakeRef,
+    prevTailRef,
+    tailIntegrityRef,
     directionRef,
     directionQueueRef,
     foodRef,
@@ -34,12 +37,18 @@ export function useStageController(
     difficulty,
     enemySpawnTimerRef,
     terminalSpawnTimerRef,
+    bossOverrideTimerRef, // NEW
     setStatus,
     pendingStatusRef,
     transitionStartTimeRef,
     status,
     setResumeCountdown,
-    gameTimeRef
+    gameTimeRef,
+    stageArmedRef,
+    stageReadyRef,
+    settings,
+    statsRef,
+    setUiShield
   } = game;
 
   const { unlockNextDifficulty } = progression;
@@ -51,20 +60,42 @@ export function useStageController(
   }, [bossActiveRef, enemiesRef, bossEnemyRef]);
 
   const checkStageCompletion = useCallback(() => {
+    // 1. Basic Status Checks
     if (status !== GameStatus.PLAYING) return;
     if (pendingStatusRef.current !== null) return;
     
-    // Check condition based on Stage Type
+    // 2. CHECK OBJECTIVES (ARMING PHASE)
+    // Only proceed if armed (gameplay active), but do not block XP elsewhere
+    if (!stageArmedRef.current) return;
+
     const isBossStage = stageRef.current % 4 === 0;
+    let objectivesMet = false;
 
     if (isBossStage) {
-        // BOSS STAGE: Must defeat boss to proceed
-        if (!bossDefeatedRef.current) return;
+        if (bossDefeatedRef.current) objectivesMet = true;
     } else {
-        // STANDARD STAGE: Score threshold
-        if (stageScoreRef.current < POINTS_PER_STAGE) return;
+        if (stageScoreRef.current >= POINTS_PER_STAGE) objectivesMet = true;
     }
 
+    if (objectivesMet) {
+        stageReadyRef.current = true;
+    }
+
+    // 3. TRANSITION GATES (Must be ready AND clear)
+    if (!stageReadyRef.current) return;
+
+    // Gate 1: Clear all enemies
+    if (enemiesRef.current.length > 0) return;
+
+    // Gate 2: Collect all XP
+    const hasXp = foodRef.current.some(f => f.type === FoodType.XP_ORB);
+    if (hasXp) return;
+
+    // Gate 3: Finish active hacks
+    const activeHack = terminalsRef.current.some(t => t.progress > 0 && !t.isLocked);
+    if (activeHack) return;
+
+    // 4. EXECUTE TRANSITION
     const config = DIFFICULTY_CONFIGS[difficulty];
     if (stageRef.current === config.stageGoal) {
       unlockNextDifficulty();
@@ -84,22 +115,39 @@ export function useStageController(
     pendingStatusRef,
     setStatus,
     transitionStartTimeRef,
-    gameTimeRef
+    gameTimeRef,
+    stageArmedRef,
+    stageReadyRef,
+    enemiesRef,
+    foodRef,
+    terminalsRef
   ]);
 
   const advanceStage = useCallback(() => {
+    // 🛡️ DEV-ONLY INVARIANT: Stats Reference Integrity
+    if (import.meta.env.DEV) {
+        if (!statsRef.current || !statsRef.current.activeWeaponIds) {
+            console.error("CRITICAL: Stats reference lost or corrupted during stage transition!");
+        }
+    }
+
     stageRef.current += 1;
     setUiStage(stageRef.current);
 
     wallsRef.current = generateWalls(stageRef.current);
     stageScoreRef.current = 0;
-    bossDefeatedRef.current = false; // Reset boss flag
+    bossDefeatedRef.current = false;
 
+    // SAFE INITIALIZATION
     snakeRef.current = [
       { x: 10, y: 10 },
       { x: 9, y: 10 },
       { x: 8, y: 10 }
     ];
+    prevTailRef.current = { x: 7, y: 10 };
+    
+    // RESTORE TAIL INTEGRITY
+    tailIntegrityRef.current = 100;
 
     directionRef.current = Direction.RIGHT;
     directionQueueRef.current = [];
@@ -111,23 +159,49 @@ export function useStageController(
     minesRef.current = [];
     digitalRainRef.current = [];
 
-    spawner.spawnFood(FoodType.NORMAL);
+    // 🔒 CLASSIC FOOD SPAWN
+    // Spawn exactly 1 initial food item.
+    // The spawner system will maintain this count (replenishing when eaten).
+    spawner.spawnFood();
 
     enemySpawnTimerRef.current = 0;
     terminalSpawnTimerRef.current = 0;
+    bossOverrideTimerRef.current = 0; // Reset boss timer
 
     fx.clearTransientFX();
 
     pendingStatusRef.current = null;
+    stageArmedRef.current = false; // Disarm for next stage
+    stageReadyRef.current = false; // Reset completion readiness
     transitionStartTimeRef.current = 0;
+    
+    // 🛡️ REGENERATE SHIELD IF ACQUIRED
+    if (statsRef.current.acquiredUpgradeIds.includes('SHIELD')) {
+        statsRef.current.shieldActive = true;
+        setUiShield(true);
+        fx.spawnFloatingText(
+            10 * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2, 
+            10 * DEFAULT_SETTINGS.gridSize, 
+            "SHIELD RESTORED", 
+            '#00ffff', 
+            16
+        );
+    }
 
-    setStatus(GameStatus.RESUMING);
-    setResumeCountdown(3);
+    if (settings.skipCountdown) {
+        setStatus(GameStatus.PLAYING);
+        stageArmedRef.current = true;
+    } else {
+        setStatus(GameStatus.RESUMING);
+        setResumeCountdown(3);
+    }
   }, [
     stageRef,
     setUiStage,
     wallsRef,
     snakeRef,
+    prevTailRef,
+    tailIntegrityRef,
     directionRef,
     directionQueueRef,
     foodRef,
@@ -142,7 +216,13 @@ export function useStageController(
     pendingStatusRef,
     transitionStartTimeRef,
     setResumeCountdown,
-    bossDefeatedRef
+    bossDefeatedRef,
+    stageArmedRef,
+    stageReadyRef,
+    settings.skipCountdown,
+    statsRef,
+    setUiShield,
+    bossOverrideTimerRef
   ]);
 
   return useMemo(

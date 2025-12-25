@@ -260,15 +260,35 @@ const drawFood = (rc, food) => {
         }
     }
 };
-const drawSnake = (rc, snake, direction, stats, charProfile) => {
+const drawSnake = (rc, snake, direction, stats, charProfile, moveProgress, isMagnetActive, hasXp) => {
     if (snake.length === 0)
         return;
     const { ctx, gridSize, halfGrid, now } = rc;
     const PI2 = Math.PI * 2;
     const head = snake[0];
-    const headCx = head.x * gridSize + halfGrid;
-    const headCy = head.y * gridSize + halfGrid;
+    // SMOOTH RENDER INTERPOLATION
+    // Interpolate head position from neck (prev pos) to current head
+    const neck = snake[1] || head; // Fallback for single segment
+    const interpX = neck.x + (head.x - neck.x) * moveProgress;
+    const interpY = neck.y + (head.y - neck.y) * moveProgress;
+    const headCx = interpX * gridSize + halfGrid;
+    const headCy = interpY * gridSize + halfGrid;
     const charColor = charProfile?.color || COLORS.snakeHead;
+    // MAGNET/XP GLOW FX (Strict Invariant Check)
+    if (isMagnetActive && hasXp) {
+        ctx.save();
+        ctx.translate(headCx, headCy);
+        const pulse = 1 + Math.sin(now / 150) * 0.2;
+        ctx.beginPath();
+        ctx.arc(0, 0, gridSize * 2 * pulse, 0, PI2);
+        const gradient = ctx.createRadialGradient(0, 0, gridSize * 0.5, 0, 0, gridSize * 2);
+        gradient.addColorStop(0, 'rgba(0, 255, 255, 0)');
+        gradient.addColorStop(0.5, 'rgba(0, 255, 255, 0.15)');
+        gradient.addColorStop(1, 'rgba(0, 255, 255, 0)');
+        ctx.fillStyle = gradient;
+        ctx.fill();
+        ctx.restore();
+    }
     // AURA
     if (stats.weapon.auraLevel > 0) {
         const r = stats.weapon.auraRadius * gridSize;
@@ -670,8 +690,9 @@ const drawDigitalRain = (rc, drops) => {
 // MAIN HOOK
 // ─────────────────────────────
 export function useRendering(canvasRef, game) {
-    const { status, snakeRef, enemiesRef, foodRef, wallsRef, terminalsRef, projectilesRef, particlesRef, floatingTextsRef, shockwavesRef, lightningArcsRef, digitalRainRef, minesRef, statsRef, shakeRef, gameTimeRef, transitionStartTimeRef, directionRef } = game;
-    const draw = useCallback((_alpha) => {
+    const { status, snakeRef, enemiesRef, foodRef, wallsRef, terminalsRef, projectilesRef, particlesRef, floatingTextsRef, shockwavesRef, lightningArcsRef, digitalRainRef, minesRef, statsRef, shakeRef, gameTimeRef, transitionStartTimeRef, directionRef, powerUpsRef // Added for FX check
+     } = game;
+    const draw = useCallback((_alpha, moveProgress = 0) => {
         const canvas = canvasRef.current;
         if (!canvas)
             return;
@@ -710,7 +731,10 @@ export function useRendering(canvasRef, game) {
             drawMines(rc, minesRef.current);
             drawTerminals(rc, terminalsRef.current, snakeRef.current[0]);
             drawFood(rc, foodRef.current);
-            drawSnake(rc, snakeRef.current, directionRef.current, statsRef.current, game.selectedChar);
+            // FX LOGIC: Magnet Glow
+            const isMagnetActive = gameTimeRef.current < powerUpsRef.current.magnetUntil;
+            const hasXp = foodRef.current.some(f => f.type === FoodType.XP_ORB);
+            drawSnake(rc, snakeRef.current, directionRef.current, statsRef.current, game.selectedChar, moveProgress, isMagnetActive, hasXp);
             drawEnemies(rc, enemiesRef.current, snakeRef.current[0]);
             // ── PROJECTILES ──
             drawProjectiles(rc, projectilesRef.current);

@@ -1,234 +1,123 @@
 
-import { UpgradeId, UpgradeContext } from './types';
 import { UpgradeOption, UpgradeRarity } from '../types';
+import { UpgradeContext, UpgradeId } from './types';
+import { DESCRIPTOR_REGISTRY } from '../game/descriptors';
+import { UPGRADE_BASES, RARITY_MULTIPLIERS } from '../constants';
 
-/* ─────────────────────────────
-   Upgrade Factories (PURE)
-   ───────────────────────────── */
+const formatPct = (val: number) => `+${Math.round(val * 100)}%`;
+const formatFlat = (val: number) => `+${Math.round(val)}`;
 
-const getRarity = (level: number): UpgradeRarity => {
-    if (level === 0) return 'COMMON'; // Unlocking is common
-    if (level < 3) return 'COMMON';
-    if (level < 6) return 'RARE';
-    return 'LEGENDARY';
+const createOption = (id: UpgradeId, rarity: UpgradeRarity): UpgradeOption => {
+    const desc = DESCRIPTOR_REGISTRY[id];
+    if (!desc) {
+        return {
+            id,
+            title: 'UNKNOWN UPGRADE',
+            description: 'Data corrupted.',
+            color: 'text-gray-500',
+            category: 'SYSTEM',
+            rarity: 'COMMON',
+            icon: '?',
+            stats: ['ERROR']
+        };
+    }
+
+    const mod = RARITY_MULTIPLIERS[rarity] || 1.0;
+    const stats: string[] = [];
+
+    // DATA INJECTION (Normalized Grammar)
+    switch (id) {
+        case 'SCALAR_DAMAGE':
+            stats.push(`${formatPct(UPGRADE_BASES.SCALAR_DAMAGE * mod)} Damage`);
+            break;
+        case 'SCALAR_FIRE_RATE':
+            stats.push(`${formatPct(UPGRADE_BASES.SCALAR_FIRE_RATE * mod)} Fire Rate`);
+            break;
+        case 'SCALAR_AREA':
+            stats.push(`${formatPct(UPGRADE_BASES.SCALAR_AREA * mod)} Area`);
+            break;
+        case 'CRITICAL':
+            stats.push(`${formatPct(UPGRADE_BASES.CRIT_CHANCE * mod)} Crit Chance`);
+            stats.push(`${formatPct(UPGRADE_BASES.CRIT_MULT * mod)} Crit Multiplier`);
+            break;
+        case 'FOOD':
+            stats.push(`${formatPct(UPGRADE_BASES.FOOD_QUALITY * mod)} Food Quality`);
+            break;
+        case 'TERMINAL_PROTOCOL':
+            stats.push(`${formatPct(UPGRADE_BASES.HACK_SPEED * mod)} Hack Speed`);
+            break;
+        case 'OVERCLOCK_WEAPON_SLOT':
+            stats.push(`+1 WEAPON SLOT`);
+            stats.push(`SYSTEM BREAK`);
+            break;
+        
+        // WEAPONS
+        case 'CANNON':
+            stats.push(`${formatFlat(UPGRADE_BASES.CANNON_DMG * mod)} Damage`);
+            stats.push(`-${Math.round(UPGRADE_BASES.CANNON_FIRE_RATE_REDUCTION * mod)}ms Cooldown`);
+            break;
+        case 'AURA':
+            stats.push(`${formatFlat(UPGRADE_BASES.AURA_DMG * mod)} Damage`);
+            stats.push(`${formatFlat(UPGRADE_BASES.AURA_RADIUS * mod)} Radius`);
+            break;
+        case 'MINES':
+            stats.push(`${formatFlat(UPGRADE_BASES.MINE_DMG * mod)} Damage`);
+            stats.push(`-${Math.round(UPGRADE_BASES.MINE_RATE_REDUCTION * mod)}ms Cooldown`);
+            break;
+        case 'LIGHTNING':
+            stats.push(`${formatPct(UPGRADE_BASES.LIGHTNING_DMG * mod)} Chain Damage`);
+            break;
+        case 'NANO_SWARM':
+            stats.push(`${formatFlat(UPGRADE_BASES.NANO_DMG * mod)} Damage`);
+            stats.push(`+1 Drone Unit`);
+            break;
+        case 'PRISM_LANCE':
+            stats.push(`${formatFlat(UPGRADE_BASES.PRISM_DMG * mod)} Damage`);
+            break;
+        case 'NEON_SCATTER':
+            stats.push(`${formatFlat(UPGRADE_BASES.SCATTER_DMG * mod)} Damage`);
+            break;
+        case 'VOLT_SERPENT':
+            stats.push(`${formatFlat(UPGRADE_BASES.SERPENT_DMG * mod)} Damage`);
+            break;
+        case 'PHASE_RAIL':
+            stats.push(`${formatFlat(UPGRADE_BASES.RAIL_DMG * mod)} Damage`);
+            break;
+    }
+
+    return {
+        id: desc.id,
+        title: desc.name,
+        description: desc.description,
+        color: desc.color,
+        category: desc.category,
+        rarity: rarity,
+        icon: desc.icon,
+        stats: stats
+    };
 };
 
-export const UPGRADE_FACTORIES: Record<
-  UpgradeId,
-  (ctx: UpgradeContext) => UpgradeOption
-> = {
-  // ── WEAPONS ──
-  
-  CANNON: ({ weapon }) => ({
-    id: 'CANNON',
-    title: weapon.cannonLevel === 0 ? 'UNLOCK AUTO CANNON' : `AUTO CANNON MK ${weapon.cannonLevel + 1}`,
-    description: weapon.cannonLevel >= 3 ? 'Adds extra projectile and increases speed.' : 'Increases fire rate and projectile damage.',
-    color: 'text-yellow-400',
-    category: 'WEAPON',
-    rarity: getRarity(weapon.cannonLevel),
-    icon: '🔫',
-    isNewWeapon: weapon.cannonLevel === 0
-  }),
-
-  AURA: ({ weapon }) => ({
-    id: 'AURA',
-    title: weapon.auraLevel === 0 ? 'UNLOCK TAIL AURA' : `TAIL AURA MK ${weapon.auraLevel + 1}`,
-    description: 'Expands the damaging field radius and intensity.',
-    color: 'text-red-400',
-    category: 'WEAPON',
-    rarity: getRarity(weapon.auraLevel),
-    icon: '⭕',
-    isNewWeapon: weapon.auraLevel === 0
-  }),
-
-  NANO_SWARM: ({ weapon }) => ({
-    id: 'NANO_SWARM',
-    title: weapon.nanoSwarmLevel === 0 ? 'UNLOCK NANO SWARM' : `NANO SWARM MK ${weapon.nanoSwarmLevel + 1}`,
-    description: weapon.nanoSwarmLevel === 0 ? 'Deploy 2 drones to orbit and protect you.' : 'Adds more drones and increases orbit speed.',
-    color: 'text-pink-400',
-    category: 'WEAPON',
-    rarity: getRarity(weapon.nanoSwarmLevel),
-    icon: '🛰️',
-    isNewWeapon: weapon.nanoSwarmLevel === 0
-  }),
-
-  MINES: ({ weapon }) => ({
-    id: 'MINES',
-    title: weapon.mineLevel === 0 ? 'UNLOCK PLASMA MINES' : `PLASMA MINES MK ${weapon.mineLevel + 1}`,
-    description: weapon.mineLevel === 0 ? 'Periodically deploy explosive mines from tail.' : 'Mines trigger larger explosions.',
-    color: 'text-orange-400',
-    category: 'WEAPON',
-    rarity: getRarity(weapon.mineLevel),
-    icon: '💣',
-    isNewWeapon: weapon.mineLevel === 0
-  }),
-
-  LIGHTNING: ({ weapon }) => ({
-    id: 'LIGHTNING',
-    title: weapon.chainLightningLevel === 0 ? 'UNLOCK VOLTAIC ARC' : `VOLTAIC ARC MK ${weapon.chainLightningLevel + 1}`,
-    description: 'Attacks chain lightning to more distant enemies.',
-    color: 'text-cyan-400',
-    category: 'WEAPON',
-    rarity: getRarity(weapon.chainLightningLevel),
-    icon: '⚡',
-    isNewWeapon: weapon.chainLightningLevel === 0
-  }),
-
-  PRISM_LANCE: ({ weapon }) => ({
-    id: 'PRISM_LANCE',
-    title: weapon.prismLanceLevel === 0 ? 'UNLOCK PRISM LANCE' : `PRISM LANCE MK ${weapon.prismLanceLevel + 1}`,
-    description: 'Fires a piercing energy beam. Refracts on impact.',
-    color: 'text-teal-300',
-    category: 'WEAPON',
-    rarity: getRarity(weapon.prismLanceLevel),
-    icon: '💎',
-    isNewWeapon: weapon.prismLanceLevel === 0
-  }),
-
-  NEON_SCATTER: ({ weapon }) => ({
-    id: 'NEON_SCATTER',
-    title: weapon.neonScatterLevel === 0 ? 'UNLOCK NEON SCATTER' : `NEON SCATTER MK ${weapon.neonScatterLevel + 1}`,
-    description: 'Short-range burst of shotgun shards. High close-up damage.',
-    color: 'text-pink-500',
-    category: 'WEAPON',
-    rarity: getRarity(weapon.neonScatterLevel),
-    icon: '🎆',
-    isNewWeapon: weapon.neonScatterLevel === 0
-  }),
-
-  VOLT_SERPENT: ({ weapon }) => ({
-    id: 'VOLT_SERPENT',
-    title: weapon.voltSerpentLevel === 0 ? 'UNLOCK VOLT SERPENT' : `VOLT SERPENT MK ${weapon.voltSerpentLevel + 1}`,
-    description: 'Summons a homing lightning snake that hunts targets.',
-    color: 'text-blue-500',
-    category: 'WEAPON',
-    rarity: getRarity(weapon.voltSerpentLevel),
-    icon: '🐉',
-    isNewWeapon: weapon.voltSerpentLevel === 0
-  }),
-
-  PHASE_RAIL: ({ weapon }) => ({
-    id: 'PHASE_RAIL',
-    title: weapon.phaseRailLevel === 0 ? 'UNLOCK PHASE RAIL' : `PHASE RAIL MK ${weapon.phaseRailLevel + 1}`,
-    description: 'Charges up to fire a massive, piercing railgun shot.',
-    color: 'text-purple-500',
-    category: 'WEAPON',
-    rarity: getRarity(weapon.phaseRailLevel),
-    icon: '🔦',
-    isNewWeapon: weapon.phaseRailLevel === 0
-  }),
-
-  // ── DEFENSE ──
-
-  SHIELD: ({ shieldActive }) => ({
-    id: 'SHIELD',
-    title: shieldActive ? 'SHIELD REINFORCEMENT' : 'ACTIVATE SHIELD',
-    description: shieldActive ? 'Adds a temporary defense layer.' : 'Protects against one segment collision.',
-    color: 'text-cyan-400',
-    category: 'DEFENSE',
-    rarity: shieldActive ? 'RARE' : 'COMMON',
-    icon: '🛡️'
-  }),
-
-  REFLECTOR_MESH: ({ weapon }) => ({
-    id: 'REFLECTOR_MESH',
-    title: weapon.reflectorMeshLevel === 0 ? 'INSTALL REFLECTOR MESH' : `REFLECTOR MESH MK ${weapon.reflectorMeshLevel + 1}`,
-    description: 'Chance to reflect enemy projectiles back at them.',
-    color: 'text-cyan-200',
-    category: 'DEFENSE',
-    rarity: 'RARE',
-    icon: '📡'
-  }),
-
-  GHOST_COIL: ({ weapon }) => ({
-    id: 'GHOST_COIL',
-    title: weapon.ghostCoilLevel === 0 ? 'INSTALL GHOST COIL' : `GHOST COIL MK ${weapon.ghostCoilLevel + 1}`,
-    description: 'Briefly phase through enemies to avoid damage on impact.',
-    color: 'text-gray-300',
-    category: 'DEFENSE',
-    rarity: 'LEGENDARY',
-    icon: '👻'
-  }),
-
-  EMP_BLOOM: ({ weapon }) => ({
-    id: 'EMP_BLOOM',
-    title: weapon.empBloomLevel === 0 ? 'INSTALL EMP BLOOM' : `EMP BLOOM MK ${weapon.empBloomLevel + 1}`,
-    description: 'Taking damage triggers a local EMP stun burst.',
-    color: 'text-blue-300',
-    category: 'DEFENSE',
-    rarity: 'RARE',
-    icon: '🎇'
-  }),
-
-  // ── UTILITY / ECONOMY / SYSTEM ──
-
-  SHOCKWAVE: ({ weapon }) => ({
-    id: 'SHOCKWAVE',
-    title: `SYSTEM SHOCK MK ${weapon.shockwaveLevel + 1}`,
-    description: 'Increases EMP blast radius and reduces cooldown.',
-    color: 'text-blue-400',
-    category: 'SYSTEM',
-    rarity: 'COMMON',
-    icon: '💥'
-  }),
-
-  CRITICAL: ({ critChance }) => ({
-    id: 'CRITICAL',
-    title: 'CRIT ALGORITHM',
-    description: `Increase Crit Chance to ${Math.floor((critChance + 0.06) * 100)}% and damage.`,
-    color: 'text-purple-400',
-    category: 'SYSTEM',
-    rarity: 'COMMON',
-    icon: '🎯'
-  }),
-
-  FOOD: () => ({
-    id: 'FOOD',
-    title: 'GENETIC SYNERGY',
-    description: 'Increases XP, Score multiplier, and Magnet range.',
-    color: 'text-green-400',
-    category: 'ECONOMY',
-    rarity: 'COMMON',
-    icon: '🧬'
-  }),
-
-  NEURAL_MAGNET: ({ weapon }) => ({
-    id: 'NEURAL_MAGNET',
-    title: weapon.neuralMagnetLevel === 0 ? 'ACTIVATE NEURAL MAGNET' : `NEURAL MAGNET MK ${weapon.neuralMagnetLevel + 1}`,
-    description: 'Killed enemies pull nearby XP and pickups towards you.',
-    color: 'text-indigo-400',
-    category: 'ECONOMY',
-    rarity: 'RARE',
-    icon: '🧲'
-  }),
-
-  OVERCLOCK: ({ weapon }) => ({
-    id: 'OVERCLOCK',
-    title: weapon.overclockLevel === 0 ? 'INSTALL OVERCLOCK INJECTOR' : `OVERCLOCK MK ${weapon.overclockLevel + 1}`,
-    description: 'Periodically boosts fire rate and movement speed.',
-    color: 'text-red-500',
-    category: 'UTILITY',
-    rarity: 'LEGENDARY',
-    icon: '🚀'
-  }),
-
-  ECHO_CACHE: ({ weapon }) => ({
-    id: 'ECHO_CACHE',
-    title: weapon.echoCacheLevel === 0 ? 'INSTALL ECHO CACHE' : `ECHO CACHE MK ${weapon.echoCacheLevel + 1}`,
-    description: 'Stores damage dealt and releases it as a shockwave.',
-    color: 'text-orange-300',
-    category: 'UTILITY',
-    rarity: 'RARE',
-    icon: '💾'
-  }),
-
-  TERMINAL_PROTOCOL: ({ hackSpeedMod }) => ({
-    id: 'TERMINAL_PROTOCOL',
-    title: 'TERMINAL OPTIMIZER',
-    description: 'Hacking terminals is faster and yields more rewards.',
-    color: 'text-fuchsia-400',
-    category: 'HACKING',
-    rarity: 'COMMON',
-    icon: '📶'
-  })
+export const UPGRADE_DEFINITIONS: Record<string, (context: UpgradeContext, rarity: UpgradeRarity) => UpgradeOption> = {
+  CANNON: (c, r) => createOption('CANNON', r),
+  AURA: (c, r) => createOption('AURA', r),
+  MINES: (c, r) => createOption('MINES', r),
+  LIGHTNING: (c, r) => createOption('LIGHTNING', r),
+  NANO_SWARM: (c, r) => createOption('NANO_SWARM', r),
+  SHIELD: (c, r) => createOption('SHIELD', r),
+  CRITICAL: (c, r) => createOption('CRITICAL', r),
+  FOOD: (c, r) => createOption('FOOD', r),
+  PRISM_LANCE: (c, r) => createOption('PRISM_LANCE', r),
+  NEON_SCATTER: (c, r) => createOption('NEON_SCATTER', r),
+  VOLT_SERPENT: (c, r) => createOption('VOLT_SERPENT', r),
+  PHASE_RAIL: (c, r) => createOption('PHASE_RAIL', r),
+  REFLECTOR_MESH: (c, r) => createOption('REFLECTOR_MESH', r),
+  GHOST_COIL: (c, r) => createOption('GHOST_COIL', r),
+  NEURAL_MAGNET: (c, r) => createOption('NEURAL_MAGNET', r),
+  OVERCLOCK: (c, r) => createOption('OVERCLOCK', r),
+  ECHO_CACHE: (c, r) => createOption('ECHO_CACHE', r),
+  TERMINAL_PROTOCOL: (c, r) => createOption('TERMINAL_PROTOCOL', r),
+  OVERCLOCK_WEAPON_SLOT: (c, r) => createOption('OVERCLOCK_WEAPON_SLOT', r),
+  SCALAR_DAMAGE: (c, r) => createOption('SCALAR_DAMAGE', r),
+  SCALAR_FIRE_RATE: (c, r) => createOption('SCALAR_FIRE_RATE', r),
+  SCALAR_AREA: (c, r) => createOption('SCALAR_AREA', r)
 };

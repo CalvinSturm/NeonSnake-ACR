@@ -2,7 +2,8 @@
 import { useCallback, RefObject } from 'react';
 import { useGameState } from './useGameState';
 import { DEFAULT_SETTINGS, COLORS, GRID_COLS, GRID_ROWS, CANVAS_WIDTH, CANVAS_HEIGHT } from '../constants';
-import { FoodType, EnemyType, GameStatus, Direction } from '../types';
+import { FoodType, EnemyType, GameStatus, Direction, Point } from '../types';
+import { audio } from '../utils/audio';
 
 // ─────────────────────────────
 // TYPES & CONTEXT
@@ -15,6 +16,7 @@ interface RenderContext {
   height: number;
   gridSize: number;
   halfGrid: number;
+  stageReady: boolean;
 }
 
 // ─────────────────────────────
@@ -64,12 +66,14 @@ const drawTransition = (rc: RenderContext, startTime: number) => {
     ctx.save();
     ctx.translate(cx, cy);
     
-    const rotSpeed = 0.0005 + (Math.sin(beatPhase * 0.5) * 0.0002);
+    // Accelerated Rotation for faster transition feel
+    const rotSpeed = 0.002 + (Math.sin(beatPhase * 0.5) * 0.0005);
     ctx.rotate(t * rotSpeed);
     ctx.scale(pulse, pulse);
     
     const numRings = 16;
-    const tunnelSpeed = 0.002; 
+    // Faster tunnel speed (0.005 instead of 0.002) for accelerated collapse
+    const tunnelSpeed = 0.005; 
     const scroll = (t * tunnelSpeed) % 1;
     
     ctx.lineWidth = 2;
@@ -80,7 +84,7 @@ const drawTransition = (rc: RenderContext, startTime: number) => {
         if (z < 0.001) continue;
         
         const size = width * 2.5 * z;
-        const hue = (180 + (t * 0.15) + (depth * 120)) % 360;
+        const hue = (180 + (t * 0.3) + (depth * 120)) % 360; // Faster color shift
         const alpha = depth * depth; 
         
         ctx.strokeStyle = `hsla(${hue}, 90%, 60%, ${alpha})`;
@@ -101,10 +105,19 @@ const drawBackground = (rc: RenderContext) => {
 };
 
 const drawGrid = (rc: RenderContext) => {
-    const { ctx, width, height, gridSize, now } = rc;
-    ctx.strokeStyle = COLORS.grid;
-    ctx.lineWidth = 1;
-    ctx.globalAlpha = 0.2 + (Math.sin(now / 1000) * 0.05);
+    const { ctx, width, height, gridSize, now, stageReady } = rc;
+    
+    // NEW: Pulsing grid when stage is ready
+    if (stageReady) {
+        const pulse = Math.sin(now / 320) * 0.5 + 0.5; // ~2s period (0 to 1)
+        ctx.strokeStyle = `rgba(0, 255, 255, ${0.1 + pulse * 0.2})`;
+        ctx.lineWidth = 1 + pulse;
+    } else {
+        ctx.strokeStyle = COLORS.grid;
+        ctx.lineWidth = 1;
+        ctx.globalAlpha = 0.2 + (Math.sin(now / 1000) * 0.05);
+    }
+
     ctx.beginPath();
     for (let x = 0; x <= GRID_COLS; x += 1) {
       ctx.moveTo(x * gridSize, 0);
@@ -116,13 +129,33 @@ const drawGrid = (rc: RenderContext) => {
     }
     ctx.stroke();
     ctx.globalAlpha = 1.0;
+    
+    // NEW: Border Pulse if ready
+    if (stageReady) {
+        const pulse = Math.sin(now / 320) * 0.5 + 0.5;
+        ctx.strokeStyle = `rgba(0, 255, 255, ${0.3 + pulse * 0.4})`;
+        ctx.lineWidth = 4 + pulse * 2;
+        ctx.shadowColor = '#00ffff';
+        ctx.shadowBlur = 10 + pulse * 10;
+        ctx.strokeRect(0, 0, width, height);
+        ctx.shadowBlur = 0;
+    }
 };
 
 const drawWalls = (rc: RenderContext, walls: any[]) => {
-    const { ctx, gridSize, halfGrid } = rc;
-    ctx.shadowBlur = 10;
-    ctx.shadowColor = COLORS.wallBorder;
-    ctx.strokeStyle = COLORS.wallBorder;
+    const { ctx, gridSize, halfGrid, stageReady, now } = rc;
+    
+    if (stageReady) {
+        const pulse = Math.sin(now / 320) * 0.5 + 0.5;
+        ctx.shadowBlur = 10 + pulse * 15;
+        ctx.shadowColor = `rgba(0, 255, 255, ${0.8})`;
+        ctx.strokeStyle = `rgba(0, 255, 255, ${0.8 + pulse * 0.2})`;
+    } else {
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = COLORS.wallBorder;
+        ctx.strokeStyle = COLORS.wallBorder;
+    }
+    
     ctx.lineWidth = 2;
     
     ctx.beginPath();
@@ -253,6 +286,7 @@ const drawFood = (rc: RenderContext, food: any[]) => {
         const cy = f.y * gridSize + halfGrid;
         
         if (f.type === FoodType.XP_ORB) {
+            // XP ORBS: Animated, distinct, rewarding
             ctx.save();
             ctx.translate(cx, cy);
             ctx.rotate(now / 200 + (f.x * 0.5));
@@ -274,78 +308,172 @@ const drawFood = (rc: RenderContext, food: any[]) => {
             ctx.restore();
             ctx.shadowBlur = 0;
         } else {
-            let color = COLORS.foodNormal;
-            if (f.type === FoodType.BONUS) color = COLORS.foodBonus;
-            else if (f.type === FoodType.POISON) color = COLORS.foodPoison;
-            else if (f.type === FoodType.SLOW) color = COLORS.foodSlow;
-            else if (f.type === FoodType.MAGNET) color = COLORS.foodMagnet;
-            else if (f.type === FoodType.COMPRESSOR) color = COLORS.foodCompressor;
+            // NORMAL FOOD: Rotates, glows, distinct
+            const size = 8; // Larger size for better visibility
             
             ctx.save();
             ctx.translate(cx, cy);
-            ctx.rotate(now / 400 + (f.x * 0.1)); 
-            ctx.shadowColor = color;
-            ctx.shadowBlur = 12;
-            ctx.fillStyle = color;
-            const size = 5;
-            ctx.fillRect(-size, -size, size*2, size*2);
-            ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 1;
-            ctx.strokeRect(-size, -size, size*2, size*2);
+            ctx.rotate(now / 400 + (f.x * 0.2)); 
+            
+            ctx.shadowColor = COLORS.foodNormal;
+            ctx.shadowBlur = 12; // Nice glow
+            ctx.fillStyle = COLORS.foodNormal;
+            
+            // Draw spinning square
+            ctx.fillRect(-size/2, -size/2, size, size);
+            
+            // Bright center to make it pop
+            ctx.fillStyle = 'rgba(255,255,255,0.8)';
+            ctx.fillRect(-2, -2, 4, 4);
+            
             ctx.restore();
             ctx.shadowBlur = 0;
         }
     }
 };
 
-const drawSnake = (rc: RenderContext, snake: any[], direction: Direction, stats: any, charProfile: any) => {
+const drawSnake = (rc: RenderContext, snake: any[], prevTail: Point | null, direction: Direction, stats: any, charProfile: any, moveProgress: number, isMagnetActive: boolean, hasXp: boolean, visualNsAngle: number, tailIntegrity: number, phaseRailCharge: number, echoDamageStored: number) => {
     if (snake.length === 0) return;
     const { ctx, gridSize, halfGrid, now } = rc;
     const PI2 = Math.PI * 2;
-    const head = snake[0];
-    const headCx = head.x * gridSize + halfGrid;
-    const headCy = head.y * gridSize + halfGrid;
-    const charColor = charProfile?.color || COLORS.snakeHead;
-
-    // AURA
-    if (stats.weapon.auraLevel > 0) {
-            const r = stats.weapon.auraRadius * gridSize;
-            ctx.beginPath();
-            ctx.arc(headCx, headCy, r, 0, PI2);
-            ctx.fillStyle = `rgba(255, 50, 50, ${0.1 + Math.sin(now/200)*0.05})`;
-            ctx.fill();
-            ctx.strokeStyle = 'rgba(255, 0, 0, 0.3)';
-            ctx.lineWidth = 1;
-            ctx.stroke();
+    
+    // CALCULATE VISUAL SEGMENT POSITIONS
+    const segments: { x: number, y: number }[] = [];
+    
+    for (let i = 0; i < snake.length; i++) {
+        const curr = snake[i];
+        let prev = snake[i + 1]; // The segment "behind" it in the array is physically where it was
+        
+        if (i === snake.length - 1) {
+            prev = prevTail || curr; // Fallback to current if no history (e.g. start)
+        }
+        
+        if (prev) {
+            const ix = prev.x + (curr.x - prev.x) * moveProgress;
+            const iy = prev.y + (curr.y - prev.y) * moveProgress;
+            segments.push({ x: ix * gridSize + halfGrid, y: iy * gridSize + halfGrid });
+        } else {
+            segments.push({ x: curr.x * gridSize + halfGrid, y: curr.y * gridSize + halfGrid });
+        }
     }
 
-    // SPINE
-    if (snake.length > 1) {
+    const headCx = segments[0].x;
+    const headCy = segments[0].y;
+    
+    const charColor = charProfile?.color || COLORS.snakeHead;
+
+    // MAGNET/XP GLOW FX (Strict Invariant Check)
+    if (isMagnetActive && hasXp) {
+        ctx.save();
+        ctx.translate(headCx, headCy);
+        const pulse = 1 + Math.sin(now / 150) * 0.2;
+        ctx.beginPath();
+        ctx.arc(0, 0, gridSize * 2 * pulse, 0, PI2);
+        const gradient = ctx.createRadialGradient(0, 0, gridSize * 0.5, 0, 0, gridSize * 2);
+        gradient.addColorStop(0, 'rgba(0, 255, 255, 0)');
+        gradient.addColorStop(0.5, 'rgba(0, 255, 255, 0.15)');
+        gradient.addColorStop(1, 'rgba(0, 255, 255, 0)');
+        ctx.fillStyle = gradient;
+        ctx.fill();
+        ctx.restore();
+    }
+
+    // ─────────────────────────────────────────────
+    // 1. TAIL AURA WEAPON (DISTORTION FIELD)
+    // ─────────────────────────────────────────────
+    // Explicit Weapon Visual - Not Character Styling.
+    if (stats.weapon.auraLevel > 0) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'source-over';
+        
+        const level = stats.weapon.auraLevel;
+        // Use true gameplay radius stat for accuracy
+        const gameplayRadius = stats.weapon.auraRadius || (1.5 + (level * 0.5));
+        const areaMod = stats.globalAreaMod || 1.0;
+        const baseRadius = (gameplayRadius * gridSize) * areaMod;
+        
+        // High visibility settings: Deep Void Purple / Crimson
+        const opacity = Math.min(0.65, 0.3 + (level * 0.03)); 
+
+        segments.forEach((seg, i) => {
+            // Skip the head (index 0) so the field lags/drags behind, representing a wake/exhaust
+            if (i === 0) return;
+
+            // Deterministic sine-based jitter for instability
+            const jitterX = Math.sin(now * 0.005 + i * 0.5) * (gridSize * 0.2);
+            const jitterY = Math.cos(now * 0.007 + i * 0.6) * (gridSize * 0.2);
+            
+            const x = seg.x + jitterX;
+            const y = seg.y + jitterY;
+            
+            // Radius pulsation (breathing effect)
+            const pulse = Math.sin(i * 0.4 + now * 0.003);
+            const r = baseRadius + (pulse * gridSize * 0.25);
+
+            // Void Gradient: Rich purple/crimson tones to stand out against black/cyan background
+            const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+            g.addColorStop(0, `rgba(80, 0, 110, ${opacity})`); 
+            g.addColorStop(0.6, `rgba(50, 0, 70, ${opacity * 0.4})`);
+            g.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+            ctx.fillStyle = g;
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.fill();
+        });
+        
+        ctx.restore();
+    }
+
+    // ─────────────────────────────────────────────
+    // SPINE & BODY (Standard Rendering)
+    // ─────────────────────────────────────────────
+    // Note: Previous character-specific aura styling block has been removed 
+    // to ensure the Aura weapon is distinct and doesn't confuse the player.
+
+    // Integrity Effect: If low, flicker
+    if (tailIntegrity < 30) {
+        if (Math.floor(now / 50) % 2 === 0) {
+            ctx.globalAlpha = 0.4; // Glitch flicker
+        } else if (tailIntegrity <= 0) {
+            ctx.globalAlpha = 0.2; // Ghost mode
+        }
+    }
+
+    if (segments.length > 1) {
         ctx.beginPath();
         ctx.moveTo(headCx, headCy);
-        for (let i = 1; i < snake.length; i++) {
-            const seg = snake[i];
-            ctx.lineTo(seg.x * gridSize + halfGrid, seg.y * gridSize + halfGrid);
+        for (let i = 1; i < segments.length; i++) {
+            ctx.lineTo(segments[i].x, segments[i].y);
         }
         drawNeonStroke(ctx, charColor, 4, 15);
     }
 
     // SEGMENTS
-    for (let i = 1; i < snake.length; i++) {
-        const seg = snake[i];
-        const scx = seg.x * gridSize + halfGrid;
-        const scy = seg.y * gridSize + halfGrid;
-        const sizeRatio = 1 - (i / (snake.length + 8));
+    for (let i = 1; i < segments.length; i++) {
+        const scx = segments[i].x;
+        const scy = segments[i].y;
+        const sizeRatio = 1 - (i / (segments.length + 8));
         const plateSize = (gridSize * 0.7) * Math.max(0.4, sizeRatio);
         
         ctx.fillStyle = '#111'; 
         ctx.fillRect(scx - plateSize/2, scy - plateSize/2, plateSize, plateSize);
         ctx.strokeStyle = charColor;
         ctx.lineWidth = 1;
-        ctx.globalAlpha = Math.max(0.3, sizeRatio);
+        // Integrity feedback on segments
+        if (tailIntegrity < 100) {
+             const opacity = Math.max(0.3, sizeRatio) * (tailIntegrity / 100);
+             ctx.globalAlpha = opacity;
+        } else {
+             ctx.globalAlpha = Math.max(0.3, sizeRatio);
+        }
+        
         ctx.strokeRect(scx - plateSize/2, scy - plateSize/2, plateSize, plateSize);
         ctx.globalAlpha = 1.0;
     }
+    
+    // Reset Global Alpha if it was changed for ghosting
+    ctx.globalAlpha = 1.0;
 
     // HEAD
     ctx.save();
@@ -372,6 +500,67 @@ const drawSnake = (rc: RenderContext, snake: any[], direction: Direction, stats:
     ctx.fillStyle = '#0ff'; 
     ctx.fillRect(2, -3, 2, 2);
     ctx.fillRect(2, 1, 2, 2);
+    
+    // PHASE RAIL CHARGE INDICATOR (Visual Only)
+    if (stats.weapon.phaseRailLevel > 0) {
+        // Calculate percentage. Max charge time is defined in useCombat as 4000/mod.
+        // We replicate visual ratio here.
+        const maxCharge = 4000 / stats.globalFireRateMod;
+        const pct = Math.min(1, phaseRailCharge / maxCharge);
+        
+        if (pct > 0.1) {
+            ctx.save();
+            ctx.rotate(-rot); // Undo head rotation to keep indicator upright or relative
+            
+            // Draw converging particle lines
+            const count = 4;
+            const dist = 20 * (1 - pct);
+            ctx.globalAlpha = pct;
+            ctx.fillStyle = COLORS.phaseRail;
+            for(let i=0; i<count; i++) {
+                const a = (now / 200) + (i * (PI2/count));
+                const px = Math.cos(a) * dist;
+                const py = Math.sin(a) * dist;
+                ctx.beginPath();
+                ctx.arc(px, py, 2, 0, PI2);
+                ctx.fill();
+            }
+            
+            // Flash when ready
+            if (pct >= 0.95 && Math.floor(now / 50) % 2 === 0) {
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(0,0, 8, 0, PI2);
+                ctx.stroke();
+            }
+            
+            ctx.restore();
+        }
+    }
+
+    // ECHO CACHE ACCUMULATOR
+    if (stats.weapon.echoCacheLevel > 0) {
+        const cap = 500 + (stats.weapon.echoCacheLevel * 500);
+        const pct = Math.min(1, echoDamageStored / cap);
+        
+        if (pct > 0) {
+            ctx.save();
+            ctx.rotate(now / -300); // Counter-rotate ring
+            ctx.beginPath();
+            ctx.arc(0, 0, 12, 0, PI2 * pct);
+            ctx.strokeStyle = pct >= 1 ? '#ffaa00' : 'rgba(255, 170, 0, 0.5)';
+            ctx.lineWidth = 2;
+            if (pct >= 1) {
+                ctx.shadowColor = '#ffaa00';
+                ctx.shadowBlur = 5;
+            }
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+            ctx.restore();
+        }
+    }
+
     ctx.restore();
 
     // SHIELD
@@ -409,10 +598,11 @@ const drawSnake = (rc: RenderContext, snake: any[], direction: Direction, stats:
     if (nsLevel > 0) {
         const count = stats.weapon.nanoSwarmCount;
         const radius = 3.8 * gridSize;
-        const speed = now / (350 - nsLevel * 10);
+        // Use EXTRAPOLATED visual angle
+        const baseAngle = visualNsAngle;
         
         for(let i=0; i<count; i++) {
-            const angle = speed + (i * (PI2 / count));
+            const angle = baseAngle + (i * (PI2 / count));
             const sx = headCx + Math.cos(angle) * radius;
             const sy = headCy + Math.sin(angle) * radius;
             
@@ -452,6 +642,11 @@ const drawEnemies = (rc: RenderContext, enemies: any[], snakeHead: any) => {
                 angle = Math.atan2(hy - cy, hx - cx);
         }
         ctx.rotate(angle);
+
+        // INGRESS OPACITY: Ghosted if not active
+        if (e.state !== 'ACTIVE') {
+            ctx.globalAlpha = 0.5;
+        }
 
         if (e.flash && e.flash > 0) {
             ctx.globalCompositeOperation = 'source-over';
@@ -533,6 +728,7 @@ const drawEnemies = (rc: RenderContext, enemies: any[], snakeHead: any) => {
         }
         
         ctx.restore();
+        ctx.globalAlpha = 1.0; // Reset opacity
 
         if (e.type !== EnemyType.BOSS && e.hp < e.maxHp && e.hp > 0) {
             const pct = Math.max(0, e.hp / e.maxHp);
@@ -553,6 +749,100 @@ const drawEnemies = (rc: RenderContext, enemies: any[], snakeHead: any) => {
     }
 };
 
+// NEW: Tile-based Ingress Indicators (Localized)
+// Replaces full-edge drawing with precise tile targeting
+const drawSpawnIndicators = (rc: RenderContext, enemies: any[]) => {
+    const { ctx, gridSize, now } = rc;
+
+    // Filter relevant enemies: Incoming (Spawning/Entering) and known side
+    const incoming = enemies.filter(e =>
+        (e.state === 'SPAWNING' || e.state === 'ENTERING') && e.spawnSide
+    );
+
+    if (incoming.length === 0) return;
+
+    ctx.save();
+
+    // OPTIONAL SYNC: Use BPM for pulse timing if available
+    const bpm = audio.getBpm();
+    const beatMs = 60000 / bpm;
+    // Rhythmic pulse: sharp attack, smooth decay
+    const phase = (now % beatMs) / beatMs;
+    const pulse = Math.pow(Math.sin(phase * Math.PI), 2); // 0 to 1, peaked
+    
+    // Subtler alpha range (20-35% guideline implies geometry, but alpha should be low too)
+    const baseAlpha = 0.1;
+    const peakAlpha = 0.4;
+    const currentAlpha = baseAlpha + (pulse * (peakAlpha - baseAlpha));
+
+    for (const e of incoming) {
+        // Determine edge tile coordinates
+        let tx = Math.round(e.x);
+        let ty = Math.round(e.y);
+        let isVertical = false;
+
+        // Project off-screen coordinates to the visible grid edge
+        if (e.spawnSide === 'TOP') {
+            ty = 0;
+            isVertical = false;
+        } else if (e.spawnSide === 'BOTTOM') {
+            ty = GRID_ROWS - 1;
+            isVertical = false;
+        } else if (e.spawnSide === 'LEFT') {
+            tx = 0;
+            isVertical = true;
+        } else if (e.spawnSide === 'RIGHT') {
+            tx = GRID_COLS - 1;
+            isVertical = true;
+        }
+
+        // Draw Center Tile + Neighbors (Local Cluster of 3)
+        for (let offset = -1; offset <= 1; offset++) {
+            let dx = tx;
+            let dy = ty;
+
+            if (isVertical) {
+                dy += offset;
+            } else {
+                dx += offset;
+            }
+
+            // Boundary Check: Ensure we only draw on valid grid tiles
+            if (dx >= 0 && dx < GRID_COLS && dy >= 0 && dy < GRID_ROWS) {
+                const px = dx * gridSize;
+                const py = dy * gridSize;
+
+                // Visual: Edge Strip (Micro Indicator)
+                // ~25% of tile size
+                const thickness = gridSize * 0.25;
+                
+                ctx.fillStyle = `rgba(255, 50, 50, ${currentAlpha})`;
+                // Add a slight glow for "Grid-line glow" feel
+                ctx.shadowColor = `rgba(255, 0, 0, ${currentAlpha})`;
+                ctx.shadowBlur = 6;
+
+                if (e.spawnSide === 'TOP') {
+                    // Top edge strip
+                    ctx.fillRect(px + 2, py, gridSize - 4, thickness);
+                } else if (e.spawnSide === 'BOTTOM') {
+                    // Bottom edge strip
+                    ctx.fillRect(px + 2, py + gridSize - thickness, gridSize - 4, thickness);
+                } else if (e.spawnSide === 'LEFT') {
+                    // Left edge strip
+                    ctx.fillRect(px, py + 2, thickness, gridSize - 4);
+                } else if (e.spawnSide === 'RIGHT') {
+                    // Right edge strip
+                    ctx.fillRect(px + gridSize - thickness, py + 2, thickness, gridSize - 4);
+                }
+                
+                ctx.shadowBlur = 0;
+            }
+        }
+    }
+
+    ctx.restore();
+};
+
 const drawProjectiles = (rc: RenderContext, projectiles: any[]) => {
     const { ctx, now } = rc;
     const PI2 = Math.PI * 2;
@@ -571,26 +861,61 @@ const drawProjectiles = (rc: RenderContext, projectiles: any[]) => {
         ctx.fillStyle = '#fff'; 
         
         if (p.type === 'LANCE') {
+            // PRISM LANCE VISUAL OVERHAUL
+            const hue = (angle * (180 / Math.PI) + now * 0.5) % 360;
+            const beamColor = `hsl(${hue}, 100%, 70%)`;
+            
+            ctx.shadowColor = beamColor;
+            ctx.shadowBlur = 15;
+            
+            // Core Beam
             ctx.beginPath();
-            ctx.moveTo(-15, 0);
-            ctx.lineTo(20, 0);
+            ctx.moveTo(-20, 0);
+            ctx.lineTo(25, 0);
+            ctx.strokeStyle = '#fff';
             ctx.lineWidth = 2;
-            ctx.strokeStyle = p.color;
             ctx.stroke();
-            ctx.fillStyle = '#fff';
-            ctx.fillRect(-5, -1, 20, 2);
+            
+            // Outer Glow
+            ctx.beginPath();
+            ctx.moveTo(-25, 0);
+            ctx.lineTo(30, 0);
+            ctx.strokeStyle = beamColor;
+            ctx.lineWidth = 6;
+            ctx.globalAlpha = 0.6;
+            ctx.stroke();
+            ctx.globalAlpha = 1.0;
+
         } else if (p.type === 'SHARD') {
             ctx.beginPath();
             ctx.moveTo(6, 0); ctx.lineTo(0, 3); ctx.lineTo(-2, 0); ctx.lineTo(0, -3);
             ctx.fill();
         } else if (p.type === 'SERPENT') {
-            ctx.strokeStyle = p.color;
-            ctx.lineWidth = 2;
+            // VOLT SERPENT VISUAL OVERHAUL
+            ctx.shadowColor = COLORS.voltSerpent;
+            ctx.shadowBlur = 8;
+            
+            // Segmented Mecha-Worm
+            ctx.fillStyle = COLORS.voltSerpent;
             ctx.beginPath();
-            ctx.moveTo(8, 0);
-            ctx.lineTo(0, Math.sin(now / 50) * 4);
-            ctx.lineTo(-8, 0);
+            // Head
+            ctx.moveTo(10, 0);
+            ctx.lineTo(0, 5);
+            ctx.lineTo(0, -5);
+            ctx.fill();
+            
+            // Thrusters (Visual Only)
+            ctx.fillStyle = '#00ffff';
+            ctx.fillRect(-2, -2, 2, 4);
+            
+            // Tail trail logic handled by particles in useCombat, but draw a simple engine flare here
+            ctx.beginPath();
+            ctx.moveTo(-2, 0);
+            ctx.lineTo(-8 - Math.random() * 5, 0);
+            ctx.strokeStyle = '#00ffff';
+            ctx.lineWidth = 2;
             ctx.stroke();
+
         } else if (p.type === 'RAIL') {
             ctx.fillStyle = p.color;
             ctx.globalAlpha = 0.8;
@@ -670,6 +995,11 @@ const drawLightning = (rc: RenderContext, lightningArcs: any[]) => {
         }
         ctx.lineTo(l.x2, l.y2);
         ctx.stroke();
+        // Hop Indicator (Terminal Circle)
+        ctx.beginPath();
+        ctx.arc(l.x2, l.y2, 3, 0, Math.PI * 2);
+        ctx.fillStyle = '#fff';
+        ctx.fill();
         ctx.shadowBlur = 0;
     }
 };
@@ -709,6 +1039,7 @@ export function useRendering(
   const {
     status,
     snakeRef,
+    prevTailRef, // Access for tail interpolation
     enemiesRef,
     foodRef,
     wallsRef,
@@ -724,10 +1055,16 @@ export function useRendering(
     shakeRef,
     gameTimeRef,
     transitionStartTimeRef,
-    directionRef
+    directionRef,
+    powerUpsRef,
+    nanoSwarmAngleRef,
+    stageReadyRef, // NEW: Access readiness
+    tailIntegrityRef, // NEW: Access for visual effects
+    phaseRailChargeRef, // Access for visuals
+    echoDamageStoredRef // Access for visuals
   } = game;
 
-  const draw = useCallback((_alpha: number) => {
+  const draw = useCallback((alpha: number, moveProgress: number = 0) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -740,7 +1077,8 @@ export function useRendering(
         width: CANVAS_WIDTH,
         height: CANVAS_HEIGHT,
         gridSize: DEFAULT_SETTINGS.gridSize,
-        halfGrid: DEFAULT_SETTINGS.gridSize / 2
+        halfGrid: DEFAULT_SETTINGS.gridSize / 2,
+        stageReady: stageReadyRef.current // NEW
     };
 
     // 2. Global Safety & Clear
@@ -767,11 +1105,44 @@ export function useRendering(
         drawGrid(rc);
         drawWalls(rc, wallsRef.current);
         
+        // NEW: Spawn Indicators (Draw before entities)
+        drawSpawnIndicators(rc, enemiesRef.current);
+        
         // ── ENTITIES ──
         drawMines(rc, minesRef.current);
         drawTerminals(rc, terminalsRef.current, snakeRef.current[0]);
         drawFood(rc, foodRef.current);
-        drawSnake(rc, snakeRef.current, directionRef.current, statsRef.current, game.selectedChar);
+        
+        // FX LOGIC: Magnet Glow
+        const isMagnetActive = gameTimeRef.current < powerUpsRef.current.magnetUntil;
+        const hasXp = foodRef.current.some(f => f.type === FoodType.XP_ORB);
+        
+        // SMOOTH NANO SWARM
+        // Extrapolate angle for smoothness between simulation ticks
+        // dAngle/dt = speed. Speed ~ 1/(350 - lvl*10).
+        // alpha * 16.66ms gives time since last tick
+        const nsLevel = statsRef.current.weapon.nanoSwarmLevel;
+        let visualNsAngle = nanoSwarmAngleRef.current;
+        if (nsLevel > 0) {
+            const dt = alpha * 16.667;
+            visualNsAngle += dt * (1 / (350 - nsLevel * 10));
+        }
+
+        drawSnake(
+            rc, 
+            snakeRef.current,
+            prevTailRef.current,
+            directionRef.current, 
+            statsRef.current, 
+            game.selectedChar,
+            moveProgress,
+            isMagnetActive,
+            hasXp,
+            visualNsAngle,
+            tailIntegrityRef.current,
+            phaseRailChargeRef.current, // Pass charge time
+            echoDamageStoredRef.current // Pass stored damage
+        );
         drawEnemies(rc, enemiesRef.current, snakeRef.current[0]);
         
         // ── PROJECTILES ──

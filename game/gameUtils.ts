@@ -16,7 +16,7 @@ export const formatTime = (ms: number, includeMs: boolean = false): string => {
   return `${m}:${s}`;
 };
 
-export const getRandomPos = (snake: Point[], exclude: Point[] = [], walls: Point[] = []): Point => {
+export const getRandomPos = (snake: Point[], exclude: Point[] = [], walls: Point[] = []): Point | null => {
   let pos: Point;
   let collision;
   let attempts = 0;
@@ -31,7 +31,7 @@ export const getRandomPos = (snake: Point[], exclude: Point[] = [], walls: Point
     attempts++;
   } while (collision && attempts < 100); 
   
-  if (collision) return { x: 0, y: 0 }; 
+  if (collision) return null; 
   return pos;
 };
 
@@ -74,7 +74,14 @@ export const generateWalls = (stage: number): Point[] => {
             }
         }
     }
-    return walls.filter(w => Math.abs(w.x - GRID_COLS/2) > 6 || Math.abs(w.y - GRID_ROWS/2) > 6);
+    
+    // SAFE SPAWN RESOLVER: Enforce 3-tile radius around (10,10)
+    // This satisfies "Bug 2: Stage 3 Spawns Block on Player"
+    return walls.filter(w => {
+        const distFromCenter = Math.abs(w.x - GRID_COLS/2) > 6 || Math.abs(w.y - GRID_ROWS/2) > 6;
+        const distFromSpawn = Math.abs(w.x - 10) > 3 || Math.abs(w.y - 10) > 3;
+        return distFromCenter && distFromSpawn;
+    });
 };
 
 export const getTheme = (stage: number): StageTheme => {

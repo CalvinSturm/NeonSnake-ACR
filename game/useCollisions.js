@@ -73,11 +73,26 @@ export function useCollisions(game, combat, spawner, fx, progression) {
         if (invulnerabilityTimeRef.current > 0)
             return;
         const now = gameTimeRef.current;
+        // SWEPT COLLISION LOGIC (Bug 3 Fix)
+        // We check collision against the capsule defined by Head and Neck (previous head).
+        // This prevents tunneling where enemies or snake jump over each other.
+        const neck = snakeRef.current[1] || head; // Fallback for length 1
+        // Helper: Distance from point P to Segment AB
+        const distToSegment = (p, a, b) => {
+            const l2 = (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
+            if (l2 === 0)
+                return Math.hypot(p.x - a.x, p.y - a.y);
+            let t = ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / l2;
+            t = Math.max(0, Math.min(1, t));
+            return Math.hypot(p.x - (a.x + t * (b.x - a.x)), p.y - (a.y + t * (b.y - a.y)));
+        };
         // Snake vs Enemies (Head Contact = Death)
         for (const enemy of enemiesRef.current) {
             if (enemy.hp <= 0)
                 continue;
-            if (Math.abs(head.x - enemy.x) < 0.8 && Math.abs(head.y - enemy.y) < 0.8) {
+            // Use swept distance check (0.8 radius matches previous feel but is continuous)
+            const dist = distToSegment(enemy, head, neck);
+            if (dist < 0.8) {
                 // GHOST COIL Check
                 if (statsRef.current.weapon.ghostCoilLevel > 0 && now > ghostCoilCooldownRef.current) {
                     ghostCoilCooldownRef.current = now + 10000; // 10s Cooldown
@@ -139,7 +154,9 @@ export function useCollisions(game, combat, spawner, fx, progression) {
                 continue; // Ignore own projectiles
             const phx = p.x / DEFAULT_SETTINGS.gridSize - 0.5;
             const phy = p.y / DEFAULT_SETTINGS.gridSize - 0.5;
-            if (Math.abs(head.x - phx) < 0.5 && Math.abs(head.y - phy) < 0.5) {
+            // Use swept check for projectiles too
+            const dist = distToSegment({ x: phx, y: phy }, head, neck);
+            if (dist < 0.5) {
                 // REFLECTOR MESH Check
                 if (statsRef.current.weapon.reflectorMeshLevel > 0) {
                     const chance = 0.2 + (statsRef.current.weapon.reflectorMeshLevel * 0.1);

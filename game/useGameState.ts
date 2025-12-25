@@ -1,75 +1,104 @@
 
-import { useState, useRef, useCallback, useEffect } from 'react';
-import {
-  GameStatus,
-  Difficulty,
-  Direction,
-  Point,
-  Enemy,
-  FoodItem,
-  Projectile,
-  Terminal,
-  Mine,
-  Shockwave,
-  Particle,
-  FloatingText,
-  LightningArc,
-  DigitalRainDrop,
-  UpgradeOption,
-  UpgradeStats,
-  CharacterProfile,
-  AudioRequest,
-  WeaponStats
+import { useRef, useState, useCallback } from 'react';
+import { 
+  GameStatus, Difficulty, CharacterProfile, Direction, UpgradeStats, 
+  Enemy, FoodItem, Projectile, Shockwave, LightningArc, Particle, 
+  FloatingText, Mine, Terminal, DigitalRainDrop, AudioRequest, Point, UpgradeOption, ModalState
 } from '../types';
-import {
-  DEFAULT_SETTINGS,
-  CHARACTERS,
-  XP_TO_LEVEL_UP
-} from '../constants';
+import { CHARACTERS } from '../constants';
+import { resolveTraits, TraitModifiers } from './traitResolver';
+
+export interface UserSettings {
+  skipCountdown: boolean;
+  uiScale: number;
+  fxIntensity: number; // 0.0 to 1.0
+  screenShake: boolean;
+  highContrast: boolean;
+  musicVolume: number;
+  sfxVolume: number;
+}
+
+export const DEFAULT_USER_SETTINGS: UserSettings = {
+  skipCountdown: false,
+  uiScale: 1.0,
+  fxIntensity: 1.0,
+  screenShake: true,
+  highContrast: false,
+  musicVolume: 0.3,
+  sfxVolume: 0.4
+};
 
 export function useGameState() {
-  // ── STATE (UI) ──
   const [status, setStatus] = useState<GameStatus>(GameStatus.IDLE);
+  const [modalState, setModalState] = useState<ModalState>('NONE'); // MODAL AUTHORITY
+  
   const [difficulty, setDifficulty] = useState<Difficulty>(Difficulty.EASY);
   const [unlockedDifficulties, setUnlockedDifficulties] = useState<Difficulty[]>([Difficulty.EASY]);
-  const [selectedChar, setSelectedChar] = useState<CharacterProfile | null>(null);
-  const [upgradeOptions, setUpgradeOptions] = useState<UpgradeOption[]>([]);
-  const [resumeCountdown, setResumeCountdown] = useState<number>(0);
-  const [activePowerUps, setActivePowerUps] = useState({ slow: false, magnet: false });
   
   const [uiScore, setUiScore] = useState(0);
-  const [highScore, setHighScore] = useState(0); // Added HighScore state
   const [uiXp, setUiXp] = useState(0);
   const [uiLevel, setUiLevel] = useState(1);
   const [uiStage, setUiStage] = useState(1);
-  const [uiCombo, setUiCombo] = useState(1);
+  const [highScore, setHighScore] = useState(0);
+  const [uiCombo, setUiCombo] = useState(0);
   const [uiShield, setUiShield] = useState(false);
-  const [bossActive, setBossActiveState] = useState(false); // Added BossActive state
-  const [isMuted, setIsMuted] = useState(false); // Added Audio State
+  const [bossActive, setBossActive] = useState(false);
+  const [selectedChar, setSelectedChar] = useState<CharacterProfile | null>(null);
+  const [upgradeOptions, setUpgradeOptions] = useState<UpgradeOption[]>([]);
+  const [resumeCountdown, setResumeCountdown] = useState(0);
+  const [activePowerUps, setActivePowerUps] = useState({ magnet: false });
+  const [isMuted, setIsMuted] = useState(false);
+  
+  // Settings State
+  const [settings, setSettings] = useState<UserSettings>(DEFAULT_USER_SETTINGS);
 
-  // ── REFS (SIMULATION) ──
-  const gameTimeRef = useRef<number>(0);
+  // REFS
+  const runIdRef = useRef(0); // RUN BOUNDARY
+  const settingsReturnRef = useRef<ModalState>('NONE');
+
   const snakeRef = useRef<Point[]>([]);
-  const directionRef = useRef<Direction>(Direction.RIGHT);
-  const directionQueueRef = useRef<Direction[]>([]);
+  const prevTailRef = useRef<Point | null>(null); // NEW: For smooth tail interpolation
+  const tailIntegrityRef = useRef(100); // NEW: Tail HP for physical blocking
+  
+  // TRAIT REF (Resolved on Reset)
+  const traitsRef = useRef<TraitModifiers>(resolveTraits(null));
+  
   const enemiesRef = useRef<Enemy[]>([]);
   const foodRef = useRef<FoodItem[]>([]);
   const wallsRef = useRef<Point[]>([]);
-  const projectilesRef = useRef<Projectile[]>([]);
   const terminalsRef = useRef<Terminal[]>([]);
+  const projectilesRef = useRef<Projectile[]>([]);
   const minesRef = useRef<Mine[]>([]);
   const shockwavesRef = useRef<Shockwave[]>([]);
   const lightningArcsRef = useRef<LightningArc[]>([]);
   const particlesRef = useRef<Particle[]>([]);
   const floatingTextsRef = useRef<FloatingText[]>([]);
   const digitalRainRef = useRef<DigitalRainDrop[]>([]);
+  
+  const scoreRef = useRef(0);
+  const enemiesKilledRef = useRef(0);
+  const terminalsHackedRef = useRef(0);
+  const startTimeRef = useRef(Date.now());
+  const gameTimeRef = useRef(0);
+  const failureMessageRef = useRef('');
+  
+  const invulnerabilityTimeRef = useRef(0);
   const audioEventsRef = useRef<AudioRequest[]>([]);
   
+  const transitionStartTimeRef = useRef(0);
+  const transitionStateRef = useRef({ phase: 'NONE' as const });
+  const pendingStatusRef = useRef<GameStatus | null>(null);
+  const stageArmedRef = useRef(false);
+  const stageReadyRef = useRef(false); // NEW: Signals stage objectives complete (Arming transition)
+  
+  const bossEnemyRef = useRef<Enemy | null>(null);
+  const bossActiveRef = useRef(false);
+  const bossDefeatedRef = useRef(false);
+  const bossOverrideTimerRef = useRef(0); // NEW: Track periodic switch spawn
+  
   const statsRef = useRef<UpgradeStats>({
-    weapon: CHARACTERS[0].initialStats.weapon as any, // fallback
-    slowDurationMod: 1,
+    weapon: CHARACTERS[0].initialStats.weapon as any,
     magnetRangeMod: 0,
-    empCooldownMod: 1,
     shieldActive: false,
     scoreMultiplier: 1,
     foodQualityMod: 1,
@@ -77,241 +106,283 @@ export function useGameState() {
     critMultiplier: 1.5,
     hackSpeedMod: 1,
     moveSpeedMod: 1,
-    activeWeaponIds: []
+    activeWeaponIds: [],
+    maxWeaponSlots: 3,
+    acquiredUpgradeIds: [],
+    globalDamageMod: 1,
+    globalFireRateMod: 1,
+    globalAreaMod: 1,
+    globalProjectileSpeedMod: 1
   });
 
-  const powerUpsRef = useRef({ slowUntil: 0, magnetUntil: 0 });
-  const lastPowerUpStateRef = useRef({ slow: false, magnet: false });
-  const abilityCooldownsRef = useRef({ chrono: 0, ping: 0, systemShock: 0 });
-
-  // NEW MECHANIC REFS
-  const echoDamageStoredRef = useRef(0);
-  const overclockActiveRef = useRef(false);
-  const overclockTimerRef = useRef(0); // tracks cycle (off -> on -> off)
+  const powerUpsRef = useRef({ magnetUntil: 0 });
   const ghostCoilCooldownRef = useRef(0);
-  const empBloomCooldownRef = useRef(0);
-  const phaseRailChargeRef = useRef(0);
-
-  const xpRef = useRef(0);
-  const xpToNextLevelRef = useRef(XP_TO_LEVEL_UP);
-  const scoreRef = useRef(0);
-  const stageScoreRef = useRef(0);
+  
+  const directionRef = useRef<Direction>(Direction.RIGHT);
+  const directionQueueRef = useRef<Direction[]>([]);
   const levelRef = useRef(1);
-  const stageRef = useRef(1);
-  const comboMultiplierRef = useRef(1);
-  const lastEatTimeRef = useRef(0);
+  const xpRef = useRef(0);
+  const nextLevelXpRef = useRef(100);
 
   const enemySpawnTimerRef = useRef(0);
-  const enemyMoveTimerRef = useRef(0);
   const terminalSpawnTimerRef = useRef(0);
+  
+  const stageRef = useRef(1);
+  const stageScoreRef = useRef(0);
+  
+  const shakeRef = useRef({ x: 0, y: 0 });
+  const chromaticAberrationRef = useRef(0);
+  const lastEatTimeRef = useRef(0);
+  
   const weaponFireTimerRef = useRef(0);
   const auraTickTimerRef = useRef(0);
   const mineDropTimerRef = useRef(0);
-  const invulnerabilityTimeRef = useRef(0);
-  const baseSpeedRef = useRef(DEFAULT_SETTINGS.initialSpeed);
-  
-  // NEW WEAPON TIMERS
   const prismLanceTimerRef = useRef(0);
   const neonScatterTimerRef = useRef(0);
   const voltSerpentTimerRef = useRef(0);
+  const phaseRailChargeRef = useRef(0);
+  const echoDamageStoredRef = useRef(0);
+  const overclockActiveRef = useRef(false);
+  const overclockTimerRef = useRef(0);
+  const nanoSwarmAngleRef = useRef(0); 
   
-  const transitionStartTimeRef = useRef(0);
-  const transitionStateRef = useRef({ phase: 'NONE', startTime: 0 });
-  const shakeRef = useRef({ x: 0, y: 0 });
-  const chromaticAberrationRef = useRef(0); // VISUAL SYNC
-  const bossActiveRef = useRef(false);
-  const bossEnemyRef = useRef<Enemy | null>(null);
-  const bossDefeatedRef = useRef(false); // Track boss defeat
+  const lastPowerUpStateRef = useRef({ magnet: false });
 
-  const enemiesKilledRef = useRef(0);
-  const terminalsHackedRef = useRef(0);
-  const startTimeRef = useRef(0);
-  const pendingStatusRef = useRef<GameStatus | null>(null);
+  // ─────────────────────────────
+  // MODAL LOGIC
+  // ─────────────────────────────
+  const openSettings = useCallback(() => {
+    if (modalState === 'SETTINGS') return;
+    settingsReturnRef.current = modalState;
+    setModalState('SETTINGS');
+    if (status === GameStatus.PLAYING) {
+        setStatus(GameStatus.PAUSED);
+    }
+  }, [modalState, status]);
 
-  // Load HighScore on init
-  useEffect(() => {
-    const stored = localStorage.getItem('snake_highscore');
-    if (stored) setHighScore(parseInt(stored, 10));
+  const closeSettings = useCallback(() => {
+    if (modalState !== 'SETTINGS') return;
+    setModalState(settingsReturnRef.current);
+    if (settingsReturnRef.current === 'NONE' && status === GameStatus.PAUSED) {
+        setStatus(GameStatus.PLAYING);
+    }
+  }, [modalState, status]);
+
+  const togglePause = useCallback(() => {
+    if (modalState === 'SETTINGS') return; // Settings owns input
     
-    const unlocked = localStorage.getItem('snake_unlocked_difficulties');
-    if (unlocked) setUnlockedDifficulties(JSON.parse(unlocked));
-  }, []);
+    if (status === GameStatus.PLAYING) {
+        setStatus(GameStatus.PAUSED);
+        setModalState('PAUSE');
+    } else if (status === GameStatus.PAUSED && modalState === 'PAUSE') {
+        setStatus(GameStatus.PLAYING);
+        setModalState('NONE');
+    }
+  }, [status, modalState]);
 
-  const setBossActive = useCallback((active: boolean) => {
-    bossActiveRef.current = active;
-    setBossActiveState(active); // Sync UI state
-  }, []);
+  // ─────────────────────────────
+  // RUN RESET (AUTHORITATIVE)
+  // ─────────────────────────────
+  const resetGame = useCallback((charProfile: CharacterProfile) => {
+    // 1. INCREMENT RUN ID (Invalidates previous run state)
+    runIdRef.current += 1;
 
-  // Helper to determine initial locked weapons from a character
-  const getInitialWeapons = (w: WeaponStats): string[] => {
-      const active: string[] = [];
-      if (w.cannonLevel > 0) active.push('CANNON');
-      if (w.auraLevel > 0) active.push('AURA');
-      if (w.nanoSwarmLevel > 0) active.push('NANO_SWARM');
-      if (w.mineLevel > 0) active.push('MINES');
-      if (w.chainLightningLevel > 0) active.push('LIGHTNING');
-      if (w.prismLanceLevel > 0) active.push('PRISM_LANCE');
-      if (w.neonScatterLevel > 0) active.push('NEON_SCATTER');
-      if (w.voltSerpentLevel > 0) active.push('VOLT_SERPENT');
-      if (w.phaseRailLevel > 0) active.push('PHASE_RAIL');
-      return active;
-  };
+    // 2. RESOLVE TRAITS (Single Source of Truth)
+    traitsRef.current = resolveTraits(charProfile);
 
-  const resetGame = useCallback((char?: CharacterProfile) => {
-    gameTimeRef.current = 0;
+    // 3. ATOMIC METRIC RESET
     snakeRef.current = [
-        { x: 10, y: 10 },
-        { x: 9, y: 10 },
-        { x: 8, y: 10 }
+      { x: 10, y: 10 },
+      { x: 9, y: 10 },
+      { x: 8, y: 10 }
     ];
+    prevTailRef.current = { x: 7, y: 10 }; 
+    tailIntegrityRef.current = 100; 
+
     directionRef.current = Direction.RIGHT;
     directionQueueRef.current = [];
+    
     enemiesRef.current = [];
     foodRef.current = [];
     wallsRef.current = [];
-    projectilesRef.current = [];
     terminalsRef.current = [];
+    projectilesRef.current = [];
     minesRef.current = [];
     shockwavesRef.current = [];
     lightningArcsRef.current = [];
     particlesRef.current = [];
     floatingTextsRef.current = [];
-    audioEventsRef.current = [];
+    digitalRainRef.current = [];
     
-    xpRef.current = 0;
-    xpToNextLevelRef.current = XP_TO_LEVEL_UP;
     scoreRef.current = 0;
+    enemiesKilledRef.current = 0;
+    terminalsHackedRef.current = 0;
+    stageRef.current = 1;
     stageScoreRef.current = 0;
     levelRef.current = 1;
-    stageRef.current = 1;
-    comboMultiplierRef.current = 1;
-    lastEatTimeRef.current = 0;
+    xpRef.current = 0;
+    nextLevelXpRef.current = 500;
     
-    // Reset Powerups and Cooldowns to prevent carry-over
-    powerUpsRef.current = { slowUntil: 0, magnetUntil: 0 };
-    lastPowerUpStateRef.current = { slow: false, magnet: false };
-    setActivePowerUps({ slow: false, magnet: false });
-    abilityCooldownsRef.current = { chrono: 0, ping: 0, systemShock: 0 };
-
-    enemySpawnTimerRef.current = 0;
-    enemyMoveTimerRef.current = 0;
-    terminalSpawnTimerRef.current = 0;
-    weaponFireTimerRef.current = 0;
-    auraTickTimerRef.current = 0;
-    mineDropTimerRef.current = 0;
+    gameTimeRef.current = 0;
+    startTimeRef.current = Date.now();
     invulnerabilityTimeRef.current = 0;
-    
-    // Reset new timers
-    prismLanceTimerRef.current = 0;
-    neonScatterTimerRef.current = 0;
-    voltSerpentTimerRef.current = 0;
-    phaseRailChargeRef.current = 0;
-    echoDamageStoredRef.current = 0;
-    overclockActiveRef.current = false;
-    overclockTimerRef.current = 0;
-    ghostCoilCooldownRef.current = 0;
-    empBloomCooldownRef.current = 0;
-    
-    transitionStateRef.current = { phase: 'NONE', startTime: 0 };
     transitionStartTimeRef.current = 0;
-    setBossActive(false);
-    bossEnemyRef.current = null;
-    bossDefeatedRef.current = false;
-    pendingStatusRef.current = null;
-    shakeRef.current = { x: 0, y: 0 };
-    chromaticAberrationRef.current = 0;
     
+    pendingStatusRef.current = null;
+    stageArmedRef.current = false;
+    stageReadyRef.current = false;
+    
+    bossActiveRef.current = false;
+    bossDefeatedRef.current = false;
+    bossEnemyRef.current = null;
+    bossOverrideTimerRef.current = 0;
+    
+    // ATOMIC STATS RECONSTRUCTION
+    const baseStats: UpgradeStats = {
+        weapon: JSON.parse(JSON.stringify(CHARACTERS[0].initialStats.weapon)),
+        magnetRangeMod: 0,
+        shieldActive: false,
+        scoreMultiplier: 1,
+        foodQualityMod: 1,
+        critChance: 0.05,
+        critMultiplier: 1.5,
+        hackSpeedMod: 1,
+        moveSpeedMod: 1,
+        activeWeaponIds: [],
+        maxWeaponSlots: 3, 
+        acquiredUpgradeIds: [],
+        globalDamageMod: 1,
+        globalFireRateMod: 1,
+        globalAreaMod: 1,
+        globalProjectileSpeedMod: 1
+    };
+
+    statsRef.current = baseStats;
+
+    if (charProfile.initialStats) {
+       Object.assign(statsRef.current, JSON.parse(JSON.stringify(charProfile.initialStats)));
+    }
+
+    const w = statsRef.current.weapon;
+    const initialWeapons: string[] = [];
+
+    if (w.cannonLevel > 0) initialWeapons.push('CANNON');
+    if (w.auraLevel > 0) initialWeapons.push('AURA');
+    if (w.nanoSwarmLevel > 0) initialWeapons.push('NANO_SWARM');
+    if (w.mineLevel > 0) initialWeapons.push('MINES');
+    if (w.chainLightningLevel > 0) initialWeapons.push('LIGHTNING');
+    if (w.prismLanceLevel > 0) initialWeapons.push('PRISM_LANCE');
+    if (w.neonScatterLevel > 0) initialWeapons.push('NEON_SCATTER');
+    if (w.voltSerpentLevel > 0) initialWeapons.push('VOLT_SERPENT');
+    if (w.phaseRailLevel > 0) initialWeapons.push('PHASE_RAIL');
+
+    statsRef.current.activeWeaponIds = initialWeapons.slice(0, statsRef.current.maxWeaponSlots);
+    
+    // Robust Initialization of Acquired IDs (Deduplicate)
+    const uniqueAcquired = new Set([...initialWeapons]);
+    if (statsRef.current.shieldActive) uniqueAcquired.add('SHIELD');
+    statsRef.current.acquiredUpgradeIds = Array.from(uniqueAcquired);
+
+    // UI Resets
     setUiScore(0);
     setUiXp(0);
     setUiLevel(1);
     setUiStage(1);
-    setUiCombo(1);
-    setUiShield(char?.initialStats.shieldActive || false);
+    setUiCombo(0);
+    setUiShield(!!statsRef.current.shieldActive);
+    setBossActive(false);
     
-    // Apply character stats
-    if (char) {
-        const wStats = { ...CHARACTERS[0].initialStats.weapon, ...char.initialStats.weapon } as WeaponStats;
-        statsRef.current = {
-            weapon: wStats,
-            slowDurationMod: char.initialStats.slowDurationMod ?? 1,
-            magnetRangeMod: char.initialStats.magnetRangeMod ?? 0,
-            empCooldownMod: char.initialStats.empCooldownMod ?? 1,
-            shieldActive: char.initialStats.shieldActive ?? false,
-            scoreMultiplier: char.initialStats.scoreMultiplier ?? 1,
-            foodQualityMod: char.initialStats.foodQualityMod ?? 1,
-            critChance: char.initialStats.critChance ?? 0.05,
-            critMultiplier: char.initialStats.critMultiplier ?? 1.5,
-            hackSpeedMod: 1,
-            moveSpeedMod: 1,
-            activeWeaponIds: getInitialWeapons(wStats)
-        };
-    }
+    setModalState('NONE');
+
+    powerUpsRef.current = { magnetUntil: 0 };
+    nanoSwarmAngleRef.current = 0;
     
-    enemiesKilledRef.current = 0;
-    terminalsHackedRef.current = 0;
-    startTimeRef.current = Date.now();
-  }, [setBossActive]);
+  }, []);
 
   return {
     status, setStatus,
+    modalState, setModalState,
     difficulty, setDifficulty,
     unlockedDifficulties, setUnlockedDifficulties,
+    uiScore, setUiScore,
+    uiXp, setUiXp,
+    uiLevel, setUiLevel,
+    uiStage, setUiStage,
+    highScore, setHighScore,
+    uiCombo, setUiCombo,
+    uiShield, setUiShield,
+    bossActive, setBossActive,
     selectedChar, setSelectedChar,
     upgradeOptions, setUpgradeOptions,
     resumeCountdown, setResumeCountdown,
     activePowerUps, setActivePowerUps,
-    
-    uiScore, setUiScore,
-    highScore, setHighScore,
-    uiXp, setUiXp,
-    uiLevel, setUiLevel,
-    uiStage, setUiStage,
-    uiCombo, setUiCombo,
-    uiShield, setUiShield,
-    bossActive, setBossActive, // UI State & Setter
     isMuted, setIsMuted,
-
-    gameTimeRef,
+    
+    settings, setSettings,
+    
+    runIdRef, 
+    
     snakeRef,
-    directionRef,
-    directionQueueRef,
+    prevTailRef, 
+    tailIntegrityRef, 
+    traitsRef, 
+    
     enemiesRef,
     foodRef,
     wallsRef,
-    projectilesRef,
     terminalsRef,
+    projectilesRef,
     minesRef,
     shockwavesRef,
     lightningArcsRef,
     particlesRef,
     floatingTextsRef,
     digitalRainRef,
+    
+    scoreRef,
+    enemiesKilledRef,
+    terminalsHackedRef,
+    startTimeRef,
+    gameTimeRef,
+    failureMessageRef,
+    
+    invulnerabilityTimeRef,
     audioEventsRef,
+    
+    transitionStartTimeRef,
+    transitionStateRef,
+    pendingStatusRef,
+    stageArmedRef,
+    stageReadyRef,
+    
+    bossEnemyRef,
+    bossActiveRef,
+    bossDefeatedRef,
+    bossOverrideTimerRef, 
     
     statsRef,
     powerUpsRef,
-    lastPowerUpStateRef,
-    abilityCooldownsRef,
+    ghostCoilCooldownRef,
     
-    xpRef,
-    xpToNextLevelRef,
-    scoreRef,
-    stageScoreRef,
+    directionRef,
+    directionQueueRef,
     levelRef,
-    stageRef,
-    comboMultiplierRef,
-    lastEatTimeRef,
+    xpRef,
+    nextLevelXpRef,
     
     enemySpawnTimerRef,
-    enemyMoveTimerRef,
     terminalSpawnTimerRef,
+    
+    stageRef,
+    stageScoreRef,
+    
+    shakeRef,
+    chromaticAberrationRef,
+    lastEatTimeRef,
+    
     weaponFireTimerRef,
     auraTickTimerRef,
     mineDropTimerRef,
-    invulnerabilityTimeRef,
-    baseSpeedRef,
-    
-    // New Refs
     prismLanceTimerRef,
     neonScatterTimerRef,
     voltSerpentTimerRef,
@@ -319,23 +390,13 @@ export function useGameState() {
     echoDamageStoredRef,
     overclockActiveRef,
     overclockTimerRef,
-    ghostCoilCooldownRef,
-    empBloomCooldownRef,
+    nanoSwarmAngleRef,
     
-    transitionStartTimeRef,
-    transitionStateRef,
-    shakeRef,
-    chromaticAberrationRef,
-    bossActiveRef, // Sim Ref
-    bossEnemyRef,  // Sim Ref
-    bossDefeatedRef,
+    lastPowerUpStateRef,
     
-    enemiesKilledRef,
-    terminalsHackedRef,
-    startTimeRef,
-    pendingStatusRef,
-    failureMessageRef: useRef('CONNECTION_LOST'),
-
-    resetGame
+    resetGame,
+    openSettings,
+    closeSettings,
+    togglePause
   };
 }
