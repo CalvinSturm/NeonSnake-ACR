@@ -43,7 +43,8 @@ export function useMovement(
     audioEventsRef,
     terminalsRef, // Need access to terminal state for Boss logic
     uiCombo,
-    traitsRef // NEW: Traits Access
+    traitsRef, // NEW: Traits Access
+    stageReadyRef // NEW: Access stage completion state
   } = game;
 
   const { spawnEnemy } = spawner;
@@ -158,12 +159,17 @@ export function useMovement(
       const isMagnetActive = now < powerUpsRef.current.magnetUntil;
       const globalRange = isMagnetActive ? 100 : 0; // Effectively global
       
+      // AUTO-CLEANUP: If stage is ready, pull ALL XP orbs globally
+      const isCleanupPhase = stageReadyRef.current; 
+      
       const baseMagnetRange = XP_BASE_MAGNET_RADIUS + (statsRef.current.magnetRangeMod || 0);
       
       // Dynamic Speed Calculation
       const moveInterval = getMoveInterval();
       const snakeSpeed = 1000 / moveInterval; // Tiles per second
-      const chaseSpeed = snakeSpeed * 1.5; // Always faster than snake
+      
+      // Accelerated pickup during cleanup
+      const chaseSpeed = isCleanupPhase ? snakeSpeed * 3 : snakeSpeed * 1.5; 
 
       for (const f of foodRef.current) {
           if (f.shouldRemove) continue;
@@ -176,7 +182,7 @@ export function useMovement(
           
           let effectiveRange = 0;
           if (f.type === FoodType.XP_ORB) {
-              effectiveRange = Math.max(baseMagnetRange, globalRange);
+              effectiveRange = isCleanupPhase ? 9999 : Math.max(baseMagnetRange, globalRange);
           } else {
               effectiveRange = globalRange;
           }
@@ -197,7 +203,7 @@ export function useMovement(
               }
           }
       }
-  }, [foodRef, powerUpsRef, gameTimeRef, statsRef, getMoveInterval]);
+  }, [foodRef, powerUpsRef, gameTimeRef, statsRef, getMoveInterval, stageReadyRef]);
 
   // ─────────────────────────────
   // ENEMY LOGIC (SMOOTH MOVEMENT)
@@ -227,16 +233,12 @@ export function useMovement(
       }
 
       // 2. Base Speed Calculation
-      // 3.5 grid units per second base speed for standard enemies
       const baseSpeedMod = (isSlowActive ? 0.3 : 1.0) * diffConfig.speedMod;
       const moveDistance = 3.5 * baseSpeedMod * (dt / 1000);
 
-      // 🎵 RHYTHMIC INGRESS CALCULATOR 🎵
       const bpm = audio.getBpm();
       const beatInterval = 60000 / bpm;
       const beatPhase = (now % beatInterval) / beatInterval;
-      // Pulse peaks at beat boundaries. 0.2 base speed + 1.6x boost on beat.
-      // Uses sine^4 for sharp peaks.
       const rhythmicSpeedMod = 0.2 + 1.6 * Math.pow(Math.sin(beatPhase * Math.PI), 4);
 
       // 3. Iterate Enemies
@@ -256,10 +258,8 @@ export function useMovement(
             }
         }
 
-        // Decay timers
         if (e.flash && e.flash > 0) e.flash = Math.max(0, e.flash - frameUnits);
         
-        // Decay hit cooldowns (logic gating)
         if (e.hitCooldowns) {
             for (const key in e.hitCooldowns) {
                 if (e.hitCooldowns[key] > 0) {
@@ -268,64 +268,70 @@ export function useMovement(
             }
         }
 
-        // EMP STUN LOGIC
         if (e.stunTimer && e.stunTimer > 0) {
             e.stunTimer -= dt;
-            return; // Skip AI if stunned
+            return;
         }
 
-        // ─── BOSS AI: FIREWALL SENTINEL ───
+        // ─── BOSS AI ───
         if (e.type === EnemyType.BOSS) {
-          // INGRESS OVERRIDE: Force boss to enter arena before engaging AI
           if (e.state !== 'ACTIVE') {
               const targetY = GRID_ROWS / 4;
               const dy = targetY - e.y;
-              // Simply drop down until engaged
               e.y += Math.min(dy, 0.1 * frameUnits);
               return; 
           }
 
+          // ** WARDEN LOGIC (OPEN ARENA CHASE) **
+          if (e.bossConfigId === 'WARDEN_07') {
+               if (snakeHead) {
+                   const dist = Math.hypot(snakeHead.x - e.x, snakeHead.y - e.y);
+                   const targetDist = 4; // Get close for sword
+                   
+                   // Move towards player if far, back up if too close
+                   if (dist > targetDist) {
+                       const angle = Math.atan2(snakeHead.y - e.y, snakeHead.x - e.x);
+                       e.x += Math.cos(angle) * 0.05 * frameUnits;
+                       e.y += Math.sin(angle) * 0.05 * frameUnits;
+                   }
+               }
+               // Keep in bounds
+               e.x = Math.max(2, Math.min(GRID_COLS - 2, e.x));
+               e.y = Math.max(2, Math.min(GRID_ROWS - 2, e.y));
+               return;
+          }
+
           // ** NEOPHYTE STAGE 4 LOGIC BRANCH **
           if (difficulty === Difficulty.EASY && game.stageRef.current <= 4) {
-              // 1. Stun Handling (System Shutdown)
-              // Note: If stunned, AI is already skipped by the EMP check above.
-              // But if we want specific behavior like "vibrate in place" we can handle it here if not skipped.
-              // Currently the EMP check above does `return`, so standard stun freezes boss.
-              
-              // 2. Movement (Surveillance Hover)
+              if (!snakeHead) return; // Safety: Do not calculate angles if player is undefined
+
               const dist = Math.hypot(snakeHead.x - e.x, snakeHead.y - e.y);
-              const targetDist = 12; // Maintain distance
+              const targetDist = 12;
               const angleToSnake = Math.atan2(snakeHead.y - e.y, snakeHead.x - e.x);
               
               let moveAngle = angleToSnake;
-              if (dist < targetDist) moveAngle += Math.PI; // Retreat
+              if (dist < targetDist) moveAngle += Math.PI; 
               
-              // Add gentle strafe
               moveAngle += Math.sin(now / 1500) * 0.8;
 
-              // Move slower in Neophyte
               const neophyteSpeed = 0.03 * frameUnits;
               e.x += Math.cos(moveAngle) * neophyteSpeed;
               e.y += Math.sin(moveAngle) * neophyteSpeed;
               
-              // Clamp position
               e.x = Math.max(2, Math.min(GRID_COLS - 2, e.x));
               e.y = Math.max(2, Math.min(GRID_ROWS - 2, e.y));
 
               // 3. SCATTER SHOT ATTACK (Unconditional)
               e.attackTimer = (e.attackTimer || 0) + dt;
               
-              // Telegraph: Flash red 500ms before firing
               if (e.attackTimer > 2000 && e.attackTimer < 2500) {
-                  e.flash = 2; // Keep flashing
+                  e.flash = 2; 
               }
 
-              // Fire at 2.5s
               if (e.attackTimer >= 2500) {
                   e.attackTimer = 0;
                   
-                  // Canonical Scatter: 3 projectiles
-                  const spread = 0.25; // Angular spread in radians
+                  const spread = 0.25; 
                   const baseAngle = Math.atan2(snakeHead.y - e.y, snakeHead.x - e.x);
                   
                   for (let i = -1; i <= 1; i++) {
@@ -345,46 +351,40 @@ export function useMovement(
                   audioEventsRef.current.push({ type: 'SHOOT' });
               }
               
-              return; // 🔒 EXIT NEOPHYTE LOGIC
+              return; 
           }
 
-          // ** STANDARD BOSS BEHAVIOR (Higher Difficulties / Later Stages) **
+          // ** STANDARD BOSS BEHAVIOR (Sentinel) **
           const hpRatio = e.hp / e.maxHp;
           const prevPhase = e.bossPhase || 1;
           
-          // Phase Transitions
           let phase = 1;
           if (hpRatio < 0.3) phase = 3;
           else if (hpRatio < 0.6) phase = 2;
           
           if (phase !== prevPhase) {
               e.bossPhase = phase;
-              e.summons = 0; // Reset summons cap on phase change
-              audioEventsRef.current.push({ type: 'EMP' }); // Audio cue for phase change
+              e.summons = 0; 
+              audioEventsRef.current.push({ type: 'EMP' }); 
           }
 
-          // Timers
           e.attackTimer = (e.attackTimer || 0) + dt;
           e.dashTimer = (e.dashTimer || 0) + dt;
 
-          // PHASE 1: SURVEILLANCE (Sniper Mode)
           if (phase === 1) {
-              // Behavior: Kiting / Maintaining distance
               const dist = Math.hypot(snakeHead.x - e.x, snakeHead.y - e.y);
-              const targetDist = 15; // Maintain 15 grid units distance
+              const targetDist = 15; 
               
               const angleToSnake = Math.atan2(snakeHead.y - e.y, snakeHead.x - e.x);
               
               let moveAngle = angleToSnake;
-              if (dist < targetDist) moveAngle += Math.PI; // Retreat
+              if (dist < targetDist) moveAngle += Math.PI; 
               
-              // Add gentle strafe
               moveAngle += Math.sin(now / 1500) * 0.8;
 
               e.x += Math.cos(moveAngle) * 0.04 * frameUnits;
               e.y += Math.sin(moveAngle) * 0.04 * frameUnits;
 
-              // Attack: Precision Burst
               if (e.attackTimer > 2000) {
                   e.attackTimer = 0;
                   if (projectilesRef.current.length < 200) {
@@ -401,17 +401,14 @@ export function useMovement(
                               damage: 20,
                               color: '#ff3333',
                               owner: 'ENEMY',
-                              size: 6 // More visible
+                              size: 6
                           });
                       }
                       audioEventsRef.current.push({ type: 'SHOOT' });
                   }
               }
           } 
-          
-          // PHASE 2: CONTAINMENT (Summoner/Area Denial)
           else if (phase === 2) {
-              // Behavior: Control Center
               const cx = GRID_COLS / 2;
               const cy = GRID_ROWS / 2;
               const dx = cx - e.x;
@@ -422,18 +419,15 @@ export function useMovement(
                   e.x += (dx / distToCenter) * 0.06 * frameUnits;
                   e.y += (dy / distToCenter) * 0.06 * frameUnits;
               } else {
-                  // Orbit center slightly
                   e.x = cx + Math.cos(now / 1000) * 2;
                   e.y = cy + Math.sin(now / 1000) * 2;
               }
 
-              // Attack 1: Summon Interceptors (Capped per phase)
               if (e.spawnTimer === undefined) e.spawnTimer = 0;
               e.spawnTimer += dt;
               
               if (e.spawnTimer > 4500) {
                   e.spawnTimer = 0;
-                  // Cap summons to 6 per phase cycle to prevent flooding
                   if ((e.summons || 0) < 6 && enemiesRef.current.length < 8) {
                       spawnEnemy(EnemyType.INTERCEPTOR);
                       spawnEnemy(EnemyType.INTERCEPTOR);
@@ -441,7 +435,6 @@ export function useMovement(
                   }
               }
 
-              // Attack 2: Radial Blast
               if (e.attackTimer > 2800) {
                   e.attackTimer = 0;
                   if (projectilesRef.current.length < 200) {
@@ -464,23 +457,17 @@ export function useMovement(
                   }
               }
           }
-
-          // PHASE 3: PURGE (Bullet Hell / Dash)
           else if (phase === 3) {
-              // Behavior: Dash Cycle
               if (e.dashState === 'IDLE') {
                   if (e.dashTimer > 2500) {
                       e.dashState = 'CHARGE';
                       e.dashTimer = 0;
-                      // Target last known snake position
                       e.targetPos = { x: snakeHead.x, y: snakeHead.y };
                   }
-                  // Erratic jitter while idle
                   e.x += (Math.random() - 0.5) * 0.2 * frameUnits;
                   e.y += (Math.random() - 0.5) * 0.2 * frameUnits;
               } 
               else if (e.dashState === 'CHARGE') {
-                  // Telegraph dash
                   if (e.dashTimer > 600) {
                       e.dashState = 'DASH';
                       e.dashTimer = 0;
@@ -490,11 +477,10 @@ export function useMovement(
                   }
               }
               else if (e.dashState === 'DASH') {
-                  const dashSpeed = 0.5; // Very fast
+                  const dashSpeed = 0.5;
                   const nextX = e.x + Math.cos(e.angle || 0) * dashSpeed * frameUnits;
                   const nextY = e.y + Math.sin(e.angle || 0) * dashSpeed * frameUnits;
                   
-                  // Wall Collision Avoidance
                   if (nextX < 2 || nextX > GRID_COLS - 2 || nextY < 2 || nextY > GRID_ROWS - 2) {
                       e.dashState = 'IDLE';
                       e.dashTimer = 0;
@@ -508,7 +494,6 @@ export function useMovement(
                       e.dashTimer = 0;
                   }
                   
-                  // Leave "Minelayer" trail
                   if (Math.random() < 0.4 && projectilesRef.current.length < 200) {
                        projectilesRef.current.push({
                           id: Math.random().toString(36),
@@ -520,19 +505,17 @@ export function useMovement(
                           color: '#ff4400',
                           owner: 'ENEMY',
                           size: 6,
-                          life: 120 // 2 seconds
+                          life: 120
                       });
                   }
               }
 
-              // Attack: Spiral (Continuous unless dashing)
               if (e.dashState !== 'DASH') {
-                  if (e.attackTimer > 120) { // Rapid fire
+                  if (e.attackTimer > 120) { 
                       e.attackTimer = 0;
                       if (projectilesRef.current.length < 200) {
                           const spiralAngle = (now / 150) % (Math.PI * 2);
                           
-                          // Dual spiral
                           [0, Math.PI].forEach(offset => {
                               const a = spiralAngle + offset;
                               projectilesRef.current.push({
@@ -548,7 +531,6 @@ export function useMovement(
                               });
                           });
                           
-                          // Audio Throttling
                           if (now - bossAudioThrottleRef.current > 200) {
                               audioEventsRef.current.push({ type: 'SHOOT' });
                               bossAudioThrottleRef.current = now;
@@ -558,40 +540,31 @@ export function useMovement(
               }
           }
 
-          // Boundary checks for boss (keep inside arena)
           e.x = Math.max(1, Math.min(GRID_COLS - 2, e.x));
           e.y = Math.max(1, Math.min(GRID_ROWS - 2, e.y));
           
           return;
         }
 
-        // ─── STANDARD ENEMY SMOOTH MOVEMENT ───
+        // ─── STANDARD ENEMY ───
         
-        // Calculate vector to target (Snake Head)
         const dx = snakeHead.x - e.x;
         const dy = snakeHead.y - e.y;
         const dist = Math.hypot(dx, dy);
 
         if (dist > 0.1) {
-            // Normalize
             const nx = dx / dist;
             const ny = dy / dist;
 
-            // USE RHYTHMIC MOVEMENT FOR INGRESS
             let finalSpeed = moveDistance;
             if (e.state !== 'ACTIVE') {
-                // Apply rhythmic scalar to base movement when entering
                 finalSpeed *= rhythmicSpeedMod;
             }
 
-            // Proposed positions
             const nextX = e.x + nx * finalSpeed;
             const nextY = e.y + ny * finalSpeed;
 
-            // Wall Collision Check (Rounded to nearest grid)
-            // INGRESS SAFETY: Ignore wall checks if not active (allow entry through border walls)
             const checkWall = (x: number, y: number) => {
-                // If not active, ignore boundary/wall checks to allow ingress
                 if (e.state !== 'ACTIVE') return false;
 
                 const gx = Math.round(x);
@@ -600,7 +573,6 @@ export function useMovement(
                        wallsRef.current.some(w => w.x === gx && w.y === gy);
             };
 
-            // Apply Separately for "Sliding" along walls
             if (!checkWall(nextX, e.y)) {
                 e.x = nextX;
             }

@@ -23,7 +23,8 @@ export type UpgradeId =
   | 'OVERRIDE_PROTOCOL'
   | 'SCALAR_DAMAGE'
   | 'SCALAR_FIRE_RATE'
-  | 'SCALAR_AREA';
+  | 'SCALAR_AREA'
+  | 'LUCK';
 
 export type UpgradeContext = {
   weapon: WeaponStats;

@@ -3,6 +3,8 @@ import { useEffect, useRef } from 'react';
 import { GameStatus } from '../types';
 import { useGameState } from './useGameState';
 import { useTransitions } from './useTransitions';
+import { useVerticalPhysics } from './physics/useVerticalPhysics';
+import { useCameraController } from './camera/useCameraController';
 
 export function useGameLoop(
   game: ReturnType<typeof useGameState>,
@@ -16,6 +18,8 @@ export function useGameLoop(
   const accumulatorRef = useRef<number>(0);
 
   const transitions = useTransitions(game);
+  const physics = useVerticalPhysics(game);
+  const cameraController = useCameraController(game); // New Controller
 
   const updateRef = useRef(update);
   const drawRef = useRef(draw);
@@ -42,10 +46,26 @@ export function useGameLoop(
         // SIMULATION GATE: Update only if playing and NO modal is open
         if (game.status === GameStatus.PLAYING && game.modalState === 'NONE') {
           game.gameTimeRef.current += FIXED_DT;
+          
+          // 1. Physics (Pre-movement)
+          physics.update(FIXED_DT);
+          
+          // 2. Logic
           updateRef.current(FIXED_DT);
+          
+          // 3. Camera Update Phase (New)
+          cameraController.update(FIXED_DT);
+          
+          // Note: game.updateCamera was legacy transition logic, now handled inside cameraController.update
+          // but we keep the hook invocation for any edge cases until full refactor.
+          // game.updateCamera(FIXED_DT); // Deprecated in favor of controller
+
         } else if (game.status === GameStatus.STAGE_TRANSITION) {
-          // Advance time for animation continuity, but skip simulation update
+          // Advance time for animation continuity AND transition logic
           game.gameTimeRef.current += FIXED_DT;
+          updateRef.current(FIXED_DT);
+          // Allow camera to settle/animate during transitions?
+          cameraController.update(FIXED_DT); 
         }
         
         accumulatorRef.current -= FIXED_DT;
@@ -58,5 +78,5 @@ export function useGameLoop(
 
     rafRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [game.status, game.gameTimeRef, game.modalState]); 
+  }, [game.status, game.gameTimeRef, game.modalState, physics, cameraController]); 
 }

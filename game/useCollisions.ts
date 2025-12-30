@@ -1,19 +1,21 @@
 
-import { useCallback, useRef } from 'react';
+import { useCallback } from 'react';
 import { useGameState } from './useGameState';
 import { useCombat } from './useCombat';
 import { useSpawner } from './useSpawner';
 import { useFX } from './useFX';
-import { ProgressionAPI } from './useProgression';
-import { Point, GameStatus, EnemyType, FoodType } from '../types';
-import { DEFAULT_SETTINGS, COLORS, GRID_COLS, GRID_ROWS, MAGNET_RADIUS, COLLISION_CONFIG } from '../constants';
+import { useProgression } from './useProgression';
+import { Point, GameStatus, FoodType, CameraMode, EnemyType } from '../types';
+import { GRID_COLS, GRID_ROWS, COLORS, DEFAULT_SETTINGS } from '../constants';
+import { audio } from '../utils/audio';
+import { ROOT_FILESYSTEM } from '../archive/data';
 
 export function useCollisions(
   game: ReturnType<typeof useGameState>,
   combat: ReturnType<typeof useCombat>,
   spawner: ReturnType<typeof useSpawner>,
   fx: ReturnType<typeof useFX>,
-  progression: ProgressionAPI
+  progression: ReturnType<typeof useProgression>
 ) {
   const {
     snakeRef,
@@ -22,472 +24,386 @@ export function useCollisions(
     foodRef,
     terminalsRef,
     projectilesRef,
-    gameTimeRef,
+    status,
     setStatus,
-    failureMessageRef,
-    audioEventsRef,
-    setUiShield,
     statsRef,
-    terminalsHackedRef,
+    tailIntegrityRef,
     invulnerabilityTimeRef,
-    powerUpsRef, // Use REF, not state, to avoid stale closures in frozen loops
-    ghostCoilCooldownRef,
-    tailIntegrityRef, 
-    chromaticAberrationRef,
-    traitsRef // NEW: Access traits via Resolver
+    setUiShield,
+    failureMessageRef,
+    traitsRef,
+    devModeFlagsRef,
+    cameraRef,
+    hitboxesRef, // Added for Boss Hitboxes
+    scoreRef, // Used if needed
+    stageStatsRef // NEW: Mastery tracking
   } = game;
 
-  const { createParticles, triggerShake, spawnFloatingText, triggerShockwave, triggerLightning } = fx;
-  const { onTerminalHacked, onFoodConsumed } = progression;
-  const { damageEnemy } = combat; // Import combat function for reactive damage
+  const { spawnFloatingText, triggerShake, triggerShockwave, createParticles, triggerCLISequence } = fx;
+  const { damageEnemy } = combat;
 
-  // NEW: Track lethal overlapping frames per enemy ID for "Confirmation" logic
-  const collisionCandidatesRef = useRef<Record<string, number>>({});
+  // 1. Helpers for Damage/Death
+  const handleDeath = useCallback((reason: string) => {
+      // GOD MODE CHECK
+      if (devModeFlagsRef.current.godMode) return;
 
-  // NEW: Update loop for collision-related logic (Regeneration)
-  const updateCollisionLogic = useCallback((dt: number) => {
-      // 1. Regenerate Tail Integrity
-      // +15% per second (Full regen in ~7s)
-      if (tailIntegrityRef.current < 100) {
-          tailIntegrityRef.current = Math.min(100, tailIntegrityRef.current + (dt / 1000) * 15);
+      if (invulnerabilityTimeRef.current > 0) return;
+      if (statsRef.current.shieldActive) {
+          statsRef.current.shieldActive = false;
+          setUiShield(false);
+          invulnerabilityTimeRef.current = 2000;
+          triggerShake(10, 10);
+          audio.play('SHIELD_HIT');
+          if (snakeRef.current[0]) {
+              spawnFloatingText(snakeRef.current[0].x * DEFAULT_SETTINGS.gridSize, snakeRef.current[0].y * DEFAULT_SETTINGS.gridSize, "SHIELD BROKEN", '#00ffff', 20);
+          }
+          return;
       }
       
-      // 2. Terminals Logic
-      const head = snakeRef.current[0];
-      if (!head) return;
+      failureMessageRef.current = reason;
+      setStatus(GameStatus.GAME_OVER);
+      // audio.play('GAME_OVER'); // Removed to maintain music continuity
+      triggerShake(20, 20);
+  }, [invulnerabilityTimeRef, statsRef, setUiShield, triggerShake, spawnFloatingText, failureMessageRef, setStatus, snakeRef, devModeFlagsRef]);
 
-      const now = gameTimeRef.current;
-      const hx = head.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2;
-      const hy = head.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2;
+  const takeDamage = useCallback((amount: number, reason: string) => {
+      // GOD MODE CHECK
+      if (devModeFlagsRef.current.godMode) return;
 
-      for (let i = terminalsRef.current.length - 1; i >= 0; i--) {
-        const t = terminalsRef.current[i];
-        t.justDisconnected = false;
-        t.justCompleted = false;
-
-        if (t.shouldRemove) continue;
-
-        const tx = t.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2;
-        const ty = t.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2;
-
-        const dist = Math.hypot(hx - tx, hy - ty);
-        const range = t.radius * DEFAULT_SETTINGS.gridSize;
-
-        if (dist <= range) {
-          const speedMod = statsRef.current.hackSpeedMod || 1.0;
-          t.progress += dt * speedMod;
-          t.particleTimer = (t.particleTimer || 0) + dt;
-          if (t.particleTimer > 250) {
-            createParticles(t.x, t.y, t.color, 3);
-            t.particleTimer = 0;
-          }
-
-          if (t.progress >= t.totalTime) {
-            
-            // 🔒 REWARD DELEGATION
-            // Call central handler with type. No food spawning allowed here.
-            onTerminalHacked(t.type);
-            terminalsHackedRef.current += 1;
-
-            // 🎨 VISUAL FX (Local Responsibility)
-            if (t.type === 'OVERRIDE') {
-                const boss = enemiesRef.current.find(e => e.type === EnemyType.BOSS);
-                if (boss) {
-                    spawnFloatingText(
-                        boss.x * DEFAULT_SETTINGS.gridSize,
-                        boss.y * DEFAULT_SETTINGS.gridSize,
-                        "SYSTEM OVERRIDE",
-                        '#ffaa00',
-                        24
-                    );
-                    triggerShockwave({
-                        id: Math.random().toString(),
-                        x: boss.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
-                        y: boss.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
-                        currentRadius: 10, maxRadius: 300,
-                        damage: 0, opacity: 0.8
-                    });
-                }
-            } else {
-                // RESOURCE Terminal FX
-                const xpAmount = Math.floor(300 * statsRef.current.hackSpeedMod);
-                spawnFloatingText(
-                    t.x * DEFAULT_SETTINGS.gridSize, 
-                    t.y * DEFAULT_SETTINGS.gridSize - 20, 
-                    `+${xpAmount} XP`, 
-                    '#ffff00', 
-                    16
-                );
-            }
-
-            triggerShake(15, 15);
-            spawnFloatingText(tx, ty, 'HACKED', t.color, 20);
-            triggerShockwave({
-              id: Math.random().toString(),
-              x: tx, y: ty,
-              currentRadius: 10, maxRadius: 200,
-              damage: 0, opacity: 0.6,
-            });
-            
-            t.justCompleted = true;
-            t.shouldRemove = true;
-          }
-        } else if (t.progress > 0) {
-          if (t.progress > 500 && now - (t.lastEffectTime || 0) > 1000) {
-            t.justDisconnected = true;
-            t.lastEffectTime = now;
-          }
-          t.progress = Math.max(0, t.progress - dt * 1.5);
-        }
-      }
-  }, [snakeRef, terminalsRef, terminalsHackedRef, tailIntegrityRef, gameTimeRef, statsRef, createParticles, triggerShake, spawnFloatingText, triggerShockwave, onTerminalHacked, enemiesRef]);
-
-  // 1. Move Collisions (Walls, Self, Shield)
-  const checkMoveCollisions = useCallback((head: Point): boolean => {
-    // Wall Collision Logic
-    if (
-      head.x < 0 || head.x >= GRID_COLS ||
-      head.y < 0 || head.y >= GRID_ROWS ||
-      wallsRef.current.some(w => w.x === head.x && w.y === head.y)
-    ) {
-      if (invulnerabilityTimeRef.current > 0) {
-          head.x = Math.max(0, Math.min(GRID_COLS - 1, head.x));
-          head.y = Math.max(0, Math.min(GRID_ROWS - 1, head.y));
-          return false;
-      }
+      if (invulnerabilityTimeRef.current > 0) return;
+      
+      // Apply Damage Reduction (Intrinsic)
+      const resist = traitsRef.current.damageResistBonus;
+      const finalAmount = Math.max(0, amount * (1 - resist));
+      
+      // Track damage for Mastery (Original raw or final? Usually raw to encourage perfect play, but final reflects mitigation investment)
+      // Let's track final damage taken for fair assessment of "Tank" builds.
+      stageStatsRef.current.damageTaken += finalAmount;
 
       if (statsRef.current.shieldActive) {
-        statsRef.current.shieldActive = false;
-        setUiShield(false);
-        triggerShake(20, 20);
-        audioEventsRef.current.push({ type: 'SHIELD_HIT' });
-        invulnerabilityTimeRef.current = 2000; 
-        head.x = Math.max(0, Math.min(GRID_COLS - 1, head.x));
-        head.y = Math.max(0, Math.min(GRID_ROWS - 1, head.y));
-        return false;
+          statsRef.current.shieldActive = false;
+          setUiShield(false);
+          invulnerabilityTimeRef.current = 1500;
+          triggerShake(5, 5);
+          audio.play('SHIELD_HIT');
+          return;
       }
-      
-      setStatus(GameStatus.GAME_OVER);
-      failureMessageRef.current = 'SEGMENTATION_FAULT // WALL_IMPACT';
-      audioEventsRef.current.push({ type: 'GAME_OVER' });
-      triggerShake(30, 30);
-      return true;
+      handleDeath(reason);
+  }, [invulnerabilityTimeRef, statsRef, setUiShield, triggerShake, handleDeath, devModeFlagsRef, stageStatsRef, traitsRef]);
+
+  // 2. Static Collisions (Walls, Self)
+  const checkMoveCollisions = useCallback((head: Point): boolean => {
+    const isFreeRoam = devModeFlagsRef.current.freeMovement;
+    const isSideScroll = cameraRef.current.mode === CameraMode.SIDE_SCROLL;
+    const isGod = devModeFlagsRef.current.godMode;
+
+    // Walls
+    if (head.x < 0 || head.x >= GRID_COLS || head.y < 0 || head.y >= GRID_ROWS) {
+        if (isFreeRoam || isSideScroll || isGod) return false;
+        handleDeath('GRID_BOUNDARY_EXCEEDED');
+        return true;
     }
 
-    // Self Collision
-    for (let i = 0; i < snakeRef.current.length - 1; i++) {
-      const segment = snakeRef.current[i];
-      if (head.x === segment.x && head.y === segment.y) {
-        if (invulnerabilityTimeRef.current > 0) return false;
-
-        if (statsRef.current.shieldActive) {
-            statsRef.current.shieldActive = false;
-            setUiShield(false);
-            triggerShake(20, 20);
-            audioEventsRef.current.push({ type: 'SHIELD_HIT' });
-            invulnerabilityTimeRef.current = 2000; 
-            return false;
-        }
-
-        setStatus(GameStatus.GAME_OVER);
-        failureMessageRef.current = 'RECURSION_ERROR // SELF_COLLISION';
-        audioEventsRef.current.push({ type: 'GAME_OVER' });
-        triggerShake(30, 30);
+    if (wallsRef.current.some(w => w.x === head.x && w.y === head.y)) {
+        if (isFreeRoam || isSideScroll || isGod) return false;
+        handleDeath('STRUCTURAL_IMPACT');
         return true;
-      }
+    }
+
+    // Barrier Check (Solid Object)
+    for (const enemy of enemiesRef.current) {
+        if (enemy.type === EnemyType.BARRIER && enemy.state === 'ACTIVE') {
+            if (Math.round(enemy.x) === head.x && Math.abs(head.y - enemy.y) < 10) { // Vertical wall approximation
+                // Player dies if hitting the barrier
+                if (!isGod) {
+                    handleDeath('CONTAINMENT_FIELD_IMPACT');
+                    return true;
+                }
+            }
+        }
+    }
+
+    // Self (Body)
+    if (isFreeRoam || isGod) return false;
+
+    for (let i = 0; i < snakeRef.current.length; i++) {
+        const seg = snakeRef.current[i];
+        if (head.x === seg.x && head.y === seg.y) {
+             if (i !== snakeRef.current.length - 1) {
+                 handleDeath('SELF_INTERSECTION');
+                 return true;
+             }
+        }
     }
 
     return false;
-  }, [
-    wallsRef, snakeRef, statsRef, setUiShield, triggerShake, 
-    audioEventsRef, setStatus, failureMessageRef, invulnerabilityTimeRef
-  ]);
+  }, [wallsRef, snakeRef, handleDeath, devModeFlagsRef, cameraRef, enemiesRef]);
 
-  // 2. Dynamic Collisions (Enemies, Projectiles)
+  // 3. Eat Logic
+  const handleEat = useCallback((head: Point): boolean => {
+    let grew = false;
+    const foodIndex = foodRef.current.findIndex(f => 
+        Math.abs(f.x - head.x) < 0.5 && Math.abs(f.y - head.y) < 0.5
+    );
+
+    if (foodIndex !== -1) {
+        const item = foodRef.current[foodIndex];
+        foodRef.current.splice(foodIndex, 1);
+        
+        progression.onFoodConsumed({ type: item.type, byMagnet: false, value: item.value });
+
+        if (item.type === FoodType.NORMAL) {
+            grew = true;
+            createParticles(head.x, head.y, COLORS.foodNormal, 6);
+        } else {
+            createParticles(head.x, head.y, COLORS.xpOrb, 4);
+        }
+    }
+    return grew;
+  }, [foodRef, progression, createParticles]);
+
+  // 4. Dynamic Entities (Enemies, Projectiles)
   const checkDynamicCollisions = useCallback(() => {
+    if (status !== GameStatus.PLAYING) return;
+    
     const head = snakeRef.current[0];
     if (!head) return;
+
+    // A. Snake vs Enemies
+    const snakeBody = snakeRef.current;
     
-    // Safety check: Clear overlap candidates if invulnerable to prevent latching
-    if (invulnerabilityTimeRef.current > 0) {
-        collisionCandidatesRef.current = {};
-        return;
-    }
-
-    const now = gameTimeRef.current;
-    const neck = snakeRef.current[1] || head;
-    const traits = traitsRef.current; // Access traits
-
-    const distToSegment = (p: Point, a: Point, b: Point) => {
-        const l2 = (a.x - b.x)**2 + (a.y - b.y)**2;
-        if (l2 === 0) return Math.hypot(p.x - a.x, p.y - a.y);
-        let t = ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / l2;
-        t = Math.max(0, Math.min(1, t));
-        return Math.hypot(p.x - (a.x + t * (b.x - a.x)), p.y - (a.y + t * (b.y - a.y)));
-    };
-
-    // Snake vs Enemies (Head Contact = Death)
-    const lethalHitThreshold = COLLISION_CONFIG.PLAYER_HEAD_RADIUS + COLLISION_CONFIG.ENEMY_RADIUS;
-    const proximityThreshold = lethalHitThreshold + COLLISION_CONFIG.PROXIMITY_BUFFER;
-    
-    // Set of enemies currently overlapping lethal zone this frame
-    const currentLethalOverlaps = new Set<string>();
-
-    for (const enemy of enemiesRef.current) {
-        if (enemy.hp <= 0) continue;
-        if (enemy.state !== 'ACTIVE') continue;
+    enemiesRef.current.forEach(e => {
+        // Skip Barrier collision here (handled in move)
+        if (e.type === EnemyType.BARRIER) return;
         
-        const dist = distToSegment(enemy, head, neck);
-        
-        // 1. Proximity Check (Visual Warning Zone)
-        if (dist < proximityThreshold && dist >= lethalHitThreshold) {
-             // Reset lethal counter since we are safe but close
-             delete collisionCandidatesRef.current[enemy.id];
-             
-             // Trigger visual tension (micro shake)
-             if (Math.random() < 0.3) {
-                 triggerShake(1, 1);
-             }
-             continue; // Safe for now
+        if (e.state !== 'ACTIVE') return;
+
+        // Check against Head (Lethal)
+        const distHead = Math.hypot(e.x - head.x, e.y - head.y);
+        if (distHead < 0.8) {
+            takeDamage(20, 'KINETIC_IMPACT');
+            const ang = Math.atan2(e.y - head.y, e.x - head.x);
+            e.x += Math.cos(ang) * 2;
+            e.y += Math.sin(ang) * 2;
         }
 
-        // 2. Lethal Check (Confirmation Logic)
-        if (dist < lethalHitThreshold) {
-            currentLethalOverlaps.add(enemy.id);
-            
-            // Increment frame counter
-            const currentFrames = (collisionCandidatesRef.current[enemy.id] || 0) + 1;
-            collisionCandidatesRef.current[enemy.id] = currentFrames;
-
-            // HIT CONFIRMED
-            if (currentFrames >= COLLISION_CONFIG.CONFIRMATION_FRAMES) {
-                // Reset candidates on hit to prevent double-triggering
-                collisionCandidatesRef.current = {};
-
-                // TRAIT: PHANTOM DRIFT (Spectre)
-                if (traits.collisionDodgeChance > 0 && Math.random() < traits.collisionDodgeChance) {
-                    invulnerabilityTimeRef.current = 500;
-                    spawnFloatingText(head.x * DEFAULT_SETTINGS.gridSize, head.y * DEFAULT_SETTINGS.gridSize, "DODGE", '#00ffcc', 14);
-                    return;
-                }
-
-                // GHOST COIL
-                if (statsRef.current.weapon.ghostCoilLevel > 0 && now > ghostCoilCooldownRef.current) {
-                    ghostCoilCooldownRef.current = now + 10000;
-                    invulnerabilityTimeRef.current = 1500;
-                    chromaticAberrationRef.current = 1.0; 
-                    triggerShake(5, 5);
-                    audioEventsRef.current.push({ type: 'POWER_UP' });
-                    spawnFloatingText(head.x * DEFAULT_SETTINGS.gridSize, head.y * DEFAULT_SETTINGS.gridSize, "PHASE SHIFT", '#888888', 14);
-                    return;
-                }
-
-                // SHIELD
-                if (statsRef.current.shieldActive) {
-                    statsRef.current.shieldActive = false;
-                    setUiShield(false);
-                    triggerShake(20, 20);
-                    audioEventsRef.current.push({ type: 'SHIELD_HIT' });
-                    invulnerabilityTimeRef.current = 2000;
-                    return;
-                }
-
-                setStatus(GameStatus.GAME_OVER);
-                failureMessageRef.current = 'FATAL_EXCEPTION // ENEMY_CONTACT';
-                audioEventsRef.current.push({ type: 'GAME_OVER' });
-                triggerShake(40, 40);
-                return;
-            }
+        if (traitsRef.current.collisionDodgeChance > 0 && Math.random() < traitsRef.current.collisionDodgeChance) {
+             return; 
         }
-    }
 
-    // Prune candidates that are no longer overlapping the lethal zone
-    for (const id in collisionCandidatesRef.current) {
-        if (!currentLethalOverlaps.has(id)) {
-            delete collisionCandidatesRef.current[id];
-        }
-    }
-
-    // TAIL COLLISION LOGIC (Physical Blocking)
-    if (snakeRef.current.length > 1 && tailIntegrityRef.current > 0) {
-        for (const enemy of enemiesRef.current) {
-            if (enemy.hp <= 0 || enemy.state !== 'ACTIVE') continue;
-            
-            let nearestSeg: Point | null = null;
-            let minDist = Infinity;
-
-            // Find closest tail segment
-            for (let i = 1; i < snakeRef.current.length; i++) {
-                const seg = snakeRef.current[i];
-                const dx = enemy.x - seg.x;
-                const dy = enemy.y - seg.y;
-                if (Math.abs(dx) < 1.0 && Math.abs(dy) < 1.0) {
-                    const d = Math.hypot(dx, dy);
-                    if (d < minDist) {
-                        minDist = d;
-                        nearestSeg = seg;
-                    }
-                }
-            }
-
-            if (nearestSeg && minDist < 0.8) {
-                // COLLISION RESOLVED
-                
-                // 1. Calculate Damage to Integrity
-                let integrityDmg = 20;
-                let pushStrength = 0.5;
-                let stunTime = 200;
-
-                if (enemy.type === EnemyType.BOSS) {
-                    integrityDmg = 100; // Instantly break
-                    pushStrength = 0; 
-                    stunTime = 0;
-                } else if (enemy.type === EnemyType.DASHER) {
-                    integrityDmg = 50;
-                    pushStrength = 1.0;
-                    stunTime = 500;
-                } else if (enemy.type === EnemyType.SHOOTER || enemy.type === EnemyType.INTERCEPTOR) {
-                    integrityDmg = 30;
-                }
-
-                // TRAIT: COMPOSITE ARMOR (Bulwark)
-                integrityDmg *= traits.tailIntegrityDamageMod;
-
-                tailIntegrityRef.current = Math.max(0, tailIntegrityRef.current - integrityDmg);
-
-                // TRAIT: REACTIVE VOLTAGE (Volt)
-                if (traits.reactiveLightningChance > 0 && Math.random() < traits.reactiveLightningChance) {
-                    damageEnemy(enemy, 25, false, false);
-                    triggerLightning({
-                        id: Math.random().toString(),
-                        x1: nearestSeg.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
-                        y1: nearestSeg.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
-                        x2: enemy.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
-                        y2: enemy.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
-                        life: 0.5,
-                        color: COLORS.lightning
-                    });
-                }
-
-                // 2. Apply Physical Pushback (Recoil)
-                if (pushStrength > 0) {
-                    const dx = enemy.x - nearestSeg.x;
-                    const dy = enemy.y - nearestSeg.y;
-                    const len = Math.hypot(dx, dy) || 1; 
-                    const pushX = (dx / len) * pushStrength;
-                    const pushY = (dy / len) * pushStrength;
-                    
-                    enemy.x += pushX;
-                    enemy.y += pushY;
-                    
-                    if (enemy.type === EnemyType.DASHER && enemy.dashState === 'DASH') {
-                        enemy.dashState = 'IDLE';
-                        enemy.dashTimer = 0;
-                    }
-                }
-
-                // 3. Stun
-                if (stunTime > 0) {
-                    enemy.stunTimer = stunTime;
-                }
-
-                // 4. FX
-                createParticles(enemy.x, enemy.y, '#ffffff', 4);
-                
-                if (tailIntegrityRef.current <= 0) {
-                    triggerShake(10, 10);
-                    spawnFloatingText(enemy.x * DEFAULT_SETTINGS.gridSize, enemy.y * DEFAULT_SETTINGS.gridSize, "BREACH", '#ff0000', 16);
-                    audioEventsRef.current.push({ type: 'SHIELD_HIT' }); 
-                } else {
-                    audioEventsRef.current.push({ type: 'COMPRESS' }); 
-                }
-            }
-        }
-    }
-
-    // Snake vs Projectiles
-    const projectileHitThreshold = COLLISION_CONFIG.PLAYER_HEAD_RADIUS + COLLISION_CONFIG.PROJECTILE_RADIUS;
-
-    for (const p of projectilesRef.current) {
-        if (p.owner === 'PLAYER') continue;
-        const phx = p.x / DEFAULT_SETTINGS.gridSize - 0.5;
-        const phy = p.y / DEFAULT_SETTINGS.gridSize - 0.5;
-        const dist = distToSegment({ x: phx, y: phy }, head, neck);
-        
-        if (dist < projectileHitThreshold) {
-             if (statsRef.current.weapon.reflectorMeshLevel > 0) {
-                 const chance = 0.2 + (statsRef.current.weapon.reflectorMeshLevel * 0.1);
-                 if (Math.random() < chance) {
-                     p.owner = 'PLAYER';
-                     p.vx *= -1;
-                     p.vy *= -1;
-                     p.color = COLORS.shield;
-                     audioEventsRef.current.push({ type: 'SHIELD_HIT' });
-                     spawnFloatingText(p.x, p.y, "REFLECT", COLORS.shield, 10);
-                     triggerShockwave({
-                         id: Math.random().toString(),
-                         x: p.x, y: p.y,
-                         currentRadius: 5, maxRadius: 30,
-                         damage: 0, opacity: 0.5
+        // Check against Body
+        for (let i = 1; i < snakeBody.length; i++) {
+             const seg = snakeBody[i];
+             const d = Math.hypot(e.x - seg.x, e.y - seg.y);
+             if (d < 0.8) {
+                 if (traitsRef.current.reactiveLightningChance > 0 && Math.random() < traitsRef.current.reactiveLightningChance) {
+                     damageEnemy(e, 20); 
+                     fx.triggerLightning({ 
+                         id: Math.random().toString(), 
+                         x1: seg.x * DEFAULT_SETTINGS.gridSize + 10, 
+                         y1: seg.y * DEFAULT_SETTINGS.gridSize + 10,
+                         x2: e.x * DEFAULT_SETTINGS.gridSize + 10, 
+                         y2: e.y * DEFAULT_SETTINGS.gridSize + 10,
+                         life: 0.5,
+                         color: '#ffff00'
                      });
-                     return;
                  }
+                 
+                 // Apply Bulwark mitigation (50%) AND generic Damage Resist
+                 const baseDmg = 5;
+                 const resist = traitsRef.current.damageResistBonus;
+                 const mitigated = baseDmg * traitsRef.current.tailIntegrityDamageMod * (1 - resist);
+
+                 stageStatsRef.current.damageTaken += mitigated; // Track damage
+                 
+                 if (!devModeFlagsRef.current.godMode) {
+                     tailIntegrityRef.current = Math.max(0, tailIntegrityRef.current - mitigated);
+                 }
+                 
+                 const ang = Math.atan2(e.y - seg.y, e.x - seg.x);
+                 e.x += Math.cos(ang) * 0.5;
+                 e.y += Math.sin(ang) * 0.5;
+                 
+                 if (tailIntegrityRef.current <= 0 && !devModeFlagsRef.current.godMode) {
+                     handleDeath('HULL_BREACH');
+                 }
+                 break; 
              }
-
-             if (statsRef.current.shieldActive) {
-                statsRef.current.shieldActive = false;
-                setUiShield(false);
-                triggerShake(15, 15);
-                audioEventsRef.current.push({ type: 'SHIELD_HIT' });
-                p.shouldRemove = true;
-                invulnerabilityTimeRef.current = 2000;
-                return;
-            }
-
-            setStatus(GameStatus.GAME_OVER);
-            failureMessageRef.current = 'DATA_CORRUPTION // PROJECTILE_HIT';
-            audioEventsRef.current.push({ type: 'GAME_OVER' });
-            triggerShake(30, 30);
-            return;
         }
-    }
-  }, [
-      snakeRef, enemiesRef, projectilesRef, invulnerabilityTimeRef, 
-      statsRef, setUiShield, triggerShake, audioEventsRef, setStatus, 
-      failureMessageRef, combat, createParticles, ghostCoilCooldownRef, 
-      spawnFloatingText, gameTimeRef, tailIntegrityRef, chromaticAberrationRef, 
-      triggerShockwave, traitsRef, damageEnemy, triggerLightning
-  ]);
+    });
 
-  const handleEat = useCallback((head: Point): boolean => {
-      const pickupRadius = 0.8;
-      
-      const fIndex = foodRef.current.findIndex(f => {
-          const dist = Math.hypot(f.x - head.x, f.y - head.y);
-          return dist < pickupRadius;
+    // B. Projectile Collisions
+    projectilesRef.current.forEach(p => {
+        if (p.shouldRemove) return;
+        
+        // 1. Enemy Projectiles vs Snake
+        if (p.owner === 'ENEMY') {
+            const pGridX = p.x / DEFAULT_SETTINGS.gridSize;
+            const pGridY = p.y / DEFAULT_SETTINGS.gridSize;
+            const hCenterX = head.x + 0.5;
+            const hCenterY = head.y + 0.5;
+            const dist = Math.hypot(pGridX - hCenterX, pGridY - hCenterY);
+            
+            if (dist < 0.8) { 
+                takeDamage(p.damage, 'PROJECTILE_PENETRATION');
+                p.shouldRemove = true;
+                createParticles(head.x, head.y, '#ff0000', 5);
+            }
+        }
+        
+        // 2. Player Projectiles vs Barrier (Immunity Check)
+        if (p.owner === 'PLAYER') {
+            for (const e of enemiesRef.current) {
+                 if (e.type === EnemyType.BARRIER) {
+                     const ex = e.x * DEFAULT_SETTINGS.gridSize;
+                     const ey = e.y * DEFAULT_SETTINGS.gridSize;
+                     
+                     // Simple Box check for Barrier
+                     // Barrier is tall (30 tiles) and thin (1 tile)
+                     if (Math.abs(p.x - ex) < 20 && Math.abs(p.y - ey) < 400) {
+                         // Player projectiles do NOT damage barrier
+                         p.shouldRemove = true;
+                         createParticles(e.x, e.y, '#00ffff', 2);
+                         spawnFloatingText(p.x, p.y, "IMMUNE", '#00ffff', 10);
+                         return; // Stop processing this projectile
+                     }
+                 }
+            }
+        }
+    });
+
+    // C. Boss Hitboxes (e.g. Breach Beam) vs Barrier
+    hitboxesRef.current.forEach(hb => {
+        // Convert Grid Units to Pixel Box
+        const hbX = hb.x * DEFAULT_SETTINGS.gridSize;
+        const hbY = hb.y * DEFAULT_SETTINGS.gridSize;
+        const hbW = hb.width * DEFAULT_SETTINGS.gridSize;
+        const hbH = hb.height * DEFAULT_SETTINGS.gridSize;
+        
+        // Check vs Barrier
+        for (const e of enemiesRef.current) {
+            if (e.type === EnemyType.BARRIER && e.state === 'ACTIVE') {
+                 const ex = e.x * DEFAULT_SETTINGS.gridSize;
+                 const ey = e.y * DEFAULT_SETTINGS.gridSize;
+                 // Barrier Box (Approx)
+                 const bW = DEFAULT_SETTINGS.gridSize;
+                 const bH = 30 * DEFAULT_SETTINGS.gridSize;
+                 
+                 // AABB
+                 const overlap = 
+                    hbX < ex + bW/2 &&
+                    hbX + hbW > ex - bW/2 &&
+                    hbY < ey + bH/2 &&
+                    hbY + hbH > ey - bH/2;
+                 
+                 if (overlap) {
+                     // Damage Barrier
+                     damageEnemy(e, hb.damage, true);
+                     if (e.hp <= 0) {
+                         e.shouldRemove = true;
+                         // The stage controller will detect this removal
+                     }
+                 }
+            }
+        }
+    });
+
+  }, [status, snakeRef, enemiesRef, projectilesRef, traitsRef, tailIntegrityRef, fx, damageEnemy, takeDamage, createParticles, devModeFlagsRef, hitboxesRef, stageStatsRef]);
+
+  // 5. Terminals
+  const updateCollisionLogic = useCallback((dt: number) => {
+      const head = snakeRef.current[0];
+      if (!head) return;
+
+      terminalsRef.current.forEach(t => {
+          if (t.isLocked) return;
+
+          const dist = Math.hypot(t.x - head.x, t.y - head.y);
+          const activeRadius = t.radius;
+
+          if (dist < activeRadius) {
+              t.isBeingHacked = true;
+              
+              const efficiency = traitsRef.current.terminalEfficiency;
+              const rateMultiplier = 1 / (1 - efficiency); 
+              
+              t.progress += dt * rateMultiplier;
+              
+              if (t.progress >= t.totalTime && !t.justCompleted) {
+                  t.justCompleted = true;
+                  t.shouldRemove = true;
+                  
+                  progression.onTerminalHacked(t.type, t.associatedFileId);
+                  
+                  const tx = t.x * DEFAULT_SETTINGS.gridSize;
+                  const ty = t.y * DEFAULT_SETTINGS.gridSize;
+                  
+                  // Trigger New CLI Animation with payload
+                  let payload: any = {};
+                  if (t.type === 'RESOURCE') {
+                      const baseScore = 1000 * statsRef.current.scoreMultiplier;
+                      payload = { value: `${Math.floor(baseScore)} CR` }; // Assuming Score = Credits for flavor
+                  } else if (t.type === 'MEMORY') {
+                      const file = ROOT_FILESYSTEM.contents.find(f => f.id === t.associatedFileId);
+                      payload = { id: t.associatedFileId, title: file?.name || 'UNKNOWN' };
+                  }
+                  
+                  triggerCLISequence(t.x, t.y, t.type, t.color, payload);
+                  
+                  triggerShake(15, 15);
+                  triggerShockwave({
+                      id: Math.random().toString(),
+                      x: tx + 10,
+                      y: ty + 10,
+                      currentRadius: 10,
+                      maxRadius: 200,
+                      damage: 50, 
+                      opacity: 0.6
+                  });
+              }
+          } else {
+              t.isBeingHacked = false;
+              if (t.progress > 0) {
+                  t.progress = Math.max(0, t.progress - dt * 2);
+                  if (t.progress === 0 && t.lastEffectTime) {
+                      audio.play('HACK_LOST');
+                  }
+              }
+          }
       });
+      terminalsRef.current = terminalsRef.current.filter(t => !t.shouldRemove);
 
-      if (fIndex !== -1) {
-          const item = foodRef.current[fIndex];
-          foodRef.current.splice(fIndex, 1);
+  }, [snakeRef, terminalsRef, progression, triggerCLISequence, triggerShockwave, triggerShake, traitsRef, statsRef]);
 
-          onFoodConsumed({
-              type: item.type,
-              byMagnet: false,
-              value: item.value
-          });
+  // 6. XP Collection (Vacuum)
+  const checkXPCollection = useCallback(() => {
+      const head = snakeRef.current[0];
+      if (!head) return;
 
-          createParticles(item.x, item.y, item.type === FoodType.XP_ORB ? COLORS.xpOrb : COLORS.foodNormal, 6);
+      const collectRadius = 1.5; // Trigger range for collection
+      
+      // Iterate backwards to allow safe removal
+      for (let i = foodRef.current.length - 1; i >= 0; i--) {
+          const f = foodRef.current[i];
+          if (f.type !== FoodType.XP_ORB) continue;
 
-          return item.type === FoodType.NORMAL;
+          const dist = Math.hypot(f.x - head.x, f.y - head.y);
+          
+          if (dist < collectRadius) {
+              foodRef.current.splice(i, 1);
+              progression.onFoodConsumed({ type: f.type, byMagnet: false, value: f.value });
+              createParticles(f.x, f.y, COLORS.xpOrb, 4);
+              audio.play('XP_COLLECT');
+          }
       }
-      return false;
-  }, [foodRef, onFoodConsumed, createParticles]);
+  }, [snakeRef, foodRef, progression, createParticles]);
 
   return {
     checkMoveCollisions,
-    checkDynamicCollisions,
     handleEat,
+    checkDynamicCollisions,
     updateCollisionLogic,
+    checkXPCollection,
+    handleDeath // Exported for Hazard System
   };
 }

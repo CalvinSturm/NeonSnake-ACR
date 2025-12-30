@@ -8,16 +8,34 @@ export enum GameStatus {
   STAGE_TRANSITION = 'STAGE_TRANSITION',
   DIFFICULTY_SELECT = 'DIFFICULTY_SELECT',
   CHARACTER_SELECT = 'CHARACTER_SELECT',
-  RESUMING = 'RESUMING'
+  RESUMING = 'RESUMING',
+  ARCHIVE = 'ARCHIVE',
+  CONFIGURATION = 'CONFIGURATION',
+  READY = 'READY'
 }
 
 export type ModalState = 'NONE' | 'PAUSE' | 'SETTINGS';
+
+export interface DevBootstrapConfig {
+  stageId: number;
+  bossPhase?: number; // 1, 2, 3
+  cameraMode?: CameraMode;
+  cameraBehavior?: 'FOLLOW_PLAYER' | 'FIXED' | 'MANUAL'; // Added
+  forceBoss?: boolean; // If true, spawns boss even if stage ID doesn't match default
+  freeMovement?: boolean; // If true, disables gravity/jump restrictions in side-scroll
+  disableWalls?: boolean; // If true, clears stage walls
+}
 
 export enum Difficulty {
   EASY = 'EASY',
   MEDIUM = 'MEDIUM',
   HARD = 'HARD',
   INSANE = 'INSANE'
+}
+
+export enum CameraMode {
+  TOP_DOWN = 'TOP_DOWN',
+  SIDE_SCROLL = 'SIDE_SCROLL'
 }
 
 export enum Direction {
@@ -32,7 +50,8 @@ export enum EnemyType {
   INTERCEPTOR = 'INTERCEPTOR',
   SHOOTER = 'SHOOTER',
   DASHER = 'DASHER',
-  BOSS = 'BOSS'
+  BOSS = 'BOSS',
+  BARRIER = 'BARRIER' // New Entity
 }
 
 export enum FoodType {
@@ -79,6 +98,7 @@ export interface WeaponStats {
   neuralMagnetLevel: number;
   overclockLevel: number;
   echoCacheLevel: number;
+  luckLevel: number; // NEW
 }
 
 export interface UpgradeStats {
@@ -92,6 +112,7 @@ export interface UpgradeStats {
   critMultiplier: number;
   hackSpeedMod: number;
   moveSpeedMod: number;
+  luck: number; // NEW
   activeWeaponIds: string[];
   maxWeaponSlots: number;
   acquiredUpgradeIds: string[];
@@ -102,12 +123,17 @@ export interface UpgradeStats {
   globalProjectileSpeedMod: number;
 }
 
+export interface CharacterTrait {
+  name: string;
+  description: string;
+  type: 'SCALABLE' | 'STATIC';
+}
+
 export interface CharacterProfile {
   id: string;
   name: string;
   description: string;
-  traitName: string; // NEW: Display name for intrinsic trait
-  traitDescription: string; // NEW: Description of the trait
+  traits: CharacterTrait[];
   color: string;
   tag: 'STABLE' | 'ADAPTIVE' | 'VOLATILE';
   payoff: string;
@@ -122,6 +148,8 @@ export interface StageTheme {
   wall: string;
   enemy: string;
 }
+
+export type MobileControlScheme = 'JOYSTICK' | 'ARROWS' | 'SWIPE';
 
 export interface GameSettings {
   gridSize: number;
@@ -143,6 +171,12 @@ export interface DifficultyConfig {
   color: string;
 }
 
+export interface EnemyPhysicsProfile {
+  usesVerticalPhysics: boolean;
+  canJump?: boolean;
+  jumpCooldown?: number; // ms
+}
+
 export interface Enemy extends Point {
   id: string;
   type: EnemyType;
@@ -154,6 +188,13 @@ export interface Enemy extends Point {
   flash: number;
   hitCooldowns?: Record<string, number>;
   stunTimer?: number;
+  // Physics Properties
+  vy: number;
+  isGrounded: boolean;
+  physicsProfile: EnemyPhysicsProfile;
+  // Jump AI
+  jumpCooldownTimer: number;
+  jumpIntent: boolean;
   // Boss specific
   bossPhase?: number;
   attackTimer?: number;
@@ -163,6 +204,14 @@ export interface Enemy extends Point {
   targetPos?: Point;
   angle?: number;
   summons?: number;
+  // New Boss System
+  bossConfigId?: string;
+  bossState?: {
+      stateId: string;
+      timer: number;
+      phaseIndex: number;
+  };
+  facing?: number; // 1 (Right) or -1 (Left)
   shouldRemove?: boolean;
 }
 
@@ -189,7 +238,19 @@ export interface Projectile extends Point {
   homing?: boolean;
   targetId?: string;
   life?: number;
+  age?: number; // New: Tracks frame lifespan for animations (Lance charging)
+  usesGravity?: boolean; // NEW: Side-scroll physics
   shouldRemove?: boolean;
+}
+
+export interface Hitbox extends Point {
+    id: string; // Unique ID (e.g. BOSS_ID + TAG)
+    ownerId: string;
+    width: number;
+    height: number;
+    damage: number;
+    color: string;
+    shouldRemove?: boolean;
 }
 
 export interface Shockwave {
@@ -242,7 +303,7 @@ export interface Mine extends Point {
   shouldRemove?: boolean;
 }
 
-export type TerminalType = 'RESOURCE' | 'CLEARANCE' | 'OVERRIDE';
+export type TerminalType = 'RESOURCE' | 'CLEARANCE' | 'OVERRIDE' | 'MEMORY';
 
 export interface Terminal extends Point {
   id: string;
@@ -256,7 +317,9 @@ export interface Terminal extends Point {
   lastEffectTime?: number;
   justDisconnected?: boolean;
   justCompleted?: boolean;
+  isBeingHacked?: boolean; // NEW: Tracks active hacking state
   shouldRemove?: boolean;
+  associatedFileId?: string; // For MEMORY terminals
 }
 
 export interface DigitalRainDrop {
@@ -268,13 +331,37 @@ export interface DigitalRainDrop {
   opacity: number;
 }
 
+export interface CLIAnimation {
+  id: string;
+  x: number;
+  y: number;
+  type: TerminalType;
+  phase: 1 | 2 | 3 | 4 | 5; // Extended phases
+  timer: number;
+  lines: string[];
+  progress: number; // Keep for compatibility, though maybe unused
+  color: string;
+  shouldRemove?: boolean;
+  data?: any; // For reward values, file titles, etc.
+}
+
 export type AudioEvent = 
   | 'MOVE' | 'EAT' | 'XP_COLLECT' | 'SHOOT' | 'EMP' | 'HIT' 
   | 'GAME_OVER' | 'LEVEL_UP' | 'BONUS' | 'POWER_UP' | 'SHIELD_HIT' 
-  | 'ENEMY_DESTROY' | 'HACK_LOST' | 'HACK_COMPLETE' | 'ENEMY_SPAWN' | 'COMPRESS';
+  | 'ENEMY_DESTROY' | 'HACK_LOST' | 'HACK_COMPLETE' | 'ENEMY_SPAWN' | 'COMPRESS'
+  | 'ARCHIVE_LOCK' | 'PLAY_MUSIC_INTRO'
+  // CLI / INIT EVENTS
+  | 'CLI_POWER' | 'CLI_BURST' | 'GLITCH_TEAR' | 'SYS_RECOVER' | 'UI_HARD_CLICK';
 
 export type UpgradeCategory = 'WEAPON' | 'DEFENSE' | 'UTILITY' | 'SYSTEM' | 'HACKING' | 'MOBILITY' | 'THREAT' | 'ECONOMY' | 'REACTIVE' | 'SCALAR';
 export type UpgradeRarity = 'COMMON' | 'UNCOMMON' | 'RARE' | 'ULTRA_RARE' | 'MEGA_RARE' | 'LEGENDARY' | 'OVERCLOCKED';
+
+export interface StatModifier {
+  path: string; // e.g. "weapon.cannonDamage" or "critChance"
+  value: number; // Delta value
+  op: 'ADD' | 'MULTIPLY' | 'SET' | 'UNLOCK'; // Operation
+  label: string; // Text description
+}
 
 export interface UpgradeOption {
   id: string;
@@ -285,7 +372,8 @@ export interface UpgradeOption {
   rarity: UpgradeRarity;
   icon: string;
   isNewWeapon?: boolean;
-  stats: string[]; // NEW: Structured data for UI visualization
+  stats: string[]; // For UI visualization
+  modifiers: StatModifier[]; // For Logic application
 }
 
 export interface AudioRequest {

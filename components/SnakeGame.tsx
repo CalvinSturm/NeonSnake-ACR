@@ -1,6 +1,6 @@
 
-import React, { useRef, useEffect, useCallback, useState } from 'react';
-import { useGameState, UserSettings } from '../game/useGameState';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import { useGameState } from '../game/useGameState';
 import { useGameLoop } from '../game/useGameLoop';
 import { useRendering } from '../game/useRendering';
 import { useInput } from '../game/useInput';
@@ -8,949 +8,1258 @@ import { useMovement } from '../game/useMovement';
 import { useCollisions } from '../game/useCollisions';
 import { useCombat } from '../game/useCombat';
 import { useSpawner } from '../game/useSpawner';
+import { useStageController } from '../game/useStageController';
 import { useProgression } from '../game/useProgression';
 import { useFX } from '../game/useFX';
-import { useStageController } from '../game/useStageController';
-import { useMusic } from '../game/useMusic'; 
-import { GameStatus, Difficulty, CharacterProfile, Direction, WeaponStats, UpgradeRarity } from '../types';
-import { UpgradeId } from '../upgrades/types';
-import { 
-  STAGE_THEMES, 
-  CANVAS_WIDTH, 
-  CANVAS_HEIGHT, 
-  DEFAULT_SETTINGS, 
-  DIFFICULTY_CONFIGS, 
-  CHARACTERS,
-  TRANSITION_DURATION,
-  COMBO_DECAY_DURATION
-} from '../constants';
+import { useMusic } from '../game/useMusic';
+import { useAnalytics } from '../game/useAnalytics';
+import { GameStatus, Difficulty, CharacterProfile, DevBootstrapConfig, UpgradeOption, UpgradeStats } from '../types';
+import { DIFFICULTY_CONFIGS, CHARACTERS, CANVAS_WIDTH, CANVAS_HEIGHT, IS_DEV, MUSIC_STAGE_MAP, MUSIC_INTRO_DURATION, MUSIC_LAYERS } from '../constants';
 import { audio } from '../utils/audio';
-import { formatTime, getThreatLevel } from '../game/gameUtils';
-import { DESCRIPTOR_REGISTRY, Descriptor } from '../game/descriptors';
+import { ArrowControls } from './ArrowControls';
+import { VirtualJoystick } from './VirtualJoystick';
+import { SwipeControls } from './SwipeControls';
+import { ArchiveTerminal } from './ArchiveTerminal';
+import { SettingsMenu } from './SettingsMenu';
+import { UpgradeId } from '../upgrades/types';
+import { UIStyleProvider } from '../ui/UIStyleContext'; 
+import { useUIStyle } from '../ui/useUIStyle'; 
+import { VisionProtocolProvider } from '../ui/vision/VisionProtocolProvider';
+import { useVisionProtocol } from '../ui/vision/useVisionProtocol';
+import { GameHUD } from '../ui/hud/GameHUD';
+import { evaluateUnlocks } from '../game/cosmetics/CosmeticUnlockSystem';
+import { UnlockToast } from '../ui/cosmetics/UnlockToast';
+import { ModelConfigurationPass } from '../ui/transitions/ModelConfigurationPass';
+import { useVoidHazard } from '../game/hazards/useVoidHazard';
+import { useEnemyGapAwareness } from '../game/ai/useEnemyGapAwareness';
+import { useProjectilePhysics } from '../game/physics/useProjectilePhysics';
+import { useBossController } from '../game/boss/useBossController';
+import { DevBootstrap } from '../game/dev/DevBootstrap';
+import { CameraBehavior } from '../game/camera/types';
+import { consumeDevIntents } from '../game/orchestration/consumeDevIntents';
+import { DevTools } from '../ui/devtools/DevTools';
+import { DESCRIPTOR_REGISTRY } from '../game/descriptors';
+import { HUDTooltip } from '../ui/hud/HUDPrimitives';
+import { DEV_START_CONFIG } from '../game/dev/DevStartConfig';
 
-// Map legacy weapon keys to new Registry IDs for UI Lookup
-const WEAPON_STAT_MAP: Record<string, keyof WeaponStats> = {
-  CANNON: 'cannonLevel',
-  AURA: 'auraLevel',
-  NANO_SWARM: 'nanoSwarmLevel',
-  MINES: 'mineLevel',
-  LIGHTNING: 'chainLightningLevel',
-  PRISM_LANCE: 'prismLanceLevel',
-  NEON_SCATTER: 'neonScatterLevel',
-  VOLT_SERPENT: 'voltSerpentLevel',
-  PHASE_RAIL: 'phaseRailLevel',
+// UI Constants & Styles
+const RARITY_STYLES: Record<string, string> = {
+  COMMON: 'border-gray-500 bg-gray-900/90',
+  UNCOMMON: 'border-green-500 bg-green-900/90',
+  RARE: 'border-blue-500 bg-blue-900/90',
+  ULTRA_RARE: 'border-purple-500 bg-purple-900/90',
+  MEGA_RARE: 'border-yellow-500 bg-yellow-900/90',
+  LEGENDARY: 'border-red-500 bg-red-900/90',
+  OVERCLOCKED: 'border-red-600 bg-red-950 animate-pulse'
 };
 
-const PASSIVE_CHECK_MAP: { id: string, check: (s: any) => boolean }[] = [
-    { id: 'SHIELD', check: (s: any) => s.shieldActive },
-    { id: 'ECHO_CACHE', check: (s: any) => s.weapon.echoCacheLevel > 0 },
-    { id: 'REFLECTOR_MESH', check: (s: any) => s.weapon.reflectorMeshLevel > 0 },
-    { id: 'GHOST_COIL', check: (s: any) => s.weapon.ghostCoilLevel > 0 },
-    { id: 'NEURAL_MAGNET', check: (s: any) => s.weapon.neuralMagnetLevel > 0 },
-    { id: 'OVERCLOCK', check: (s: any) => s.weapon.overclockLevel > 0 },
-    { id: 'TERMINAL_PROTOCOL', check: (s: any) => s.hackSpeedMod > 1 },
-    { id: 'CRIT', check: (s: any) => s.critChance > 0.05 },
-];
-
-const RARITY_STYLES: Record<UpgradeRarity, string> = {
-    'COMMON': 'border-gray-600 bg-gray-900/95 hover:border-gray-400',
-    'UNCOMMON': 'border-green-600 bg-green-950/40 hover:border-green-400 shadow-[0_0_15px_rgba(34,197,94,0.2)]',
-    'RARE': 'border-blue-600 bg-blue-950/40 hover:border-blue-400 shadow-[0_0_20px_rgba(59,130,246,0.3)]',
-    'ULTRA_RARE': 'border-purple-500 bg-purple-950/40 hover:border-purple-300 shadow-[0_0_25px_rgba(168,85,247,0.4)] animate-pulse',
-    'MEGA_RARE': 'border-yellow-500 bg-yellow-950/40 hover:border-yellow-300 shadow-[0_0_30px_rgba(234,179,8,0.5)]',
-    'LEGENDARY': 'border-yellow-500 bg-yellow-950/40', // Legacy fallback
-    'OVERCLOCKED': 'border-red-600 bg-red-950/60 hover:border-red-400 shadow-[0_0_40px_rgba(220,38,38,0.6)] animate-pulse'
+const RARITY_TEXT_COLORS: Record<string, string> = {
+  COMMON: 'text-gray-400',
+  UNCOMMON: 'text-green-400',
+  RARE: 'text-blue-400',
+  ULTRA_RARE: 'text-purple-400',
+  MEGA_RARE: 'text-yellow-400',
+  LEGENDARY: 'text-red-500',
+  OVERCLOCKED: 'text-red-600'
 };
 
-const RARITY_TEXT_COLORS: Record<UpgradeRarity, string> = {
-    'COMMON': 'text-gray-300',
-    'UNCOMMON': 'text-green-300',
-    'RARE': 'text-blue-300',
-    'ULTRA_RARE': 'text-purple-300',
-    'MEGA_RARE': 'text-yellow-300',
-    'LEGENDARY': 'text-yellow-300',
-    'OVERCLOCKED': 'text-red-400'
+const RARITY_LABELS: Record<string, string> = {
+  COMMON: 'COMMON',
+  UNCOMMON: 'UNCOMMON',
+  RARE: 'RARE',
+  ULTRA_RARE: 'ULTRA RARE',
+  MEGA_RARE: 'MEGA RARE',
+  LEGENDARY: 'LEGENDARY',
+  OVERCLOCKED: 'OVERCLOCKED'
 };
 
-const RARITY_LABELS: Record<UpgradeRarity, string> = {
-    'COMMON': 'COMMON',
-    'UNCOMMON': 'UNCOMMON',
-    'RARE': 'RARE',
-    'ULTRA_RARE': 'ULTRA RARE',
-    'MEGA_RARE': 'MEGA RARE',
-    'LEGENDARY': 'LEGENDARY',
-    'OVERCLOCKED': '/// OVERCLOCKED ///'
+const CompactStatBar: React.FC<{ label: string; value: number; max: number; color: string }> = ({ label, value, max, color }) => (
+    <div className="flex items-center gap-3 w-full text-[10px] font-mono">
+        <span className="w-14 text-gray-500 font-bold tracking-wider text-right">{label}</span>
+        <div className="flex-1 h-2 bg-gray-800/50 rounded-sm overflow-hidden border border-gray-700/30 relative">
+            <div 
+                className="h-full relative transition-all duration-500 ease-out" 
+                style={{ 
+                    width: `${(value / max) * 100}%`, 
+                    backgroundColor: color,
+                    boxShadow: `0 0 8px ${color}40`
+                }} 
+            />
+            <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent_20%,rgba(0,0,0,0.5)_20%,rgba(0,0,0,0.5)_25%,transparent_25%)] bg-[length:4px_100%] opacity-30"></div>
+        </div>
+        <span className="w-4 text-right text-gray-600 font-bold">{value}</span>
+    </div>
+);
+
+const CHAR_STATS: Record<string, { off: number, def: number, spd: number, util: number }> = {
+    striker: { off: 9, def: 4, spd: 6, util: 3 },
+    spectre: { off: 5, def: 3, spd: 8, util: 9 },
+    volt: { off: 7, def: 5, spd: 6, util: 7 },
+    rigger: { off: 8, def: 6, spd: 4, util: 8 },
+    bulwark: { off: 4, def: 10, spd: 3, util: 5 },
+    overdrive: { off: 10, def: 1, spd: 10, util: 2 }
 };
 
-const SnakeGame: React.FC = () => {
+const getStartingLoadout = (stats: Partial<UpgradeStats> | undefined): string[] => {
+    if (!stats) return [];
+    const ids: string[] = [];
+    
+    if (stats.shieldActive) ids.push('SHIELD');
+    
+    const w = stats.weapon;
+    if (w) {
+        if ((w.cannonLevel || 0) > 0) ids.push('CANNON');
+        if ((w.auraLevel || 0) > 0) ids.push('AURA');
+        if ((w.mineLevel || 0) > 0) ids.push('MINES');
+        if ((w.chainLightningLevel || 0) > 0) ids.push('LIGHTNING');
+        if ((w.nanoSwarmLevel || 0) > 0) ids.push('NANO_SWARM');
+        if ((w.prismLanceLevel || 0) > 0) ids.push('PRISM_LANCE');
+        if ((w.neonScatterLevel || 0) > 0) ids.push('NEON_SCATTER');
+        if ((w.voltSerpentLevel || 0) > 0) ids.push('VOLT_SERPENT');
+        if ((w.phaseRailLevel || 0) > 0) ids.push('PHASE_RAIL');
+    }
+    
+    return ids;
+};
+
+const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const timerRef = useRef<HTMLDivElement>(null);
-  const scoreDisplayRef = useRef<HTMLDivElement>(null);
-  const visualScoreRef = useRef<number>(0);
+  const [damageOpacity, setDamageOpacity] = useState(0);
+  const [isTouch, setIsTouch] = useState(false);
+  const [showDevMenu, setShowDevMenu] = useState(false); 
   
-  // UI State
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [initPhase, setInitPhase] = useState<'NONE' | 'GLITCH' | 'STALL' | 'RECOVER'>('NONE');
+  const [recoveryText, setRecoveryText] = useState('RECONVERGING INPUT CONTEXT');
 
-  /* ─────────────────────────────
-     GAME STATE
-     ───────────────────────────── */
-  const game = useGameState();
+  const [bindingState, setBindingState] = useState<{ charId: string; phase: 'LOCK' | 'SYNC' } | null>(null);
+  const [bindText, setBindText] = useState('BINDING OPERATOR PROFILE');
+  const [hudBooted, setHudBooted] = useState(true);
+  
+  const [isIntroPlaying, setIsIntroPlaying] = useState(false); // Music Intro State
+  const [armingProgress, setArmingProgress] = useState(0);
+  const [armingTextStep, setArmingTextStep] = useState(0);
+  const inputActiveRef = useRef(false);
+
+  const uiStyle = useUIStyle();
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const vision = useVisionProtocol();
+
+  // Generate a static hex dump for the crash screen once
+  const hexDump = useMemo(() => {
+    return Array.from({length: 400}).map(() => Math.floor(Math.random() * 0xFFFFFF).toString(16).padStart(6, '0')).join(' ').toUpperCase();
+  }, []);
+
+  useEffect(() => {
+    const checkTouch = () => {
+      const isCoarse = window.matchMedia('(pointer: coarse)').matches;
+      setIsTouch(isCoarse);
+    };
+    checkTouch();
+    window.addEventListener('resize', checkTouch);
+    return () => window.removeEventListener('resize', checkTouch);
+  }, []);
+  
+  useEffect(() => {
+      if (!IS_DEV) return;
+      const handler = (e: KeyboardEvent) => {
+          if (e.key === 'D' && e.shiftKey) {
+              setShowDevMenu(prev => !prev);
+          }
+      };
+      window.addEventListener('keydown', handler);
+      return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+  // ─── DEV BOOT CHECK ───
+  useEffect(() => {
+      if (IS_DEV && DEV_START_CONFIG.enabled && game.status === GameStatus.IDLE) {
+          console.log('[DEV] Auto-Booting with Config...');
+          game.devHelper.queueDevIntent({ type: 'RESET_GAME' });
+          game.setStatus(GameStatus.PLAYING); // Force loop start
+      }
+  }, []);
+
   const {
-    status,
-    setStatus,
-    modalState,
-    openSettings,
-    closeSettings,
-    difficulty,
-    setDifficulty,
-    unlockedDifficulties,
-    uiScore,
-    uiXp,
-    uiLevel,
-    uiStage,
-    highScore,
-    setHighScore,
-    uiCombo,
-    uiShield,
-    bossActive,
-    setSelectedChar,
+    status, setStatus, modalState, setModalState,
+    difficulty, setDifficulty, unlockedDifficulties,
+    scoreRef, failureMessageRef,
+    settings, setSettings, openSettings, togglePause, closeSettings,
+    selectedChar, setSelectedChar,
     upgradeOptions,
     resumeCountdown,
-    setResumeCountdown,
-    activePowerUps,
-    enemiesRef,
-    stageRef,
-    resetGame,
-    startTimeRef,
-    enemiesKilledRef,
-    terminalsHackedRef,
-    failureMessageRef,
-    gameTimeRef,
+    uiCombo,
+    enemiesKilledRef, terminalsHackedRef, gameTimeRef,
+    isMuted, toggleMute,
+    lastDamageTimeRef,
     invulnerabilityTimeRef,
-    terminalsRef,
-    scoreRef,
-    audioEventsRef,
-    projectilesRef,
-    minesRef,
-    shockwavesRef,
-    lightningArcsRef,
-    particlesRef,
-    floatingTextsRef,
-    foodRef,
-    transitionStartTimeRef,
-    bossEnemyRef,
-    bossActiveRef,
-    isMuted,
-    setIsMuted,
-    settings,
-    setSettings,
-    runIdRef
+    stageArmedRef,
+    unlockedCosmetics, toastQueue, 
+    unlockCosmetic, clearToast, maxComboRef, tailIntegrityRef, bossDefeatedRef,
+    hasUnreadArchiveData, markArchiveRead,
+    devHelper,
+    devModeFlagsRef,
+    cameraRef,
+    cameraControlsEnabled, setCameraControlsEnabled
   } = game;
 
-  // ... (Systems init)
-  const progression = useProgression(game);
   const fx = useFX(game);
+  const progression = useProgression(game);
   const spawner = useSpawner(game, fx.triggerShake);
   const combat = useCombat(game, spawner, fx, progression);
   const movement = useMovement(game, spawner);
   const collisions = useCollisions(game, combat, spawner, fx, progression);
-  const stage = useStageController(game, spawner, fx, progression);
-  
-  // ── MUSIC SYSTEM ──
+  const stageController = useStageController(game, spawner, fx, progression);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const analytics = useAnalytics(game);
   const music = useMusic(game);
+  const voidHazard = useVoidHazard(game, collisions.handleDeath);
+  const gapAwareness = useEnemyGapAwareness(game);
+  const projectilePhysics = useProjectilePhysics(game);
+  const bossController = useBossController(game);
   
-  const rendering = useRendering(canvasRef, game);
-
-  // ── DRAW LOOP WRAPPER (Updates UI Timer & Score) ──
-  const draw = useCallback((alpha: number) => {
-      // Pass the smooth movement progress to the renderer
-      const progress = movement.getMoveProgress();
-      rendering.draw(alpha, progress);
+  const handleBootstrap = useCallback((config: DevBootstrapConfig) => {
+      devHelper.applyBootstrap(config);
       
-      // Update Timer
-      if (timerRef.current) {
-          timerRef.current.innerText = formatTime(gameTimeRef.current, true);
+      if (!selectedChar) {
+          setSelectedChar(CHARACTERS[0]);
       }
+      
+      spawner.spawnFood(); 
+      if (config.forceBoss || config.stageId % 5 === 0) {
+          spawner.devSpawnBoss(config.stageId, config.bossPhase || 0);
+      }
+      
+      // Force music layer update on bootstrap
+      const stage = config.stageId;
+      const isBoss = stage % 5 === 0;
+      const mapKey = isBoss ? 0 : ((stage - 1) % 4) + 1;
+      const layers = MUSIC_STAGE_MAP[mapKey];
+      audio.setLayers(layers);
+      
+      setShowDevMenu(false);
+  }, [devHelper, selectedChar, setSelectedChar, spawner]);
 
-      // Update Score (Lerp)
-      const rawScore = scoreRef.current;
-      const targetScore = Number.isFinite(rawScore) ? rawScore : 0;
+  const handleToggleFreeRoam = useCallback(() => {
+      const isFree = !devModeFlagsRef.current.freeMovement;
+      devModeFlagsRef.current.freeMovement = isFree;
       
-      const diff = targetScore - visualScoreRef.current;
-      
-      // Interpolate if difference is significant, else snap
-      if (Math.abs(diff) > 0.5) {
-          visualScoreRef.current += diff * 0.1; // 10% ease per frame
+      if (isFree) {
+          cameraRef.current.behavior = CameraBehavior.MANUAL;
+          audio.play('POWER_UP');
       } else {
-          visualScoreRef.current = targetScore;
+          cameraRef.current.behavior = CameraBehavior.FOLLOW_PLAYER;
+          audio.play('UI_HARD_CLICK');
       }
-
-      if (scoreDisplayRef.current) {
-          scoreDisplayRef.current.innerText = Math.floor(visualScoreRef.current).toString().padStart(7, '0');
-      }
-
-  }, [rendering, gameTimeRef, scoreRef, movement]);
-
-  // ── VISUAL SCORE RESET (ON RUN CHANGE) ──
-  useEffect(() => {
-      visualScoreRef.current = 0;
-      if (scoreDisplayRef.current) {
-          scoreDisplayRef.current.innerText = "0000000";
-      }
-  }, [runIdRef.current]); // React to runId increment
-
-  // ── AUDIO LIFECYCLE (ORCHESTRATOR OWNED) ──
-  useEffect(() => {
-      audio.onBeat(() => fx.pulseBeat());
-      audio.onBar(() => fx.pulseBar());
-      return () => audio.clearCallbacks();
-  }, [fx]);
+  }, [devModeFlagsRef, cameraRef]);
 
   useEffect(() => {
-      audio.setMusicVolume(settings.musicVolume);
-      audio.setSfxVolume(settings.sfxVolume);
-  }, [settings.musicVolume, settings.sfxVolume]);
+    if (status === GameStatus.PLAYING) {
+      stageArmedRef.current = true;
+    }
+  }, [status, stageArmedRef]);
 
+  // ─── AUDIO LIFECYCLE ───
+  // Ensure sustained SFX (like hacking hum) are killed when not playing
   useEffect(() => {
-      switch (status) {
-          case GameStatus.DIFFICULTY_SELECT:
-              audio.resume();
-              audio.setMode('MENU');
-              audio.startMusic();
-              break;
-          case GameStatus.PLAYING:
-              audio.setMode('GAME'); 
-              break;
-          case GameStatus.IDLE:
-          case GameStatus.GAME_OVER:
-              audio.stopMusic();
-              break;
-          case GameStatus.STAGE_TRANSITION:
-          case GameStatus.RESUMING:
-          case GameStatus.LEVEL_UP:
-          case GameStatus.PAUSED:
-          case GameStatus.CHARACTER_SELECT:
-              audio.stopContinuous();
-              break;
+      if (status !== GameStatus.PLAYING && status !== GameStatus.READY) {
+          // READY state manages its own sustain for the intro build-up
+          audio.stopSustained();
       }
+      // Also stop if modal is open (even if playing in background/paused)
+      if (modalState !== 'NONE') {
+          audio.stopSustained();
+      }
+  }, [status, modalState]);
+
+  const handleStartClick = useCallback(() => {
+    if (status === GameStatus.GAME_OVER && selectedChar) {
+      game.resetGame(selectedChar);
+      spawner.spawnFood(); 
+      setStatus(GameStatus.READY);
+      audio.play('MOVE');
+      return;
+    } 
+    
+    const hasInit = localStorage.getItem('acr_first_init_v1');
+    if (!hasInit && status === GameStatus.IDLE) {
+        audio.play('UI_HARD_CLICK');
+        setInitPhase('GLITCH');
+        audio.play('GLITCH_TEAR');
+
+        setTimeout(() => {
+            setInitPhase('STALL');
+        }, 150);
+
+        setTimeout(() => {
+            if (Math.random() < 0.02) {
+                setRecoveryText('INPUT CONTEXT ACCEPTED (NONSTANDARD)');
+            } else {
+                setRecoveryText('RECONVERGING INPUT CONTEXT');
+            }
+            setInitPhase('RECOVER');
+            audio.play('SYS_RECOVER');
+        }, 250);
+
+        setTimeout(() => {
+            localStorage.setItem('acr_first_init_v1', 'true');
+            setInitPhase('NONE');
+            setStatus(GameStatus.DIFFICULTY_SELECT);
+            audio.play('MOVE'); 
+            
+            // Start Menu Music (First Time)
+            audio.setMode('MENU');
+            audio.startMusic();
+        }, 850);
+        
+        return;
+    }
+
+    setStatus(GameStatus.DIFFICULTY_SELECT);
+    audio.play('MOVE');
+    
+    // Start Menu Music (Normal)
+    audio.setMode('MENU');
+    audio.startMusic();
+  }, [status, selectedChar, game, setStatus, spawner]);
+
+  // ─────────────────────────────
+  // SEQUENCE START (ARMING)
+  // ─────────────────────────────
+  
+  // Reset Arming State
+  useEffect(() => {
+    if (status === GameStatus.READY) {
+        setArmingProgress(0);
+        setArmingTextStep(0);
+        
+        // Sequence text appearance
+        const t1 = setTimeout(() => setArmingTextStep(1), 200);
+        const t2 = setTimeout(() => setArmingTextStep(2), 500);
+        const t3 = setTimeout(() => setArmingTextStep(3), 800);
+        
+        return () => {
+            clearTimeout(t1);
+            clearTimeout(t2);
+            clearTimeout(t3);
+        };
+    }
   }, [status]);
 
-  /* ─────────────────────────────
-     INPUT
-     ───────────────────────────── */
-  const handleStartClick = useCallback(() => {
-    setStatus(GameStatus.DIFFICULTY_SELECT);
+  const handleReadyStart = useCallback(() => {
+      // 1. Enter Intro State (Visual Flash)
+      setIsIntroPlaying(true);
+      
+      // 2. Play Launch Sound (Single hit)
+      audio.play('UI_HARD_CLICK'); 
+      
+      // 3. Immediate Transition (Fast)
+      setTimeout(() => {
+          setIsIntroPlaying(false);
+          setStatus(GameStatus.PLAYING);
+          
+          // 4. Start Stage 1 Music
+          audio.setMode('GAME');
+          audio.setLayers(MUSIC_STAGE_MAP[1]);
+          audio.startMusic();
+          
+      }, 200); // 200ms flash
   }, [setStatus]);
 
-  useInput(
+  // Arming Input Loop
+  useEffect(() => {
+    if (status !== GameStatus.READY || isIntroPlaying) return;
+    
+    let raf: number;
+    const loop = () => {
+        if (inputActiveRef.current) {
+            setArmingProgress(p => Math.min(1, p + 0.04)); // ~400ms to fill
+        } else {
+            // Very slow decay
+            setArmingProgress(p => Math.max(0, p - 0.01));
+        }
+        
+        // Audio Ramp using Hack SFX (Oscillator)
+        audio.setHackProgress(inputActiveRef.current ? Math.max(0.1, armingProgress) : 0);
+
+        if (armingProgress >= 1) {
+            handleReadyStart();
+            audio.setHackProgress(0); // Stop hum
+            inputActiveRef.current = false;
+            return; // Stop loop
+        }
+        
+        raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    
+    const startInput = () => { inputActiveRef.current = true; };
+    const endInput = () => { inputActiveRef.current = false; };
+    
+    // Bind all inputs
+    window.addEventListener('keydown', startInput);
+    window.addEventListener('keyup', endInput);
+    window.addEventListener('mousedown', startInput);
+    window.addEventListener('mouseup', endInput);
+    window.addEventListener('touchstart', startInput);
+    window.addEventListener('touchend', endInput);
+    
+    return () => {
+        cancelAnimationFrame(raf);
+        window.removeEventListener('keydown', startInput);
+        window.removeEventListener('keyup', endInput);
+        window.removeEventListener('mousedown', startInput);
+        window.removeEventListener('mouseup', endInput);
+        window.removeEventListener('touchstart', startInput);
+        window.removeEventListener('touchend', endInput);
+        audio.setHackProgress(0);
+    };
+  }, [status, isIntroPlaying, armingProgress, handleReadyStart]);
+
+  const { handleInput } = useInput(
     game,
     progression.applyUpgrade,
     handleStartClick
   );
 
-  /* ─────────────────────────────
-     DIFFICULTY / CHARACTER
-     ───────────────────────────── */
-  const handleDifficultySelect = useCallback((id: Difficulty) => {
-    setDifficulty(id);
-    audio.setDifficulty(id); 
-    setStatus(GameStatus.CHARACTER_SELECT);
-  }, [setDifficulty, setStatus]);
+  const { draw } = useRendering(
+    canvasRef,
+    game,
+    movement.getMoveProgress,
+    uiStyle
+  );
 
-  const selectCharacter = useCallback((char: CharacterProfile) => {
-    setSelectedChar(char);
-    resetGame(char);
-    
-    if (settings.skipCountdown) {
-        setStatus(GameStatus.PLAYING);
-        game.stageArmedRef.current = true;
-    } else {
-        setResumeCountdown(3);
-        setStatus(GameStatus.RESUMING);
-    }
-  }, [setSelectedChar, resetGame, setStatus, setResumeCountdown, settings.skipCountdown, game.stageArmedRef]);
-
-  const toggleMute = useCallback(() => {
-      const muted = audio.toggleMute();
-      setIsMuted(!!muted);
-  }, [setIsMuted]);
-
-  /* ─────────────────────────────
-     RESUME COUNTDOWN
-     ───────────────────────────── */
-  useEffect(() => {
-    if (status === GameStatus.RESUMING) {
-      if (resumeCountdown > 0) {
-        const timer = setTimeout(() => {
-          setResumeCountdown(prev => prev - 1);
-        }, 1000);
-        return () => clearTimeout(timer);
-      } else {
-        setStatus(GameStatus.PLAYING);
-        game.stageArmedRef.current = true;
-      }
-    }
-  }, [status, resumeCountdown, setResumeCountdown, setStatus, game.stageArmedRef]);
-
-  /* ─────────────────────────────
-     STAGE TRANSITION
-     ───────────────────────────── */
-  useEffect(() => {
-    if (status !== GameStatus.STAGE_TRANSITION) return;
-    audio.play('POWER_UP');
-    const timer = setTimeout(stage.advanceStage, TRANSITION_DURATION);
-    return () => clearTimeout(timer);
-  }, [status, stage]);
-
-
-  /* ─────────────────────────────
-     HIGH SCORE PERSISTENCE
-     ───────────────────────────── */
-  useEffect(() => {
-    if (status === GameStatus.GAME_OVER) {
-      if (scoreRef.current > highScore) {
-        const final = Math.floor(scoreRef.current);
-        setHighScore(final);
-        localStorage.setItem('snake_highscore', final.toString());
-      }
-    }
-  }, [status, highScore, setHighScore, scoreRef]);
-
-  /* ─────────────────────────────
-     AUTHORITATIVE UPDATE
-     ───────────────────────────── */
   const update = useCallback((dt: number) => {
-    // 1. TIMERS
+    gameTimeRef.current += dt;
+
     if (invulnerabilityTimeRef.current > 0) {
       invulnerabilityTimeRef.current = Math.max(0, invulnerabilityTimeRef.current - dt);
     }
 
-    // 2. SIMULATION
-    collisions.updateCollisionLogic(dt); // Replaced updateTerminals
-    spawner.update(dt);
-    combat.update(dt); 
-    progression.applyPassiveScore(dt);
+    const timeSinceHit = gameTimeRef.current - lastDamageTimeRef.current;
+    setDamageOpacity(timeSinceHit < 500 ? (500 - timeSinceHit) / 500 : 0);
 
-    const head = game.snakeRef.current[0];
-    if (head) {
-        movement.updateEnemies(dt, head);
-    }
+    // ─────────────────────────────
+    // CORE LOOP PHASES
+    // ─────────────────────────────
 
-    collisions.checkDynamicCollisions();
-
-    // Snake Movement & Static Collisions
-    const newHead = movement.getNextHead(dt);
-    if (newHead) {
-      const hit = collisions.checkMoveCollisions(newHead);
-      if (!hit) {
-        const grew = collisions.handleEat(newHead);
-        movement.commitMove(newHead, grew);
+    // 1. STAGE TRANSITION (Blocking)
+    if (status === GameStatus.STAGE_TRANSITION) {
+      // Advance time for transition animation
+      stageController.checkTransition(); // Updates timer and requests advance if done
+      
+      // Check if controller requested advance
+      if (stageController.stageAdvanceRequestedRef.current) {
+          // ORCHESTRATOR COMMIT: Update State
+          game.stageRef.current += 1;
+          
+          // ORCHESTRATOR COMMIT: Update Music
+          const newStage = game.stageRef.current;
+          const isBoss = newStage % 5 === 0;
+          const mapKey = isBoss ? 0 : ((newStage - 1) % 4) + 1;
+          const targetLayers = MUSIC_STAGE_MAP[mapKey] || MUSIC_STAGE_MAP[1];
+          audio.setLayers(targetLayers);
+          
+          // Reset Simulation for new stage
+          stageController.resetForNewStage(newStage);
+          
+          // Audio Cue
+          if (isBoss) {
+             // audio.play('BOSS_WARNING'); // Optional
+          }
       }
+
+      fx.updateFX();
+      fx.tickTranslation(dt);
+      // Consume Dev Intents even during transition (e.g. force skip)
+      consumeDevIntents(game, spawner, progression, stageController);
+      return;
     }
 
-    // 3. ORCHESTRATION
-    stage.cacheBossRef();
-    stage.checkStageCompletion();
+    // 2. SIMULATION
+    if (status === GameStatus.PLAYING) {
+      stageController.checkStageCompletion();
 
-    // ── REACTIVE AUDIO ──
-    music.updateMusic();
-
-    // Discrete Audio Events
-    terminalsRef.current.forEach(t => {
-        if (t.justDisconnected) {
-            audioEventsRef.current.push({ type: 'HACK_LOST' });
-            t.justDisconnected = false;
+      const head = movement.getNextHead(dt);
+      if (head) {
+        const moveAllowed = !collisions.checkMoveCollisions(head);
+        if (moveAllowed) {
+          const grew = collisions.handleEat(head);
+          movement.commitMove(head, grew);
+          collisions.updateCollisionLogic(dt);
+          movement.updateEnemies(dt, head);
         }
-        if (t.justCompleted) {
-            audioEventsRef.current.push({ type: 'HACK_COMPLETE' });
-            t.justCompleted = false;
-        }
-    });
-
-    // Audio Event Queue
-    if (audioEventsRef.current.length > 0) {
-      const events = audioEventsRef.current;
-      audioEventsRef.current = []; 
-      events.forEach(evt => {
-        audio.play(evt.type, evt.data);
-      });
+      } else if (game.snakeRef.current[0]) {
+        movement.updateEnemies(dt, game.snakeRef.current[0]);
+        collisions.updateCollisionLogic(dt);
+      }
+      
+      gapAwareness.update(dt);
+      bossController.update(dt);
+      collisions.checkDynamicCollisions();
+      collisions.checkXPCollection();
+      voidHazard.update();
+      projectilePhysics.update(dt);
+      combat.update(dt);
+      spawner.update(dt);
+      progression.applyPassiveScore(dt);
     }
 
-    // 4. FX UPDATE
-    fx.tickTranslation(dt);
+    // 3. DEV INTENT CONSUMPTION (Authoritative Phase)
+    consumeDevIntents(game, spawner, progression, stageController);
+
+    // 4. AUDIO & PROGRESSION CHECKS
+    music.updateMusic(); // Only updates dynamic SFX parameters now
+
+    if (uiCombo > maxComboRef.current) {
+        maxComboRef.current = uiCombo;
+    }
+
+    if (status === GameStatus.PLAYING) {
+        const unlocks = evaluateUnlocks({
+            score: scoreRef.current,
+            stage: game.stageRef.current,
+            level: game.levelRef.current,
+            maxCombo: maxComboRef.current,
+            terminalsHacked: terminalsHackedRef.current,
+            bossDefeated: bossDefeatedRef.current,
+            integrity: tailIntegrityRef.current,
+            xpOrbsCollected: 0 
+        }, unlockedCosmetics);
+        
+        if (unlocks.length > 0) {
+            unlocks.forEach(id => unlockCosmetic(id));
+        }
+    }
+
+    // 5. FX UPDATE
     fx.updateFX();
+    fx.tickTranslation(dt);
 
-    // 5. DEFERRED ENTITY CLEANUP
-    spawner.cleanupFood();
-    spawner.pruneEnemies();
-    
-    foodRef.current = foodRef.current.filter(f => !f.shouldRemove);
-    enemiesRef.current = enemiesRef.current.filter(e => !e.shouldRemove);
-    terminalsRef.current = terminalsRef.current.filter(t => !t.shouldRemove);
-    projectilesRef.current = projectilesRef.current.filter(p => !p.shouldRemove);
-    minesRef.current = minesRef.current.filter(m => !m.shouldRemove);
-    shockwavesRef.current = shockwavesRef.current.filter(s => !s.shouldRemove);
-    lightningArcsRef.current = lightningArcsRef.current.filter(l => !l.shouldRemove);
-    particlesRef.current = particlesRef.current.filter(p => !p.shouldRemove);
-    floatingTextsRef.current = floatingTextsRef.current.filter(t => !t.shouldRemove);
+    game.audioEventsRef.current.forEach(event => {
+      audio.play(event.type, event.data);
+    });
+    game.audioEventsRef.current = [];
 
-  }, [game, music, collisions, spawner, combat, progression, fx, movement, stage]); 
+    // 6. DEFERRED CLEANUP
+    const cleanup = <T extends { shouldRemove?: boolean }>(list: T[]) => list.filter(e => !e.shouldRemove);
+    game.enemiesRef.current = cleanup(game.enemiesRef.current);
+    game.projectilesRef.current = cleanup(game.projectilesRef.current);
+    game.particlesRef.current = cleanup(game.particlesRef.current);
+    game.floatingTextsRef.current = cleanup(game.floatingTextsRef.current);
+    game.shockwavesRef.current = cleanup(game.shockwavesRef.current);
+    game.lightningArcsRef.current = cleanup(game.lightningArcsRef.current);
+    game.minesRef.current = cleanup(game.minesRef.current);
+    game.foodRef.current = cleanup(game.foodRef.current);
+    game.terminalsRef.current = cleanup(game.terminalsRef.current);
+    game.hitboxesRef.current = cleanup(game.hitboxesRef.current);
+    game.cliAnimationsRef.current = cleanup(game.cliAnimationsRef.current);
 
-  /* ─────────────────────────────
-     GAME LOOP
-     ───────────────────────────── */
+  }, [
+    status, stageController, movement, collisions, combat, spawner, progression, music, fx,
+    unlockedCosmetics, uiCombo, scoreRef, game.stageRef, game.levelRef, maxComboRef,
+    terminalsHackedRef, bossDefeatedRef, tailIntegrityRef, unlockCosmetic, voidHazard, 
+    gapAwareness, projectilePhysics, bossController, game.enemiesRef, game.projectilesRef,
+    game.particlesRef, game.floatingTextsRef, game.shockwavesRef, game.lightningArcsRef,
+    game.minesRef, game.foodRef, game.terminalsRef, game.hitboxesRef, game.snakeRef,
+    game.audioEventsRef, gameTimeRef, invulnerabilityTimeRef, lastDamageTimeRef, game
+  ]);
+
   useGameLoop(game, update, draw);
 
-  /* ─────────────────────────────
-     UI STATE / HELPERS
-     ───────────────────────────── */
-  const currentTheme = STAGE_THEMES[((uiStage - 1) % 4) + 1] || STAGE_THEMES[1];
+  useEffect(() => {
+    if (status === GameStatus.RESUMING) {
+      if (resumeCountdown <= 0) {
+        setStatus(GameStatus.PLAYING);
+        return;
+      }
+      const timer = window.setInterval(() => {
+        game.setResumeCountdown(c => {
+          if (c <= 1) {
+            setStatus(GameStatus.PLAYING);
+            return 0;
+          }
+          return c - 1;
+        });
+      }, 1000);
+      return () => window.clearInterval(timer);
+    }
+  }, [status, resumeCountdown, setStatus, game]);
 
-  const getComboPct = (now: number, lastEat: number) =>
-  Math.min(1, Math.max(0, 1 - (now - lastEat) / COMBO_DECAY_DURATION));
-
-  const comboPct =
-    uiCombo > 1
-      ? getComboPct(game.gameTimeRef.current, game.lastEatTimeRef.current)
-      : 0;
-
-  const handleMobileControl = useCallback(
-    (dir: Direction) => {
-      if (status !== GameStatus.PLAYING) return;
-      game.directionQueueRef.current.push(dir);
-    },
-    [status, game]
+  const showHUD = hudBooted && (
+    status === GameStatus.PLAYING ||
+    status === GameStatus.READY || 
+    status === GameStatus.PAUSED ||
+    status === GameStatus.RESUMING ||
+    status === GameStatus.STAGE_TRANSITION ||
+    status === GameStatus.GAME_OVER ||
+    status === GameStatus.LEVEL_UP
   );
 
-  const activePassives = PASSIVE_CHECK_MAP.filter(p => p.check(game.statsRef.current));
+  const handleDifficultySelect = useCallback((diff: Difficulty) => {
+    setDifficulty(diff);
+    setStatus(GameStatus.CONFIGURATION);
+    audio.play('MOVE');
+  }, [setDifficulty, setStatus]);
 
-  /* ─────────────────────────────
-     RENDER
-     ───────────────────────────── */
+  const handleConfigurationComplete = useCallback(() => {
+    setStatus(GameStatus.CHARACTER_SELECT);
+  }, [setStatus]);
+
+  const selectCharacter = (char: CharacterProfile) => {
+    if (bindingState) return;
+
+    setBindingState({ charId: char.id, phase: 'LOCK' });
+    audio.play('UI_HARD_CLICK'); 
+
+    // Deterministic flow
+    setBindText('PILOT LOCKED');
+
+    setTimeout(() => {
+        setBindingState(prev => prev ? { ...prev, phase: 'SYNC' } : null);
+        // audio.play('SYS_RECOVER'); // Sound effect transition
+    }, 500);
+
+    setTimeout(() => {
+        setSelectedChar(char);
+        game.resetGame(char);
+        spawner.spawnFood();
+        setStatus(GameStatus.READY);
+        setBindingState(null);
+        setHudBooted(false);
+        setTimeout(() => {
+            setHudBooted(true);
+        }, 150);
+    }, 1100);
+  };
+
+  const handleMouseEnter = useCallback(
+    (_e: React.MouseEvent, _id?: string) => {
+        if (!bindingState) audio.play('MOVE');
+    },
+    [bindingState]
+  );
+
+  const handleMouseLeave = useCallback(() => {
+  }, []);
+
+  const handleArchiveOpen = useCallback(() => {
+      markArchiveRead();
+      setStatus(GameStatus.ARCHIVE);
+  }, [markArchiveRead, setStatus]);
+
+  if (status === GameStatus.ARCHIVE) {
+    return <ArchiveTerminal onClose={() => setStatus(GameStatus.IDLE)} />;
+  }
+
+  if (status === GameStatus.CONFIGURATION) {
+      return <ModelConfigurationPass difficultyId={difficulty} onComplete={handleConfigurationComplete} />;
+  }
+
   return (
-    <div className={`relative w-full h-full bg-[#050505] flex flex-col items-center justify-center p-2 overflow-hidden selection:bg-cyan-500/30 ${settings.highContrast ? 'contrast-125' : ''}`}>
-      
-      {/* ────────────────── TOOLTIP LAYER ────────────────── */}
-      {hoveredId && DESCRIPTOR_REGISTRY[hoveredId] && (
-          <div className="absolute z-50 pointer-events-none transform -translate-x-1/2 -translate-y-full mb-2 bottom-20 left-1/2 w-64">
-              <div className={`bg-gray-900 border border-gray-600 p-3 rounded shadow-2xl relative ${settings.uiScale > 1.2 ? 'scale-125 origin-bottom' : ''}`}>
-                  <div className={`text-sm font-bold ${DESCRIPTOR_REGISTRY[hoveredId].color} mb-1 flex items-center justify-between`}>
-                      <span>{DESCRIPTOR_REGISTRY[hoveredId].icon} {DESCRIPTOR_REGISTRY[hoveredId].name}</span>
-                      <span className="text-[9px] uppercase bg-black/50 px-1 rounded">{DESCRIPTOR_REGISTRY[hoveredId].rarity}</span>
-                  </div>
-                  <div className="text-xs text-gray-300 leading-tight">
-                      {DESCRIPTOR_REGISTRY[hoveredId].description}
-                  </div>
-                  <div className="absolute bottom-0 left-1/2 w-2 h-2 bg-gray-900 transform -translate-x-1/2 translate-y-1/2 rotate-45 border-r border-b border-gray-600"></div>
-              </div>
-          </div>
-      )}
+      <div 
+        className="w-full h-full flex items-center justify-center bg-black overflow-hidden select-none"
+        style={{ fontFamily: uiStyle.typography.fontFamily }}
+      >
+          <UnlockToast queue={toastQueue} onClear={clearToast} />
 
-      {/* ────────────────── SETTINGS MODAL ────────────────── */}
-      {modalState === 'SETTINGS' && (
-          <div className="absolute inset-0 bg-black/80 z-50 flex items-center justify-center backdrop-blur-sm p-4">
-              <div className="bg-gray-900 border border-cyan-900 p-6 w-full max-w-md rounded shadow-[0_0_30px_rgba(0,0,0,0.8)]">
-                  <h2 className="text-2xl font-display text-cyan-400 mb-6 tracking-widest border-b border-cyan-900/50 pb-2">SYSTEM CONFIG</h2>
+          {/* ENGINE TOOLS (DEV ONLY) */}
+          {IS_DEV && <DevTools game={game} />}
+
+          <GameHUD game={game} showUI={showHUD}>
+              <div className="relative w-full h-full">
+                  <canvas
+                      ref={canvasRef}
+                      width={CANVAS_WIDTH}
+                      height={CANVAS_HEIGHT}
+                      className="w-full h-full block object-contain z-0"
+                      style={{
+                          filter: `contrast(${settings.highContrast ? 1.2 : 1.0}) brightness(${settings.highContrast ? 1.1 : 1.0})`
+                      }}
+                  />
                   
-                  <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                          <label className="text-sm font-mono text-gray-400">SKIP COUNTDOWN</label>
-                          <button onClick={() => setSettings(s => ({...s, skipCountdown: !s.skipCountdown}))} className={`w-12 h-6 rounded-full transition-colors ${settings.skipCountdown ? 'bg-cyan-600' : 'bg-gray-700'}`}>
-                              <div className={`w-4 h-4 bg-white rounded-full transform transition-transform ml-1 ${settings.skipCountdown ? 'translate-x-6' : ''}`}></div>
+                  {/* DAMAGE OVERLAY */}
+                  <div 
+                    className="absolute inset-0 pointer-events-none z-20 transition-opacity duration-75"
+                    style={{ 
+                        opacity: damageOpacity * 0.4,
+                        backgroundColor: uiStyle.colors.danger,
+                        mixBlendMode: 'overlay'
+                    }}
+                  />
+                  <div 
+                    className="absolute inset-0 pointer-events-none z-20 transition-opacity duration-75"
+                    style={{ 
+                        opacity: damageOpacity,
+                        boxShadow: `inset 0 0 100px ${uiStyle.colors.danger}80` 
+                    }}
+                  />
+
+                  {status === GameStatus.STAGE_TRANSITION && (
+                      <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none">
+                          <div className="text-4xl md:text-6xl font-display text-cyan-400 tracking-[0.2em] animate-[pulse_0.5s_ease-in-out_infinite] drop-shadow-[0_0_30px_#0ff] text-center">
+                              SECTOR DECRYPTION
+                          </div>
+                      </div>
+                  )}
+
+                  {/* ─── SEQUENCE ARMED (REPLACES PASSIVE READY) ─── */}
+                  {status === GameStatus.READY && (
+                      <div 
+                          className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/80 backdrop-blur-[2px] pointer-events-auto cursor-pointer animate-in fade-in duration-300" 
+                          // Click handler logic moved to global listeners to support hold
+                      >
+                          {isIntroPlaying ? (
+                              <div className="flex flex-col items-center gap-4">
+                                  <div className="text-6xl text-cyan-400 font-bold animate-ping">///</div>
+                                  <div className="text-white font-mono text-sm tracking-widest animate-pulse">SEQUENCE START</div>
+                              </div>
+                          ) : (
+                              <div className="flex flex-col items-center w-full max-w-md">
+                                  {/* Background Elements */}
+                                  <div className="absolute inset-0 bg-[linear-gradient(rgba(0,255,255,0.05)_1px,transparent_1px)] bg-[length:100%_4px] pointer-events-none opacity-50"></div>
+                                  
+                                  {/* CLI Text */}
+                                  <div className="font-mono text-xs text-cyan-600 mb-8 space-y-1 w-64">
+                                      {armingTextStep >= 1 && <div className="animate-in fade-in slide-in-from-left-2 duration-300">{`> PILOT LOCKED`}</div>}
+                                      {armingTextStep >= 2 && <div className="animate-in fade-in slide-in-from-left-2 duration-300 delay-75">{`> NEURAL LINK STABLE`}</div>}
+                                      {armingTextStep >= 3 && <div className="animate-in fade-in slide-in-from-left-2 duration-300 delay-150 text-cyan-400 font-bold">{`> SEQUENCE ARMED`}</div>}
+                                  </div>
+
+                                  {/* Arming Gauge */}
+                                  <div className="relative w-64 h-12 border-2 border-cyan-800 flex items-center justify-center overflow-hidden bg-black/50">
+                                      <div 
+                                          className="absolute inset-0 bg-cyan-500/20 transition-all duration-75 ease-linear"
+                                          style={{ width: `${armingProgress * 100}%` }}
+                                      ></div>
+                                      <div 
+                                          className="absolute bottom-0 left-0 h-1 bg-cyan-400 transition-all duration-75 ease-linear shadow-[0_0_10px_cyan]"
+                                          style={{ width: `${armingProgress * 100}%` }}
+                                      ></div>
+                                      
+                                      <div className="relative z-10 text-cyan-200 font-bold tracking-[0.2em] text-sm animate-pulse">
+                                          HOLD INPUT TO ENGAGE
+                                      </div>
+                                  </div>
+                              </div>
+                          )}
+                      </div>
+                  )}
+
+                  {status === GameStatus.RESUMING && (
+                      <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none">
+                          <div className="text-center">
+                              <div 
+                                  className="text-6xl md:text-8xl font-display font-bold tracking-widest drop-shadow-[0_0_20px_rgba(0,255,255,0.8)] animate-pulse"
+                                  style={{ color: uiStyle.colors.primary }}
+                              >
+                                  {resumeCountdown > 0 ? resumeCountdown : 'GO!'}
+                              </div>
+                              <div className="text-lg text-cyan-200 font-mono mt-4 tracking-[0.3em]">
+                                  SYSTEM RESUMING...
+                              </div>
+                          </div>
+                      </div>
+                  )}
+              </div>
+          </GameHUD>
+          
+          {/* ... Rest of UI components (Controls, DevMenu, etc) ... */}
+          {isTouch && (
+              <div className="absolute inset-0 pointer-events-none z-50">
+                 {settings.mobileControlScheme === 'JOYSTICK' && (
+                     <div className="absolute bottom-10 left-10 pointer-events-auto">
+                         <VirtualJoystick onDirection={handleInput} />
+                     </div>
+                 )}
+                 {settings.mobileControlScheme === 'ARROWS' && (
+                     <div className="absolute bottom-10 right-10 pointer-events-auto">
+                         <ArrowControls onDirection={handleInput} />
+                     </div>
+                 )}
+                 {settings.mobileControlScheme === 'SWIPE' && (
+                     <SwipeControls onDirection={handleInput} />
+                 )}
+              </div>
+          )}
+
+          {showHUD && (
+              <div className="absolute top-4 right-4 z-50 pointer-events-auto">
+                  <button 
+                      onClick={toggleMute}
+                      className="bg-black/60 border hover:text-white rounded-full w-8 h-8 flex items-center justify-center transition-colors"
+                      style={{ borderColor: uiStyle.colors.grid, color: uiStyle.colors.text }}
+                      title="Toggle Mute"
+                  >
+                      {isMuted ? '🔇' : '🔊'}
+                  </button>
+              </div>
+          )}
+          
+          {IS_DEV && showDevMenu && (
+              <DevBootstrap 
+                  onBoot={handleBootstrap} 
+                  onCancel={() => setShowDevMenu(false)}
+                  onToggleFreeRoam={handleToggleFreeRoam}
+              />
+          )}
+
+          {/* VISUAL INDICATORS */}
+          {status === GameStatus.PLAYING && cameraControlsEnabled && (
+              <div className="absolute bottom-4 right-4 z-40 bg-black/60 border border-cyan-500/50 p-2 rounded text-[10px] font-mono text-cyan-400 pointer-events-none">
+                  <div className="font-bold mb-1">CAMERA CONTROL ACTIVE</div>
+                  <div>SCROLL: ZOOM</div>
+                  <div>C: ANGLE</div>
+                  <div>Q/E: ROTATE</div>
+              </div>
+          )}
+          
+          {cameraRef.current.isLocked && status === GameStatus.PLAYING && (
+              <div className="absolute bottom-4 right-4 z-40 bg-black/60 border border-red-500/50 p-2 rounded text-[10px] font-mono text-red-400 pointer-events-none">
+                  <div className="font-bold">CAMERA LOCKED</div>
+              </div>
+          )}
+          
+          {devModeFlagsRef.current.godMode && (
+              <div className="absolute bottom-16 right-4 z-40 bg-red-900/80 border border-red-500 p-2 rounded text-[10px] font-mono text-white pointer-events-none animate-pulse">
+                  GOD MODE ACTIVE
+              </div>
+          )}
+
+          {status === GameStatus.IDLE && !showDevMenu && (
+              <div 
+                className={`absolute inset-0 flex flex-col items-center justify-center bg-black/95 z-50 animate-in fade-in duration-500 pointer-events-auto transition-all duration-75 ${
+                    initPhase === 'GLITCH' ? 'translate-x-1 skew-x-2' : ''
+                }`}
+                style={
+                    initPhase === 'GLITCH' 
+                        ? { textShadow: '2px 0 rgba(255,0,0,0.5), -2px 0 rgba(0,255,255,0.5)', filter: 'contrast(1.2)' } 
+                        : initPhase === 'STALL' 
+                            ? { filter: 'grayscale(1) brightness(0.5)' } 
+                            : {}
+                }
+              >
+                  {initPhase === 'RECOVER' && (
+                      <div className="absolute inset-0 bg-black flex items-center justify-center z-[60]">
+                          <div className="font-mono text-cyan-500 text-sm tracking-widest animate-pulse">
+                              {recoveryText}
+                          </div>
+                      </div>
+                  )}
+
+                  <div className="text-center mb-12">
+                      <h1 className="text-6xl md:text-8xl font-display font-bold text-transparent bg-clip-text bg-gradient-to-b from-cyan-300 to-cyan-700 drop-shadow-[0_0_20px_rgba(0,255,255,0.6)] tracking-tighter mb-4">
+                          NEON SNAKE
+                      </h1>
+                      <div className={`text-xl md:text-2xl font-mono text-cyan-500 tracking-[0.5em] ${initPhase === 'NONE' ? 'animate-pulse' : ''}`}>
+                          CYBER PROTOCOL
+                      </div>
+                  </div>
+                  
+                  <div className={`transition-opacity duration-0 ${initPhase === 'STALL' || initPhase === 'RECOVER' ? 'opacity-0' : 'opacity-100'}`}>
+                      <button 
+                          onClick={handleStartClick}
+                          className="group relative px-12 py-4 bg-cyan-900/20 border-2 border-cyan-500 hover:bg-cyan-500/20 transition-all duration-200 overflow-hidden"
+                      >
+                          <div className="absolute inset-0 bg-cyan-400/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
+                          <span className="relative text-xl font-bold tracking-widest text-cyan-100 group-hover:text-white">
+                              INITIALIZE SYSTEM
+                          </span>
+                      </button>
+                  </div>
+
+                  <div className="mt-8 text-xs text-gray-500 font-mono">
+                      v1.0.0 // SECURE CONNECTION ESTABLISHED
+                  </div>
+                  
+                  {IS_DEV && (
+                      <div className="absolute bottom-6 left-6 text-xs font-mono text-red-500">
+                          DEV BUILD :: SHIFT+D TO BOOTSTRAP :: [ ` ] FOR TOOLS
+                      </div>
+                  )}
+                  
+                  <div 
+                      className={`absolute bottom-6 right-6 text-xs font-mono tracking-widest cursor-pointer transition-all duration-500 group ${
+                          hasUnreadArchiveData 
+                          ? 'text-cyan-400 drop-shadow-[0_0_8px_rgba(0,255,255,0.8)] animate-pulse' 
+                          : 'text-gray-700 hover:text-gray-500'
+                      }`} 
+                      onClick={handleArchiveOpen}
+                  >
+                      {hasUnreadArchiveData ? (
+                          <span className="flex items-center gap-2">
+                              <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-ping" />
+                              [ ARCHIVE_UPDATED ]
+                          </span>
+                      ) : (
+                          '[ ARCHIVE ACCESS ]'
+                      )}
+                  </div>
+              </div>
+          )}
+
+          {status === GameStatus.DIFFICULTY_SELECT && (
+              <div className="absolute inset-0 z-40 bg-black/95 flex flex-col pointer-events-auto animate-in fade-in duration-300">
+                  <div className="flex-none p-6 bg-black/95 border-b border-cyan-900/50 backdrop-blur-md z-50 flex flex-col items-center shadow-lg">
+                      <h2 className="text-4xl text-white font-display tracking-[0.2em] text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 drop-shadow-[0_0_10px_rgba(0,255,255,0.3)] mb-2">
+                          THREAT LEVEL
+                      </h2>
+                      <div className="h-1 w-32 bg-cyan-500/50 rounded-full"></div>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto custom-scrollbar p-6 pb-32 flex items-center justify-center">
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 w-full max-w-7xl">
+                          {Object.values(DIFFICULTY_CONFIGS).map((conf) => {
+                              const isUnlocked = unlockedDifficulties.includes(conf.id);
+                              return (
+                                  <button
+                                    key={conf.id}
+                                    disabled={!isUnlocked}
+                                    onClick={() => handleDifficultySelect(conf.id)}
+                                    className={`
+                                        relative group border rounded-xl p-6 transition-all duration-300 flex flex-col justify-between overflow-hidden text-left h-full min-h-[340px]
+                                        ${isUnlocked 
+                                            ? 'border-gray-700 bg-[#0a0a0a] hover:border-cyan-500/50 hover:bg-gray-900/80 hover:-translate-y-2 hover:shadow-[0_0_30px_rgba(0,255,255,0.1)] cursor-pointer' 
+                                            : 'border-gray-800 bg-black/60 opacity-60 cursor-not-allowed grayscale'}
+                                    `}
+                                  >
+                                      {isUnlocked && (
+                                          <div className="absolute inset-0 opacity-0 group-hover:opacity-10 bg-[linear-gradient(rgba(0,255,255,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(0,255,255,0.1)_1px,transparent_1px)] bg-[length:20px_20px] transition-opacity duration-500 pointer-events-none" />
+                                      )}
+                                      <div className="z-10 mb-4">
+                                          <div className={`text-2xl font-display font-bold tracking-widest mb-2 ${isUnlocked ? conf.color : 'text-gray-600'}`}>
+                                              {conf.label}
+                                          </div>
+                                          <p className="text-xs text-gray-400 font-mono leading-relaxed h-12">
+                                              {conf.description}
+                                          </p>
+                                      </div>
+                                      <div className="mt-auto pt-4 border-t border-gray-800/50 flex justify-between items-center">
+                                          <div className="text-[10px] font-mono text-gray-500 uppercase tracking-wider">
+                                              MULTIPLIER: x{conf.spawnRateMod}
+                                          </div>
+                                          <div className={`text-xs font-bold ${isUnlocked ? 'text-white' : 'text-gray-600'}`}>
+                                              {isUnlocked ? '[ SELECT ]' : '[ LOCKED ]'}
+                                          </div>
+                                      </div>
+                                  </button>
+                              );
+                          })}
+                      </div>
+                  </div>
+                  <div className="flex-none p-6 text-center text-xs text-gray-600 font-mono border-t border-cyan-900/30 bg-black/95 backdrop-blur-md z-50">
+                      WARNING: HIGH VELOCITY KINETIC INTERACTION AUTHORIZED
+                  </div>
+              </div>
+          )}
+
+          {status === GameStatus.CHARACTER_SELECT && (
+              <div className="absolute inset-0 z-40 bg-black/95 flex flex-col pointer-events-auto animate-in fade-in duration-300">
+                  <div className="flex-none p-6 bg-black/95 border-b border-cyan-900/50 backdrop-blur-md z-50 flex flex-col items-center shadow-lg">
+                      <h2 className="text-4xl text-white font-display tracking-[0.2em] text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 drop-shadow-[0_0_10px_rgba(0,255,255,0.3)] mb-2">
+                          SELECT OPERATOR
+                      </h2>
+                      <div className="h-1 w-32 bg-cyan-500/50 rounded-full"></div>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto custom-scrollbar p-6 flex items-center justify-center">
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full max-w-7xl">
+                          {CHARACTERS.map((char) => {
+                              const stats = CHAR_STATS[char.id] || { off: 5, def: 5, spd: 5, util: 5 };
+                              const isSelected = bindingState?.charId === char.id;
+                              const isDimmed = bindingState && !isSelected;
+
+                              return (
+                                  <button
+                                      key={char.id}
+                                      onClick={() => selectCharacter(char)}
+                                      onMouseEnter={(e) => handleMouseEnter(e, char.id)}
+                                      onMouseLeave={handleMouseLeave}
+                                      disabled={!!bindingState}
+                                      className={`
+                                          relative group border rounded-xl p-1 transition-all duration-300 flex flex-col overflow-hidden text-left h-full min-h-[500px]
+                                          ${isSelected 
+                                              ? 'border-cyan-400 bg-cyan-950/30 scale-105 z-10 shadow-[0_0_50px_rgba(0,255,255,0.2)]' 
+                                              : isDimmed 
+                                                  ? 'border-gray-800 bg-black/80 opacity-30 grayscale blur-sm scale-95'
+                                                  : 'border-gray-800 bg-black/60 hover:border-cyan-500/50 hover:bg-gray-900/80 hover:-translate-y-1'
+                                          }
+                                      `}
+                                  >
+                                      <div className="flex-1 flex flex-col bg-black/40 rounded-lg p-5 relative z-10 h-full">
+                                          <div className="flex justify-between items-start mb-4 border-b border-white/10 pb-2">
+                                              <div>
+                                                  <div className="text-xs font-mono text-cyan-600 mb-1 tracking-widest">{char.tag} CLASS</div>
+                                                  <div className="text-2xl font-display font-bold text-white tracking-wider group-hover:text-cyan-200 transition-colors">{char.name}</div>
+                                              </div>
+                                              <div className="text-3xl opacity-50 group-hover:opacity-100 transition-opacity grayscale group-hover:grayscale-0">
+                                                  <div className="w-10 h-10 border border-white/20 rounded flex items-center justify-center bg-white/5">
+                                                      <div className="w-6 h-6" style={{ backgroundColor: char.color, borderRadius: '2px' }} />
+                                                  </div>
+                                              </div>
+                                          </div>
+                                          <div className="text-sm text-gray-400 leading-relaxed mb-6 h-12">
+                                              {char.description}
+                                          </div>
+                                          <div className="space-y-2 mb-6 bg-black/20 p-3 rounded border border-white/5">
+                                              <CompactStatBar label="OFFENSE" value={stats.off} max={10} color="#ef4444" />
+                                              <CompactStatBar label="DEFENSE" value={stats.def} max={10} color="#3b82f6" />
+                                              <CompactStatBar label="SPEED" value={stats.spd} max={10} color="#eab308" />
+                                              <CompactStatBar label="UTILITY" value={stats.util} max={10} color="#a855f7" />
+                                          </div>
+
+                                          {/* STARTING LOADOUT */}
+                                          <div className="mb-4">
+                                              <div className="flex items-center gap-2 mb-2 border-b border-gray-800 pb-1">
+                                                  <div className="w-1 h-3 bg-cyan-500"></div>
+                                                  <span className="text-[10px] text-gray-400 font-bold tracking-[0.2em] uppercase">STARTING LOADOUT</span>
+                                              </div>
+                                              <div className="flex gap-2 flex-wrap">
+                                                  {getStartingLoadout(char.initialStats).map(id => {
+                                                      const desc = DESCRIPTOR_REGISTRY[id];
+                                                      if (!desc) return null;
+                                                      return (
+                                                          <div key={id} className="relative group w-10 h-10 bg-black border border-gray-700 rounded flex items-center justify-center hover:border-cyan-400 transition-colors">
+                                                              <span className="text-lg">{desc.icon}</span>
+                                                              <HUDTooltip title={desc.name} description={desc.description} />
+                                                          </div>
+                                                      );
+                                                  })}
+                                              </div>
+                                          </div>
+                                          
+                                          {/* KERNEL ARCHITECTURE DISPLAY */}
+                                          <div className="mt-auto">
+                                              <div className="flex items-center gap-2 mb-2 border-b border-gray-800 pb-1">
+                                                  <div className="w-1 h-3 bg-cyan-500"></div>
+                                                  <span className="text-[10px] text-gray-400 font-bold tracking-[0.2em] uppercase">KERNEL ARCHITECTURE</span>
+                                              </div>
+                                              <div className="space-y-2">
+                                                  {char.traits.map((t, i) => (
+                                                      <div key={i} className="bg-gray-900/40 border border-gray-700/50 p-2 rounded relative group hover:bg-gray-800/60 transition-colors">
+                                                          <div className="flex justify-between items-center mb-0.5">
+                                                              <div className="text-cyan-400 font-bold text-[10px] uppercase tracking-wider">{t.name}</div>
+                                                              <div className={`text-[8px] px-1 rounded ${t.type === 'SCALABLE' ? 'bg-cyan-900/50 text-cyan-300' : 'bg-gray-800 text-gray-500'}`}>{t.type === 'SCALABLE' ? 'GROWTH' : 'STATIC'}</div>
+                                                          </div>
+                                                          <div className="text-gray-400 text-[10px] leading-tight font-mono">{t.description}</div>
+                                                          <div className="absolute top-2 right-2 w-1 h-1 bg-cyan-900 rounded-full group-hover:bg-cyan-400 transition-colors opacity-0 group-hover:opacity-100"></div>
+                                                      </div>
+                                                  ))}
+                                              </div>
+                                          </div>
+                                      </div>
+                                      {isSelected && (
+                                          <div className="absolute inset-0 bg-cyan-500/10 z-20 flex items-center justify-center backdrop-blur-[1px] animate-in fade-in duration-200">
+                                              <div className="bg-black/90 border border-cyan-400 p-4 shadow-2xl text-center transform scale-110">
+                                                  <div className="text-cyan-400 font-bold tracking-[0.2em] animate-pulse mb-1">
+                                                      {bindingState?.phase === 'SYNC' ? 'SYNCING...' : 'CONFIRMING'}
+                                                  </div>
+                                                  <div className="text-[10px] text-cyan-600 font-mono">
+                                                      {bindText}
+                                                  </div>
+                                              </div>
+                                          </div>
+                                      )}
+                                  </button>
+                              );
+                          })}
+                      </div>
+                  </div>
+              </div>
+          )}
+
+          {modalState === 'PAUSE' && (
+              <div className="absolute inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center pointer-events-auto">
+                  <div className="bg-gray-900 border border-gray-700 p-8 rounded-lg shadow-2xl max-w-md w-full text-center">
+                      <h2 className="text-3xl font-display font-bold text-white mb-8 tracking-widest">SYSTEM PAUSED</h2>
+                      <div className="space-y-3">
+                          <button 
+                              onClick={togglePause}
+                              className="w-full py-3 bg-cyan-700 hover:bg-cyan-600 text-white font-bold rounded tracking-widest transition-colors"
+                          >
+                              RESUME
+                          </button>
+                          <button 
+                              onClick={openSettings}
+                              className="w-full py-3 bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold rounded tracking-widest transition-colors border border-gray-700"
+                          >
+                              SETTINGS
+                          </button>
+                          <button 
+                              onClick={() => {
+                                  setStatus(GameStatus.IDLE);
+                                  setModalState('NONE');
+                                  audio.stopMusic();
+                              }}
+                              className="w-full py-3 bg-red-900/30 hover:bg-red-900/50 text-red-400 font-bold rounded tracking-widest transition-colors border border-red-900/50"
+                          >
+                              ABORT RUN
+                          </button>
+                      </div>
+                  </div>
+              </div>
+          )}
+
+          {modalState === 'SETTINGS' && (
+              <SettingsMenu 
+                  settings={settings} 
+                  setSettings={setSettings} 
+                  onClose={closeSettings}
+                  unlockedCosmetics={unlockedCosmetics}
+                  cameraControlsEnabled={cameraControlsEnabled}
+                  setCameraControlsEnabled={setCameraControlsEnabled}
+              />
+          )}
+
+          {status === GameStatus.LEVEL_UP && (
+              <div className="absolute inset-0 z-[60] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto animate-in fade-in zoom-in-95 duration-200">
+                  <div className="w-full max-w-4xl">
+                      <div className="text-center mb-8">
+                          <div className="text-cyan-500 font-mono text-sm tracking-[0.5em] mb-2 animate-pulse">SYSTEM UPGRADE</div>
+                          <h2 className="text-5xl font-display font-bold text-white tracking-wider drop-shadow-[0_0_15px_rgba(0,255,255,0.5)]">
+                              CHOOSE PROTOCOL
+                          </h2>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                          {upgradeOptions.map((option, index) => (
+                              <button
+                                  key={index}
+                                  onClick={() => progression.applyUpgrade(option)}
+                                  className={`
+                                      group relative p-1 transition-all duration-300 hover:-translate-y-2 hover:shadow-[0_0_30px_rgba(0,0,0,0.5)]
+                                      ${RARITY_STYLES[option.rarity] || 'border-gray-700 bg-gray-900'}
+                                      border-2 rounded-xl overflow-hidden text-left h-full
+                                  `}
+                              >
+                                  <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent pointer-events-none" />
+                                  
+                                  <div className={`absolute top-0 right-0 px-3 py-1 text-[10px] font-bold tracking-widest bg-black/50 border-b border-l border-white/10 rounded-bl-xl ${RARITY_TEXT_COLORS[option.rarity]}`}>
+                                      {RARITY_LABELS[option.rarity]}
+                                  </div>
+
+                                  <div className="p-6 h-full flex flex-col">
+                                      <div className="mb-4 text-4xl filter drop-shadow-lg group-hover:scale-110 transition-transform duration-300 origin-left">
+                                          {option.icon}
+                                      </div>
+
+                                      <div className="mb-2">
+                                          <div className="text-lg font-bold text-white leading-tight mb-1 group-hover:text-cyan-200 transition-colors">
+                                              {option.title}
+                                          </div>
+                                          <div className="text-[10px] text-gray-400 font-mono tracking-wider uppercase">
+                                              {option.category}
+                                          </div>
+                                      </div>
+
+                                      <div className="text-xs text-gray-300 leading-relaxed mb-4 flex-1">
+                                          {option.description}
+                                      </div>
+
+                                      {option.stats && option.stats.length > 0 && (
+                                          <div className="space-y-1 mt-auto pt-4 border-t border-white/10">
+                                              {option.stats.map((stat, i) => (
+                                                  <div key={i} className="text-[10px] font-mono text-cyan-300 flex items-center gap-2">
+                                                      <span className="w-1 h-1 bg-cyan-500 rounded-full"></span>
+                                                      {stat}
+                                                  </div>
+                                              ))}
+                                          </div>
+                                      )}
+                                      
+                                      <div className="mt-4 text-[10px] text-gray-500 font-mono text-right opacity-0 group-hover:opacity-100 transition-opacity">
+                                          [PRESS {index + 1}]
+                                      </div>
+                                  </div>
+                              </button>
+                          ))}
+                      </div>
+                  </div>
+              </div>
+          )}
+
+          {status === GameStatus.GAME_OVER && (
+              <div className="absolute inset-0 z-[60] bg-red-950/90 backdrop-blur-xl flex flex-col items-center justify-center text-center p-8 pointer-events-auto animate-in fade-in zoom-in-95 duration-500 overflow-hidden">
+                  
+                  {/* Background Noise / Hex Dump */}
+                  <div className="absolute inset-0 opacity-10 pointer-events-none font-mono text-[10px] text-red-500 overflow-hidden leading-none whitespace-pre-wrap break-all p-4 select-none z-0">
+                      {hexDump}
+                  </div>
+
+                  <div className="relative z-10 w-full max-w-2xl bg-black/90 border-2 border-red-600 shadow-[0_0_100px_rgba(220,38,38,0.4)] flex flex-col">
+                      
+                      {/* Header Bar */}
+                      <div className="bg-red-600 text-black font-bold px-4 py-1 flex justify-between items-center mb-1 text-xs tracking-widest font-mono">
+                          <span>SYSTEM_HALT // CRITICAL_FAILURE</span>
+                          <span>ERR: 0xDEADBEEF</span>
+                      </div>
+
+                      <div className="p-8 md:p-12 flex flex-col items-center">
+                          <div className="mb-6 relative">
+                              <h2 className="text-6xl md:text-8xl font-black text-red-500 tracking-tighter drop-shadow-[4px_4px_0_rgba(0,0,0,1)] animate-pulse glitch-intense">
+                                  FATAL ERROR
+                              </h2>
+                          </div>
+                          
+                          <div className="w-full text-center border-l-4 border-red-500 bg-red-900/20 py-3 mb-8">
+                              <div className="text-red-400 font-mono text-xs tracking-widest mb-1">EXCEPTION_MSG</div>
+                              <div className="text-xl md:text-2xl font-mono text-red-100 tracking-wider">
+                                  {failureMessageRef.current || 'UNKNOWN_SYSTEM_FAILURE'}
+                              </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full mb-10 border-t border-b border-red-900/50 py-6">
+                              <div className="flex flex-col items-center">
+                                  <div className="text-[10px] text-red-500 font-bold tracking-widest mb-1">SCORE_LOG</div>
+                                  <div className="text-2xl font-mono text-white">{Math.floor(scoreRef.current).toLocaleString()}</div>
+                              </div>
+                              <div className="flex flex-col items-center border-l border-red-900/30">
+                                  <div className="text-[10px] text-red-500 font-bold tracking-widest mb-1">SECTOR</div>
+                                  <div className="text-2xl font-mono text-white">{game.stageRef.current}</div>
+                              </div>
+                              <div className="flex flex-col items-center border-l border-red-900/30">
+                                  <div className="text-[10px] text-red-500 font-bold tracking-widest mb-1">KILLS</div>
+                                  <div className="text-2xl font-mono text-white">{enemiesKilledRef.current}</div>
+                              </div>
+                              <div className="flex flex-col items-center border-l border-red-900/30">
+                                  <div className="text-[10px] text-red-500 font-bold tracking-widest mb-1">LEVEL</div>
+                                  <div className="text-2xl font-mono text-white">{game.levelRef.current}</div>
+                              </div>
+                          </div>
+
+                          <button 
+                              onClick={handleStartClick}
+                              className="group relative w-full max-w-md px-8 py-4 bg-transparent border border-red-500 text-red-500 font-bold tracking-[0.3em] hover:bg-red-600 hover:text-black transition-all duration-200 overflow-hidden uppercase text-sm"
+                          >
+                              <div className="absolute inset-0 w-full h-full bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(0,0,0,0.2)_10px,rgba(0,0,0,0.2)_20px)] opacity-50"></div>
+                              <span className="relative z-10 flex items-center justify-center gap-2">
+                                  <span>[ INITIATE_REBOOT_SEQUENCE ]</span>
+                              </span>
                           </button>
                       </div>
                       
-                      <div className="flex items-center justify-between">
-                          <label className="text-sm font-mono text-gray-400">SCREEN SHAKE</label>
-                          <button onClick={() => setSettings(s => ({...s, screenShake: !s.screenShake}))} className={`w-12 h-6 rounded-full transition-colors ${settings.screenShake ? 'bg-cyan-600' : 'bg-gray-700'}`}>
-                              <div className={`w-4 h-4 bg-white rounded-full transform transition-transform ml-1 ${settings.screenShake ? 'translate-x-6' : ''}`}></div>
-                          </button>
-                      </div>
-
-                      <div className="flex items-center justify-between">
-                          <label className="text-sm font-mono text-gray-400">HIGH CONTRAST</label>
-                          <button onClick={() => setSettings(s => ({...s, highContrast: !s.highContrast}))} className={`w-12 h-6 rounded-full transition-colors ${settings.highContrast ? 'bg-cyan-600' : 'bg-gray-700'}`}>
-                              <div className={`w-4 h-4 bg-white rounded-full transform transition-transform ml-1 ${settings.highContrast ? 'translate-x-6' : ''}`}></div>
-                          </button>
-                      </div>
-
-                      <div className="space-y-1">
-                          <div className="flex justify-between text-xs text-gray-500 font-mono"><span>FX INTENSITY</span> <span>{Math.round(settings.fxIntensity * 100)}%</span></div>
-                          <input type="range" min="0" max="1" step="0.1" value={settings.fxIntensity} onChange={(e) => setSettings(s => ({...s, fxIntensity: parseFloat(e.target.value)}))} className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500" />
-                      </div>
-
-                      <div className="space-y-1">
-                          <div className="flex justify-between text-xs text-gray-500 font-mono"><span>UI SCALE</span> <span>{settings.uiScale}x</span></div>
-                          <input type="range" min="1" max="1.75" step="0.25" value={settings.uiScale} onChange={(e) => setSettings(s => ({...s, uiScale: parseFloat(e.target.value)}))} className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500" />
-                      </div>
-
-                      <div className="space-y-1">
-                          <div className="flex justify-between text-xs text-gray-500 font-mono"><span>MUSIC VOLUME</span> <span>{Math.round(settings.musicVolume * 100)}%</span></div>
-                          <input type="range" min="0" max="1" step="0.1" value={settings.musicVolume} onChange={(e) => setSettings(s => ({...s, musicVolume: parseFloat(e.target.value)}))} className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500" />
-                      </div>
-
-                      <div className="space-y-1">
-                          <div className="flex justify-between text-xs text-gray-500 font-mono"><span>SFX VOLUME</span> <span>{Math.round(settings.sfxVolume * 100)}%</span></div>
-                          <input type="range" min="0" max="1" step="0.1" value={settings.sfxVolume} onChange={(e) => setSettings(s => ({...s, sfxVolume: parseFloat(e.target.value)}))} className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500" />
+                      {/* Footer Decoration */}
+                      <div className="bg-[#0a0000] border-t border-red-900/50 p-2 flex justify-between text-[8px] font-mono text-red-700">
+                          <span>CORE_DUMP_SAVED</span>
+                          <span>MEMORY_ADDRESS: 0xFF0042A1</span>
                       </div>
                   </div>
-
-                  <button onClick={closeSettings} className="mt-6 w-full py-3 bg-gray-800 hover:bg-gray-700 border border-gray-600 text-white font-mono text-sm tracking-wider uppercase transition-colors">
-                      CLOSE CONFIG
-                  </button>
-              </div>
-          </div>
-      )}
-
-      {/* ────────────────── SCALABLE HUD CONTAINER ────────────────── */}
-      <div 
-        style={{ transform: `scale(${settings.uiScale})`, transformOrigin: 'top center' }} 
-        className="w-full max-w-[800px] flex flex-col items-center transition-transform duration-200"
-      >
-          {/* HEADER HUD */}
-          <div className="w-full grid grid-cols-12 gap-4 mb-4 items-end relative z-10">
-            {/* LEFT: Score & Combo */}
-            <div className="col-span-3 flex flex-col items-start">
-              <div className="text-[10px] text-cyan-700 tracking-[0.2em] font-bold mb-1">RUNTIME_METRICS</div>
-              <div className="relative group">
-                <div 
-                  ref={scoreDisplayRef} 
-                  className="text-4xl font-display text-white tracking-widest drop-shadow-[0_0_10px_rgba(0,255,255,0.3)]"
-                >
-                  0000000
-                </div>
-                <div className="h-1.5 w-full bg-gray-900 mt-1 relative overflow-hidden rounded-sm">
-                   {uiCombo > 1 && (
-                     <>
-                       <div className="absolute inset-0 bg-purple-500/20 animate-pulse"></div>
-                       <div 
-                         className="h-full bg-gradient-to-r from-purple-600 to-fuchsia-400 transition-all duration-100 ease-linear shadow-[0_0_8px_rgba(192,38,211,0.6)]" 
-                         style={{ width: `${comboPct * 100}%` }}
-                       />
-                     </>
-                   )}
-                </div>
-                <div className="flex justify-between items-center mt-1">
-                   <span className="text-[9px] text-gray-500 font-mono">MULTIPLIER</span>
-                   <span className={`text-xs font-bold font-mono ${uiCombo > 1 ? 'text-purple-400 animate-pulse' : 'text-gray-700'}`}>
-                     x{uiCombo}.0
-                   </span>
-                </div>
-              </div>
-            </div>
-
-            {/* CENTER: Status & Objectives */}
-            <div className="col-span-6 flex flex-col items-center justify-end pb-1">
-               {/* Boss Health Overlay */}
-               {bossActive && bossEnemyRef && bossEnemyRef.current ? (
-                  <div className="w-full mb-2 animate-in fade-in zoom-in duration-300">
-                     <div className="flex justify-between text-[9px] text-red-400 font-bold tracking-widest mb-1 px-1">
-                        <span className="animate-pulse">⚠ THREAT DETECTED</span>
-                        <span>{(bossEnemyRef.current.hp / bossEnemyRef.current.maxHp * 100).toFixed(0)}% INTEGRITY</span>
-                     </div>
-                     <div className="h-3 w-full bg-red-950/50 border border-red-600/50 relative overflow-hidden skew-x-[-10deg]">
-                        <div 
-                          className="h-full bg-red-600 transition-all duration-200" 
-                          style={{ width: `${(bossEnemyRef.current.hp / bossEnemyRef.current.maxHp) * 100}%` }}
-                        />
-                        <div className="absolute inset-0 bg-[url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAIklEQVQIW2NkQAKrVq36zwjjgzhhYWGMYAEYB8RmROaABADeOQ8CXl/xfgAAAABJRU5ErkJggg==')] opacity-20"></div>
-                     </div>
-                  </div>
-               ) : (
-                  <div className="flex flex-col items-center mb-2">
-                     <div className="text-[10px] text-cyan-600 font-mono tracking-widest mb-0.5">
-                        STAGE {uiStage.toString().padStart(2, '0')} // {DIFFICULTY_CONFIGS[difficulty].label}
-                     </div>
-                     <div className={`text-xs font-bold tracking-[0.2em] uppercase ${
-                        getThreatLevel(uiStage) === "EXTREME" ? "text-red-500 drop-shadow-[0_0_5px_rgba(239,68,68,0.8)] animate-pulse" : 
-                        getThreatLevel(uiStage) === "HIGH" ? "text-orange-400" : 
-                        getThreatLevel(uiStage) === "MODERATE" ? "text-yellow-300" : "text-emerald-400"
-                     }`}>
-                        THREAT: {getThreatLevel(uiStage)}
-                     </div>
-                  </div>
-               )}
-
-               {/* XP Bar */}
-               <div className="w-full max-w-[300px] group relative">
-                  <div className="flex justify-between text-[9px] text-gray-500 font-mono mb-0.5 px-0.5 uppercase">
-                     <span>Lv.{uiLevel}</span>
-                     <span>Upgrade Imminent</span>
-                     <span>Lv.{uiLevel + 1}</span>
-                  </div>
-                  <div className="h-1.5 w-full bg-gray-800 border border-gray-700 relative overflow-hidden rounded-full">
-                     <div 
-                       className="h-full bg-gradient-to-r from-yellow-600 to-yellow-300 shadow-[0_0_8px_rgba(234,179,8,0.5)] transition-all duration-500 ease-out" 
-                       style={{ width: `${uiXp}%` }}
-                     />
-                  </div>
-               </div>
-
-               {/* Active Buffs Row */}
-               <div className="flex gap-2 mt-2 h-5">
-                  {uiShield && (
-                     <div className="flex items-center gap-1 px-1.5 py-0.5 bg-blue-950/40 border border-blue-500/30 rounded text-[9px] text-blue-300">
-                        <span className="text-[10px]">🛡️</span> SHIELD
-                     </div>
-                  )}
-                  {activePowerUps.slow && (
-                     <div className="px-1.5 py-0.5 bg-indigo-950/40 border border-indigo-500/30 rounded text-[9px] text-indigo-300">
-                        CHRONO
-                     </div>
-                  )}
-                  {activePowerUps.magnet && (
-                     <div className="px-1.5 py-0.5 bg-fuchsia-950/40 border border-fuchsia-500/30 rounded text-[9px] text-fuchsia-300">
-                        MAGNET
-                     </div>
-                  )}
-               </div>
-            </div>
-
-            {/* RIGHT: High Score */}
-            <div className="col-span-3 flex flex-col items-end">
-               <div className="text-[10px] text-cyan-700 tracking-[0.2em] font-bold mb-1">PEAK_PERFORMANCE</div>
-               <div className="text-xl font-mono text-gray-400 mb-2">
-                  {highScore.toString().padStart(7, '0')}
-               </div>
-               
-               <div className="text-[10px] text-cyan-700 tracking-[0.2em] font-bold mb-1">CURRENT_RUNTIME</div>
-               <div className="text-xl font-mono text-white mb-2" ref={timerRef}>
-                  00:00.00
-               </div>
-
-               <div className="mt-auto text-[10px] text-right text-gray-600 font-mono leading-tight">
-                  SESSION_ID: <span className="text-gray-500">{game.startTimeRef.current.toString(36).toUpperCase().slice(-6)}</span><br/>
-                  PROTOCOL: <span className={game.selectedChar ? "text-cyan-400" : "text-gray-500"}>{game.selectedChar?.name || 'N/A'}</span>
-               </div>
-            </div>
-          </div>
-      </div>
-
-      {/* ────────────────── MAIN CANVAS FRAME ────────────────── */}
-      <div className="relative group p-1 bg-gradient-to-b from-gray-800 to-gray-900 rounded-md shadow-[0_0_40px_rgba(0,0,0,0.8)] border border-gray-700 origin-center" style={{ borderColor: currentTheme.wall }}>
-         {/* Decoration Bolts */}
-         <div className="absolute top-0 left-0 w-2 h-2 border-l border-t border-cyan-500 m-1"></div>
-         <div className="absolute top-0 right-0 w-2 h-2 border-r border-t border-cyan-500 m-1"></div>
-         <div className="absolute bottom-0 left-0 w-2 h-2 border-l border-b border-cyan-500 m-1"></div>
-         <div className="absolute bottom-0 right-0 w-2 h-2 border-r border-b border-cyan-500 m-1"></div>
-
-         <canvas 
-            ref={canvasRef} 
-            width={CANVAS_WIDTH} 
-            height={CANVAS_HEIGHT} 
-            className="block max-w-full max-h-[70vh] w-auto h-auto cursor-crosshair rounded bg-black shadow-inner" 
-         />
-         
-         <div className="scanlines pointer-events-none rounded opacity-50"></div>
-         
-         {/* OVERLAYS */}
-         {status === GameStatus.IDLE && (
-          <div className="absolute inset-0 bg-black/95 flex flex-col items-center justify-center z-30 backdrop-blur-sm p-6 text-center">
-            <h1 className="text-5xl md:text-8xl font-display text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-600 mb-2 drop-shadow-[0_0_15px_rgba(0,255,255,0.4)] text-center tracking-tighter">
-              NEON SNAKE
-            </h1>
-            <div className="text-center mb-10 text-cyan-500/50 text-[10px] tracking-[0.4em] uppercase">
-                CYBER_PROTOCOL // ENHANCED_CORE_V1.1
-            </div>
-            <div className="flex gap-4">
-                <button onClick={handleStartClick} className="px-10 py-4 bg-cyan-600 hover:bg-cyan-500 text-black font-bold font-display rounded transition-all transform hover:scale-105 hover:shadow-[0_0_30px_rgba(0,255,255,0.7)] group relative overflow-hidden" style={{ clipPath: 'polygon(10% 0, 100% 0, 100% 70%, 90% 100%, 0 100%, 0 30%)' }}>
-                  INITIALIZE_SYSTEM
-                </button>
-                <button onClick={openSettings} className="px-4 py-4 bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold font-display rounded transition-all border border-gray-600">
-                   ⚙
-                </button>
-            </div>
-          </div>
-        )}
-
-        {status === GameStatus.DIFFICULTY_SELECT && (
-            <div className="absolute inset-0 bg-black/95 flex flex-col items-center z-30 backdrop-blur-md p-4 overflow-y-auto">
-                <div className="my-auto w-full flex flex-col items-center">
-                    <h2 className="text-2xl md:text-4xl font-display text-white mb-6 tracking-wide text-center">THREAT_LEVEL_ASSESSMENT</h2>
-                    <div className="grid grid-cols-1 gap-3 w-full max-w-xl">
-                        {Object.values(DIFFICULTY_CONFIGS).map(config => {
-                            const isUnlocked = unlockedDifficulties.includes(config.id);
-                            return (
-                                <button key={config.id} disabled={!isUnlocked} onClick={() => handleDifficultySelect(config.id)} className={`flex flex-col items-start p-5 border transition-all relative overflow-hidden group ${isUnlocked ? `border-gray-700 hover:border-white bg-gray-900/60 hover:bg-gray-800` : `border-gray-900 bg-black/80 opacity-60 cursor-not-allowed` }`}>
-                                    <div className="flex justify-between w-full items-center mb-2">
-                                        <h3 className={`text-xl md:text-2xl font-bold font-display ${isUnlocked ? config.color : 'text-gray-600'}`}> {config.label} </h3>
-                                        {!isUnlocked && <span className="text-[10px] text-red-600 font-bold border border-red-900 px-2 py-0.5">LOCKED</span>}
-                                    </div>
-                                    <p className="text-sm text-gray-400 font-mono tracking-tight text-left">{config.description}</p>
-                                    
-                                    {!isUnlocked && (
-                                        <div className="mt-3 w-full border-t border-red-900/30 pt-2 text-left">
-                                            <p className="text-xs text-red-500/80 font-mono uppercase tracking-wider">
-                                                <span className="text-red-700 mr-2">⚠ REQUIRED:</span> 
-                                                {config.unlockCondition}
-                                            </p>
-                                        </div>
-                                    )}
-                                </button>
-                            );
-                        })}
-                    </div>
-                </div>
-            </div>
-        )}
-
-        {status === GameStatus.CHARACTER_SELECT && (
-            <div className="absolute inset-0 bg-black/95 flex flex-col items-center justify-center z-30 backdrop-blur-md p-4 overflow-y-auto">
-                <h2 className="text-3xl md:text-5xl font-display text-cyan-400 mb-6 tracking-widest mt-8 md:mt-0">PROTOCOL_SELECTION</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 w-full max-w-5xl">
-                    {CHARACTERS.map(char => (
-                        <button key={char.id} onClick={() => selectCharacter(char)} className="flex flex-col items-start p-5 border-2 transition-all bg-gray-900/70 hover:bg-gray-800 hover:scale-[1.02] group relative overflow-hidden" style={{ borderColor: char.color }}>
-                             <div className="flex justify-between w-full items-center mb-2">
-                                <h3 className="text-2xl font-bold font-display" style={{ color: char.color }}>{char.name}</h3>
-                                <span className={`text-[9px] font-bold px-2 py-0.5 border border-white/10 rounded uppercase ${char.tag === 'STABLE' ? 'text-blue-300' : char.tag === 'ADAPTIVE' ? 'text-green-300' : 'text-red-400' }`}> {char.tag} </span>
-                             </div>
-                             <p className="text-sm text-gray-400 mb-4 font-mono leading-snug text-left">{char.description}</p>
-                             
-                             {/* TRAIT BOX */}
-                             <div className="w-full bg-black/40 border border-white/10 p-2 mb-4 rounded text-left">
-                                 <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">INTRINSIC TRAIT</div>
-                                 <div className="text-xs font-bold text-white mb-0.5">{char.traitName}</div>
-                                 <div className="text-[10px] text-gray-400 leading-tight">{char.traitDescription}</div>
-                             </div>
-
-                             <div className="mt-auto w-full text-left">
-                                <div className="text-xs font-bold text-white mb-2 uppercase tracking-tighter">{char.payoff}</div>
-                                <div className="h-0.5 w-full bg-gray-800 mb-3" />
-                                {char.initialStats.weapon && <div className="text-[10px] text-gray-500 uppercase">Loadout: Optimized</div>}
-                                {char.initialStats.shieldActive && <div className="text-[10px] text-cyan-500 font-bold uppercase">Shield: Primed</div>}
-                             </div>
-                        </button>
-                    ))}
-                </div>
-            </div>
-        )}
-
-        {status === GameStatus.LEVEL_UP && (
-             <div className="absolute inset-0 bg-black/95 flex flex-col items-center justify-center z-40 backdrop-blur-lg p-10">
-                <h2 className="text-5xl font-display text-yellow-400 mb-2 animate-pulse tracking-tighter">AUGMENTATION_READY</h2>
-                <p className="text-gray-500 font-mono text-sm mb-12 tracking-widest uppercase">Decryption successful // Choose modification</p>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-6xl">
-                    {upgradeOptions.map((opt, idx) => (
-                        <button 
-                            key={opt.id} 
-                            onClick={() => progression.applyUpgrade(opt.id as UpgradeId, opt.rarity)} 
-                            className={`flex flex-col h-full relative overflow-hidden p-0 border-2 transition-all text-left group ${RARITY_STYLES[opt.rarity] || 'border-gray-700 bg-gray-900/80 hover:border-white'}`}
-                        >
-                            {/* Rarity Header Bar */}
-                            <div className="flex justify-between items-center bg-black/40 px-4 py-2 border-b border-inherit">
-                                <div className="text-[10px] font-bold tracking-widest uppercase px-2 py-0.5 rounded bg-black/50 border border-white/10 text-white/90">
-                                    {RARITY_LABELS[opt.rarity]}
-                                </div>
-                                <div className="text-xs font-bold text-gray-500 font-mono group-hover:text-white transition-colors">{idx+1}</div>
-                            </div>
-
-                            {/* Content Body */}
-                            <div className="flex flex-col p-6 h-full">
-                                {/* Title & Icon */}
-                                <div className="flex items-center gap-4 mb-6">
-                                    <div className="text-4xl filter drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]">{opt.icon}</div>
-                                    <h3 className={`text-2xl font-bold font-display leading-none ${opt.color}`}>{opt.title}</h3>
-                                </div>
-
-                                {/* Dedicated Stat Zone */}
-                                {opt.stats && opt.stats.length > 0 && (
-                                    <div className="flex flex-col gap-1 mb-6">
-                                        {opt.stats.map((stat, i) => (
-                                            <div key={i} className={`text-lg font-bold font-mono tracking-wide ${RARITY_TEXT_COLORS[opt.rarity] || 'text-gray-200'}`}>
-                                                {stat}
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-
-                                {/* Description (Pushed to bottom) */}
-                                <div className="mt-auto pt-4 border-t border-white/5">
-                                    <p className="text-sm text-gray-400 font-mono leading-relaxed">{opt.description}</p>
-                                </div>
-                            </div>
-                            
-                            {/* Rarity Flare Overlay */}
-                            {(opt.rarity === 'MEGA_RARE' || opt.rarity === 'OVERCLOCKED') && (
-                                <div className="absolute inset-0 bg-gradient-to-t from-white/5 to-transparent pointer-events-none animate-pulse"></div>
-                            )}
-                        </button>
-                    ))}
-                </div>
-             </div>
-        )}
-
-        {/* PAUSE MODAL - REPLACES SETTINGS */}
-        {modalState === 'PAUSE' && status === GameStatus.PAUSED && (
-            <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-50 backdrop-blur-sm">
-                <div className="text-5xl font-display text-white tracking-[0.5em] animate-pulse border-4 border-white p-8">SUSPENDED</div>
-                <button onClick={openSettings} className="absolute bottom-10 px-6 py-2 bg-gray-800 border border-gray-600 text-white font-mono hover:bg-gray-700">
-                    OPEN CONFIG
-                </button>
-            </div>
-        )}
-
-        {status === GameStatus.GAME_OVER && (
-            <div className="absolute inset-0 bg-red-950/90 flex flex-col items-center justify-center z-50 backdrop-blur-md p-10">
-                <h2 className="text-6xl font-display text-red-500 mb-4 drop-shadow-[0_0_20px_rgba(255,0,0,0.6)] tracking-tighter">CONTAINMENT_FAILURE</h2>
-                <p className="text-red-400 font-mono text-sm mb-10 tracking-[0.3em] uppercase">{failureMessageRef.current}</p>
-                <div className="w-full max-w-lg bg-black/60 border-2 border-red-900 p-6 mb-12 font-mono text-base shadow-2xl">
-                    <div className="text-red-500 border-b-2 border-red-900 pb-3 mb-4 font-bold tracking-widest uppercase">POST_MORTEM_REPORT</div>
-                    <div className="flex justify-between mb-2"> <span className="text-gray-500">RUNTIME:</span> <span className="text-white font-bold">{formatTime(game.gameTimeRef.current, true)}</span> </div>
-                    <div className="flex justify-between mb-2"> <span className="text-gray-500">NEUTRALIZED_DRONES:</span> <span className="text-white font-bold">{enemiesKilledRef.current}</span> </div>
-                    <div className="flex justify-between mb-2"> <span className="text-gray-500">ACCESSED_TERMINALS:</span> <span className="text-white font-bold">{terminalsHackedRef.current}</span> </div>
-                    <div className="flex justify-between"> <span className="text-gray-500">ANOMALY_STATUS:</span> <span className="text-red-400 font-black animate-pulse uppercase">BREACHED</span> </div>
-                </div>
-                <div className="flex gap-6">
-                    <button onClick={handleStartClick} className="px-10 py-4 bg-red-600 hover:bg-red-500 text-white font-bold font-display rounded shadow-[0_0_30px_rgba(255,0,0,0.4)] transition-transform transform hover:scale-105"> ROLLBACK </button>
-                    <button onClick={() => setStatus(GameStatus.IDLE)} className="px-10 py-4 border-2 border-red-800 hover:bg-red-900/50 text-red-400 font-display rounded transition-colors uppercase"> CONSOLE </button>
-                </div>
-            </div>
-        )}
-
-        {status === GameStatus.RESUMING && (
-            <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none bg-black/10">
-                <div className="text-[200px] font-black text-white/20 animate-ping font-display"> {resumeCountdown} </div>
-            </div>
-        )}
-
-        {status === GameStatus.STAGE_TRANSITION && (
-            <div className="absolute inset-0 bg-black/30 flex flex-col items-center justify-center z-50">
-                <h2 className="text-6xl font-display text-cyan-400 mb-4 tracking-widest animate-pulse drop-shadow-[0_0_15px_rgba(0,255,255,0.8)]">SECTOR DECRYPTED</h2>
-                <div className="text-cyan-400/80 font-mono text-sm tracking-[0.5em] uppercase bg-black/60 px-4 py-2 border-l-2 border-r-2 border-cyan-500/50">INITIATING DATA MIGRATION...</div>
-            </div>
-        )}
-      </div>
-
-      {/* ────────────────── HUD BOTTOM STRIP (SCALABLE) ────────────────── */}
-      <div 
-        style={{ transform: `scale(${settings.uiScale})`, transformOrigin: 'top center' }}
-        className="w-full max-w-[800px] mt-2 flex flex-col gap-2 transition-transform duration-200"
-      >
-          {/* WEAPON LOADOUT */}
-          <div className="w-full flex gap-2">
-            {Array.from({ length: Math.max(1, game.statsRef.current.maxWeaponSlots || 3) }).map((_, i) => {
-                const weaponId = game.statsRef.current.activeWeaponIds[i];
-                const descriptor = weaponId ? DESCRIPTOR_REGISTRY[weaponId] : null;
-                const statKey = weaponId ? WEAPON_STAT_MAP[weaponId] : null;
-                const level = (statKey && descriptor) ? game.statsRef.current.weapon[statKey] : 0;
-                
-                if (!descriptor) {
-                    return (
-                        <div key={i} className="flex-1 h-14 bg-black/40 border border-dashed border-gray-800 rounded flex items-center justify-center">
-                            <span className="text-[10px] text-gray-700 font-mono tracking-widest uppercase">SLOT_{i+1}</span>
-                        </div>
-                    );
-                }
-
-                return (
-                    <div 
-                        key={i} 
-                        className={`flex-1 h-14 bg-gray-900/90 border-l-2 border-t border-b border-r border-gray-700 relative overflow-hidden group flex items-center px-3 gap-3 transition-all cursor-help ${descriptor.color}`} 
-                        style={{ borderLeftColor: 'currentColor' }}
-                        onMouseEnter={() => setHoveredId(weaponId)}
-                        onMouseLeave={() => setHoveredId(null)}
-                        onFocus={() => setHoveredId(weaponId)}
-                        onBlur={() => setHoveredId(null)}
-                        tabIndex={0}
-                    > 
-                        <div className="text-2xl filter drop-shadow-[0_0_5px_rgba(255,255,255,0.3)]">{descriptor.icon}</div>
-                        <div className="flex flex-col justify-center">
-                            <div className={`text-[10px] font-bold tracking-wider ${descriptor.color} font-display leading-tight`}>{descriptor.name}</div>
-                            <div className="text-xs font-mono text-white/80">LVL {level} <span className="text-gray-600">/ MAX</span></div>
-                        </div>
-                        <div className={`absolute inset-0 bg-gradient-to-l from-current to-transparent opacity-10 pointer-events-none ${descriptor.color}`}></div>
-                    </div>
-                );
-            })}
-          </div>
-
-          {/* PASSIVE UPGRADE STRIP */}
-          {activePassives.length > 0 && (
-              <div className="w-full flex flex-wrap gap-2 items-center justify-center bg-gray-950/50 p-1.5 rounded border-t border-gray-800">
-                  <div className="text-[9px] text-gray-600 font-mono tracking-widest mr-2">SYSTEM_MODS //</div>
-                  {activePassives.map(p => {
-                      const desc = DESCRIPTOR_REGISTRY[p.id];
-                      if (!desc) return null;
-                      return (
-                          <div 
-                            key={p.id} 
-                            className={`flex items-center gap-1.5 px-2 py-1 bg-gray-900 border border-gray-800 rounded cursor-help ${desc.color} hover:bg-gray-800 transition-colors`}
-                            onMouseEnter={() => setHoveredId(p.id)}
-                            onMouseLeave={() => setHoveredId(null)}
-                            onFocus={() => setHoveredId(p.id)}
-                            onBlur={() => setHoveredId(null)}
-                            tabIndex={0}
-                          >
-                              <span className="text-sm filter drop-shadow-[0_0_5px_currentColor]">{desc.icon}</span>
-                              <span className="text-[9px] font-bold tracking-wider">{desc.name}</span>
-                          </div>
-                      );
-                  })}
               </div>
           )}
-      </div>
-
-      {/* ────────────────── MOBILE CONTROLS (CONDITIONAL) ────────────────── */}
-      <div className="w-full max-w-[400px] mt-6 grid grid-cols-3 gap-3 md:hidden h-40 select-none">
-          {/* Enhanced Mobile Buttons */}
-          <div className="col-start-2 bg-gradient-to-b from-gray-800 to-gray-900 rounded-lg border-b-4 border-gray-950 active:border-b-0 active:translate-y-1 transition-all flex items-center justify-center shadow-lg active:bg-cyan-900/30" onPointerDown={(e) => { e.preventDefault(); handleMobileControl(Direction.UP); }}> 
-            <span className="text-2xl text-cyan-400">▲</span> 
-          </div>
-          
-          <div className="col-start-1 row-start-2 bg-gradient-to-b from-gray-800 to-gray-900 rounded-lg border-b-4 border-gray-950 active:border-b-0 active:translate-y-1 transition-all flex items-center justify-center shadow-lg active:bg-cyan-900/30" onPointerDown={(e) => { e.preventDefault(); handleMobileControl(Direction.LEFT); }}> 
-            <span className="text-2xl text-cyan-400">◀</span> 
-          </div>
-          
-          <div className="col-start-3 row-start-2 bg-gradient-to-b from-gray-800 to-gray-900 rounded-lg border-b-4 border-gray-950 active:border-b-0 active:translate-y-1 transition-all flex items-center justify-center shadow-lg active:bg-cyan-900/30" onPointerDown={(e) => { e.preventDefault(); handleMobileControl(Direction.RIGHT); }}> 
-            <span className="text-2xl text-cyan-400">▶</span> 
-          </div>
-          
-          <div className="col-start-2 row-start-3 bg-gradient-to-b from-gray-800 to-gray-900 rounded-lg border-b-4 border-gray-950 active:border-b-0 active:translate-y-1 transition-all flex items-center justify-center shadow-lg active:bg-cyan-900/30" onPointerDown={(e) => { e.preventDefault(); handleMobileControl(Direction.DOWN); }}> 
-            <span className="text-2xl text-cyan-400">▼</span> 
-          </div>
-      </div>
-
-      {/* ────────────────── DESKTOP CONTROLS FOOTER ────────────────── */}
-      <div className="mt-6 hidden md:flex w-full max-w-[800px] justify-between items-center text-[10px] text-gray-500 font-mono border-t border-gray-800/50 pt-4">
-          
-          <div className="flex gap-6">
-             <div className="flex flex-col gap-1">
-                <span className="text-cyan-700 font-bold tracking-wider mb-1">NAVIGATION</span>
-                <div className="flex gap-2 items-center">
-                   <div className="flex gap-1">
-                      <span className="px-1.5 py-0.5 bg-gray-800 rounded border border-gray-700 text-gray-300">W</span>
-                      <span className="px-1.5 py-0.5 bg-gray-800 rounded border border-gray-700 text-gray-300">A</span>
-                      <span className="px-1.5 py-0.5 bg-gray-800 rounded border border-gray-700 text-gray-300">S</span>
-                      <span className="px-1.5 py-0.5 bg-gray-800 rounded border border-gray-700 text-gray-300">D</span>
-                   </div>
-                   <span>OR ARROWS</span>
-                </div>
-             </div>
-          </div>
-
-          <div className="flex flex-col gap-1 items-end">
-             <span className="text-cyan-700 font-bold tracking-wider mb-1">SYSTEM</span>
-             <div className="flex gap-3">
-                <div className="flex items-center gap-2">
-                   <span className="px-2 py-0.5 bg-gray-800 rounded border border-gray-700 text-gray-300">SPACE</span>
-                   <span>PAUSE</span>
-                </div>
-                <div className="flex items-center gap-2 cursor-pointer group" onClick={toggleMute}>
-                   <span className={`px-2 py-0.5 rounded border transition-colors ${isMuted ? "bg-red-900/50 border-red-500 text-red-300" : "bg-gray-800 border-gray-700 text-gray-300 group-hover:border-white"}`}>
-                      {isMuted ? 'UNMUTE' : 'MUTE'}
-                   </span>
-                </div>
-                <div className="flex items-center gap-2 cursor-pointer group" onClick={openSettings}>
-                   <span className={`px-2 py-0.5 rounded border transition-colors ${modalState === 'SETTINGS' ? "bg-cyan-900/50 border-cyan-500 text-cyan-300" : "bg-gray-800 border-gray-700 text-gray-300 group-hover:border-white"}`}>
-                      CONFIG
-                   </span>
-                </div>
-             </div>
-          </div>
 
       </div>
-    </div>
   );
 };
 
-export default SnakeGame;
+export const SnakeGame: React.FC = () => {
+  const game = useGameState();
+  const styleId = game.settings.hudConfig.theme === 'AMBER' ? 'amber' : 
+                  game.settings.highContrast ? 'high_contrast' : 'neon';
+
+  return (
+    <UIStyleProvider styleId={styleId}>
+      <VisionProtocolProvider protocolId={game.settings.visionProtocolId}>
+        <GameInner game={game} />
+      </VisionProtocolProvider>
+    </UIStyleProvider>
+  );
+};

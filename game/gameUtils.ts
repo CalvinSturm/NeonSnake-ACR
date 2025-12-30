@@ -2,21 +2,14 @@
 import { GRID_COLS, GRID_ROWS, STAGE_THEMES, DEFAULT_SETTINGS } from '../constants';
 import { Point, StageTheme } from '../types';
 
-export const formatTime = (ms: number, includeMs: boolean = false): string => {
+export const formatTime = (ms: number): string => {
   const totalSec = Math.floor(ms / 1000);
   const m = Math.floor(totalSec / 60).toString().padStart(2, '0');
   const s = (totalSec % 60).toString().padStart(2, '0');
-  
-  if (includeMs) {
-      // Centiseconds (00-99)
-      const cs = Math.floor((ms % 1000) / 10).toString().padStart(2, '0');
-      return `${m}:${s}.${cs}`;
-  }
-  
   return `${m}:${s}`;
 };
 
-export const getRandomPos = (snake: Point[], exclude: Point[] = [], walls: Point[] = []): Point | null => {
+export const getRandomPos = (snake: Point[], exclude: Point[] = [], walls: Point[] = []): Point => {
   let pos: Point;
   let collision;
   let attempts = 0;
@@ -31,13 +24,32 @@ export const getRandomPos = (snake: Point[], exclude: Point[] = [], walls: Point
     attempts++;
   } while (collision && attempts < 100); 
   
-  if (collision) return null; 
+  if (collision) return { x: 0, y: 0 }; 
   return pos;
 };
 
 export const generateWalls = (stage: number): Point[] => {
     const walls: Point[] = [];
-    if (stage % 4 === 0) return walls;
+    
+    // WARDEN ARENA (Stage 5) - OPEN ARENA
+    // Previously platformer, now cleared for omni-directional combat
+    if (stage === 5) {
+        // Outer Boundary Only
+        for(let x=0; x<GRID_COLS; x++) {
+            walls.push({x, y: 0}); // Top
+            walls.push({x, y: GRID_ROWS - 1}); // Bottom
+        }
+        for(let y=1; y<GRID_ROWS-1; y++) {
+            walls.push({x: 0, y}); // Left
+            walls.push({x: GRID_COLS - 1, y}); // Right
+        }
+        return walls;
+    }
+
+    // Clear walls for generic Boss Stages (10, 15, 20...)
+    if (stage % 5 === 0) return walls;
+    
+    // Stage 1 is empty tutorial
     if (stage <= 1) return walls;
 
     const patternType = stage % 4; 
@@ -76,7 +88,6 @@ export const generateWalls = (stage: number): Point[] => {
     }
     
     // SAFE SPAWN RESOLVER: Enforce 3-tile radius around (10,10)
-    // This satisfies "Bug 2: Stage 3 Spawns Block on Player"
     return walls.filter(w => {
         const distFromCenter = Math.abs(w.x - GRID_COLS/2) > 6 || Math.abs(w.y - GRID_ROWS/2) > 6;
         const distFromSpawn = Math.abs(w.x - 10) > 3 || Math.abs(w.y - 10) > 3;

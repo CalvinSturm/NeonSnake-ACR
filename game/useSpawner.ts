@@ -1,13 +1,18 @@
 
 import { useCallback } from 'react';
-import { FoodType, FoodItem, EnemyType, Point, Direction, Difficulty } from '../types';
+import { FoodType, FoodItem, EnemyType, Point, Direction, Difficulty, TerminalType } from '../types';
 import {
   GRID_COLS, GRID_ROWS, ENEMY_BASE_HP, BOSS_BASE_HP,
   TERMINAL_HACK_RADIUS, TERMINAL_HACK_TIME, DIFFICULTY_CONFIGS, COLORS,
-ENEMY_SPAWN_INTERVAL
+ENEMY_SPAWN_INTERVAL, ENEMY_PHYSICS_DEFAULTS, PHYSICS
 } from '../constants';
 import { getRandomPos } from './gameUtils';
 import { useGameState } from './useGameState';
+import { ROOT_FILESYSTEM } from '../archive/data';
+import { getUnlockedMemoryIds } from './memory/MemorySystem';
+import { SENTINEL_BOSS_CONFIG } from './boss/definitions/SentinelBoss';
+import { WARDEN_BOSS_CONFIG } from './boss/definitions/WardenBoss';
+import { SPACESHIP_BOSS_CONFIG } from './boss/definitions/SpaceshipBoss';
 
 export function useSpawner(
   game: ReturnType<typeof useGameState>,
@@ -97,9 +102,17 @@ export function useSpawner(
           const offsetX = (Math.random() - 0.5) * 2; 
           const offsetY = (Math.random() - 0.5) * 2;
           
+          let spawnX = x + offsetX;
+          let spawnY = y + offsetY;
+
+          // SAFE CLAMPING: Ensure XP always lands inside the playable arena
+          // Padded by 1.5 units to keep away from absolute edge walls
+          spawnX = Math.max(1.5, Math.min(GRID_COLS - 2.5, spawnX));
+          spawnY = Math.max(1.5, Math.min(GRID_ROWS - 2.5, spawnY));
+
           foodRef.current.push({
-              x: x + offsetX,
-              y: y + offsetY,
+              x: spawnX,
+              y: spawnY,
               type: FoodType.XP_ORB,
               value: orb.val,
               id: Math.random().toString(36),
@@ -115,10 +128,12 @@ export function useSpawner(
   // ─────────────────────────────
   const cleanupFood = useCallback(() => {
     const now = gameTimeRef.current;
-    // Architecture: Do not filter ref.current directly. Mark for removal.
-    for (const f of foodRef.current) {
+    // Filter in place
+    let i = foodRef.current.length;
+    while (i--) {
+        const f = foodRef.current[i];
         if (f.lifespan && now - f.createdAt > f.lifespan) {
-            f.shouldRemove = true;
+            foodRef.current.splice(i, 1);
         }
     }
   }, [foodRef, gameTimeRef]);
@@ -157,39 +172,90 @@ export function useSpawner(
     }
 
     if (pos) {
-        const isOverride = forcedId === 'BOSS_OVERRIDE';
+        let type: TerminalType = 'RESOURCE';
+        let color = COLORS.terminal;
+        let associatedFileId: string | undefined;
+        let totalTime = TERMINAL_HACK_TIME;
+
+        // EARLY STAGE GATING: No complicated terminals before Stage 3
+        if (stageRef.current < 3) {
+            if (forcedId === 'BOSS_OVERRIDE') return; // Cancel overrides
+            if (type !== 'RESOURCE') type = 'RESOURCE'; // Force simple resource
+        }
+
+        if (forcedId === 'BOSS_OVERRIDE') {
+            type = 'OVERRIDE';
+            color = '#ffaa00';
+            totalTime = 2000;
+        } else {
+            // RARE SPAWN CHECK: Memory Terminal
+            // 15% Chance, but only if there are locked files
+            // AND only if Stage >= 3
+            if (stageRef.current >= 3 && Math.random() < 0.15) {
+                const unlocked = getUnlockedMemoryIds();
+                const files = ROOT_FILESYSTEM.contents.filter(f => f.type === 'file');
+                const lockedFiles = files.filter(f => !unlocked.includes(f.id));
+                
+                if (lockedFiles.length > 0) {
+                    type = 'MEMORY';
+                    color = '#ffd700'; // Gold
+                    // Pick a random locked file
+                    const file = lockedFiles[Math.floor(Math.random() * lockedFiles.length)];
+                    associatedFileId = file.id;
+                    totalTime = 3500; // Harder to hack
+                }
+            }
+        }
+
         terminalsRef.current.push({
           ...pos,
           id: forcedId || Math.random().toString(36),
-          type: isOverride ? 'OVERRIDE' : 'RESOURCE',
+          type,
           radius: TERMINAL_HACK_RADIUS,
           progress: 0,
-          totalTime: isOverride ? 2000 : TERMINAL_HACK_TIME, // Faster hack for override
+          totalTime, 
           isLocked: false,
-          color: isOverride ? '#ffaa00' : COLORS.terminal
+          color,
+          associatedFileId
         });
     }
-  }, [terminalsRef, foodRef, enemiesRef, snakeRef, wallsRef]);
+  }, [terminalsRef, foodRef, enemiesRef, snakeRef, wallsRef, stageRef]);
 
   // ─────────────────────────────
   // ENEMY
   // ─────────────────────────────
   const spawnEnemy = useCallback((forcedType?: EnemyType, forcedPos?: Point) => {
     const diffConfig = DIFFICULTY_CONFIGS[difficulty];
-    const isBossStage = stageRef.current % 4 === 0;
+    const isBossStage = stageRef.current % 5 === 0; // Trigger every 5 stages now (includes WARDEN at 5)
 
     // Use REF for sync logic
     // Prevent double spawn if boss already active OR defeated
     if (isBossStage && !bossActiveRef.current && !game.bossDefeatedRef.current) {
+      // Defer to devSpawnBoss logic but automated
+      // Just call duplicate logic here for safety
       const bossHp =
         BOSS_BASE_HP *
         diffConfig.bossHpMod *
         (1 + stageRef.current * 0.25);
 
-      // BOSS INGRESS: Spawn offscreen TOP
+      // SELECT BOSS CONFIG
+      let bossConfig = SPACESHIP_BOSS_CONFIG;
+      let startState = 'IDLE';
+      let spawnY = -5;
+      let physics = ENEMY_PHYSICS_DEFAULTS[EnemyType.BOSS];
+      
+      // Stage 5 Specific: Warden (UPDATED FOR TOP-DOWN ARENA)
+      if (stageRef.current === 5) {
+          bossConfig = WARDEN_BOSS_CONFIG;
+          startState = 'IDLE_1';
+          spawnY = -5; // Spawn from top, same as Sentinel
+          // Disable vertical physics so it floats in Top Down
+          physics = { usesVerticalPhysics: false, canJump: false, jumpCooldown: 0 };
+      }
+
       enemiesRef.current.push({
         x: Math.floor(GRID_COLS / 2),
-        y: -5, // Offscreen Top
+        y: spawnY,
         id: 'BOSS',
         type: EnemyType.BOSS,
         state: 'SPAWNING', // Start invulnerable
@@ -203,7 +269,21 @@ export function useSpawner(
         attackTimer: 0,
         spawnTimer: 0,
         dashTimer: 0,
-        dashState: 'IDLE'
+        dashState: 'IDLE',
+        // Physics
+        vy: 0,
+        isGrounded: false,
+        physicsProfile: physics,
+        jumpCooldownTimer: 0,
+        jumpIntent: false,
+        // STATE MACHINE INIT
+        bossConfigId: bossConfig.id,
+        bossState: {
+            stateId: startState,
+            timer: 0,
+            phaseIndex: 0
+        },
+        facing: -1 // Face left towards start
       });
 
       setBossActive(true);
@@ -310,11 +390,71 @@ export function useSpawner(
         spawnSide = 'TOP';
     }
 
-    const type =
-      forcedType ??
-      diffConfig.allowedEnemies[
-        Math.floor(Math.random() * diffConfig.allowedEnemies.length)
-      ];
+    // ─────────────────────────────
+    // MATRIX SPAWN LOGIC & HARD RULES
+    // ─────────────────────────────
+    
+    // 1. Determine Intended Type
+    let type = forcedType;
+    if (!type) {
+        // Default random from allowed config
+        type = diffConfig.allowedEnemies[
+            Math.floor(Math.random() * diffConfig.allowedEnemies.length)
+        ];
+    }
+
+    // 2. Count Active Entities
+    const activeEnemies = enemiesRef.current;
+    const activeInterceptors = activeEnemies.filter(e => e.type === EnemyType.INTERCEPTOR).length;
+    const activeShooters = activeEnemies.filter(e => e.type === EnemyType.SHOOTER).length;
+    const activeDashers = activeEnemies.filter(e => e.type === EnemyType.DASHER).length;
+    const currentStage = stageRef.current;
+
+    // 3. Apply Hard Rules
+    // Rule: Neophyte (Stages 1-5) -> Only Hunters
+    // Rule: Operator (Stages 6-10) -> Hunters + Interceptors
+    // Rule: Veteran (Stages 11-15) -> + Shooters
+    // Rule: Cyberpsycho (Stages 16+) -> + Dashers
+
+    // ENFORCE STAGE GATING
+    // (Overrides difficulty config if user is on high difficulty but low stage)
+    if (!forcedType) {
+        if (currentStage <= 5) {
+            type = EnemyType.HUNTER;
+        } else if (currentStage <= 10) {
+            if (type !== EnemyType.HUNTER && type !== EnemyType.INTERCEPTOR) type = EnemyType.HUNTER;
+        } else if (currentStage <= 15) {
+            if (type === EnemyType.DASHER) type = EnemyType.HUNTER; // No dashers yet
+        }
+    }
+
+    // ENFORCE PRESSURE LIMITS
+    // Interceptor: Max 1 early Operator (6-8)
+    if (type === EnemyType.INTERCEPTOR) {
+        if (currentStage <= 8 && activeInterceptors >= 1) {
+            type = EnemyType.HUNTER;
+        }
+        // Veteran Rule: No Shooter overlap until 13
+        if (currentStage < 13 && activeShooters > 0) {
+            type = EnemyType.HUNTER;
+        }
+    }
+
+    // Shooter: Spawn Alone Early Veteran (11-12)
+    if (type === EnemyType.SHOOTER) {
+        if (currentStage < 13) {
+            if (activeInterceptors > 0) type = EnemyType.HUNTER; // Prevent overlap
+            // Maybe limit shooter count to 1 early?
+            if (activeShooters >= 1) type = EnemyType.HUNTER;
+        }
+    }
+
+    // Dasher: Max 2 early Cyberpsycho (16-18)
+    if (type === EnemyType.DASHER) {
+        if (currentStage < 18 && activeDashers >= 2) {
+            type = EnemyType.HUNTER;
+        }
+    }
 
     const hpScale =
       (1 + stageRef.current * 0.35 + levelRef.current * 0.12) *
@@ -337,8 +477,15 @@ export function useSpawner(
       flash: 0,
       hitCooldowns: {},
       attackTimer: 0,
+      spawnTimer: 0,
       dashTimer: 0,
-      dashState: 'IDLE'
+      dashState: 'IDLE',
+      // Physics
+      vy: 0,
+      isGrounded: false,
+      physicsProfile: ENEMY_PHYSICS_DEFAULTS[type],
+      jumpCooldownTimer: 0,
+      jumpIntent: false
     });
 
     audioEventsRef.current.push({ type: 'ENEMY_SPAWN' });
@@ -357,11 +504,84 @@ export function useSpawner(
     directionRef // Added dependency
   ]);
 
+  // NEW: Developer Boss Spawner (Bypasses natural checks)
+  const devSpawnBoss = useCallback((stageId: number, phaseIndex: number) => {
+      const diffConfig = DIFFICULTY_CONFIGS[difficulty];
+      const bossHp = BOSS_BASE_HP * diffConfig.bossHpMod * (1 + stageId * 0.25);
+      
+      let bossConfig = SPACESHIP_BOSS_CONFIG;
+      let startState = 'IDLE';
+      let spawnY = -5;
+      let physics = ENEMY_PHYSICS_DEFAULTS[EnemyType.BOSS];
+
+      // Warden Logic (UPDATED)
+      if (stageId === 5) {
+          bossConfig = WARDEN_BOSS_CONFIG;
+          startState = 'IDLE_1';
+          spawnY = -5; 
+          // Disable vertical physics so it floats in Top Down
+          physics = { usesVerticalPhysics: false, canJump: false, jumpCooldown: 0 };
+      }
+
+      // Check Phase override
+      const requestedPhase = bossConfig.phases[phaseIndex];
+      const actualState = requestedPhase ? requestedPhase.entryState : startState;
+      const actualPhysics = physics;
+      
+      // Force HP to threshold if phase > 0?
+      // For testing, full HP is fine, but state machine logic might revert phase if HP is full.
+      // We set HP to the max of that phase threshold to "stick" it?
+      let currentHp = bossHp;
+      if (requestedPhase && requestedPhase.threshold < 1.0) {
+          // Set HP slightly below threshold to ensure logic sticks
+          currentHp = bossHp * requestedPhase.threshold - 1;
+      }
+
+      enemiesRef.current.push({
+        x: Math.floor(GRID_COLS / 2),
+        y: spawnY,
+        id: 'BOSS',
+        type: EnemyType.BOSS,
+        state: 'SPAWNING',
+        spawnSide: 'TOP',
+        spawnTime: gameTimeRef.current,
+        hp: currentHp,
+        maxHp: bossHp,
+        flash: 0,
+        bossPhase: 1, // Visual phase (legacy)
+        attackTimer: 0,
+        spawnTimer: 0,
+        dashTimer: 0,
+        dashState: 'IDLE',
+        vy: 0,
+        isGrounded: false,
+        physicsProfile: actualPhysics,
+        jumpCooldownTimer: 0,
+        jumpIntent: false,
+        bossConfigId: bossConfig.id,
+        bossState: {
+            stateId: actualState,
+            timer: 0,
+            phaseIndex: phaseIndex
+        },
+        facing: -1
+      });
+
+      setBossActive(true);
+      bossActiveRef.current = true;
+      audioEventsRef.current.push({ type: 'ENEMY_SPAWN' });
+      triggerShake(25, 25);
+
+  }, [difficulty, enemiesRef, gameTimeRef, setBossActive, bossActiveRef, audioEventsRef, triggerShake]);
+
   // ─────────────────────────────
   // UPDATE LOOP
   // ─────────────────────────────
   const update = useCallback((dt: number) => {
-    // 🔒 FOOD SUSTAINABILITY CHECK (Classic Mode)
+    // 1. Housekeeping
+    cleanupFood();
+
+    // 2. FOOD SUSTAINABILITY CHECK (Classic Mode)
     // Ensure we always have at least 1 regular food item on the field.
     // If food is eaten (count < 1), spawn a new one immediately.
     
@@ -415,9 +635,9 @@ export function useSpawner(
   }, [
       difficulty, bossActiveRef, spawnEnemy, spawnTerminal, terminalsRef, 
       enemySpawnTimerRef, terminalSpawnTimerRef, foodRef, spawnFood, 
-      stageReadyRef, bossOverrideTimerRef, audioEventsRef
+      stageReadyRef, bossOverrideTimerRef, audioEventsRef, cleanupFood
   ]);
 
 
-    return { update, spawnFood, spawnLoot, spawnXpOrbs, spawnEnemy, spawnTerminal, cleanupFood, pruneEnemies };
+    return { update, spawnFood, spawnLoot, spawnXpOrbs, spawnEnemy, spawnTerminal, cleanupFood, pruneEnemies, devSpawnBoss };
 }

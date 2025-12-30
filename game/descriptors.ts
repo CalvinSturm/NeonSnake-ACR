@@ -28,6 +28,7 @@ export const DESCRIPTOR_REGISTRY: Record<string, Descriptor> = {
   SHIELD: { id: 'SHIELD', name: 'ION SHIELD', description: 'Absorbs one lethal hit or collision. Regenerates each stage.', category: 'DEFENSE', rarity: 'RARE', icon: '🛡️', color: 'text-cyan-400', maxLevel: 1 },
   REFLECTOR_MESH: { id: 'REFLECTOR_MESH', name: 'REFLECTOR MESH', description: 'Chance to reflect enemy projectiles back at the source.', category: 'DEFENSE', rarity: 'RARE', icon: '📡', color: 'text-cyan-200', maxLevel: 5 },
   GHOST_COIL: { id: 'GHOST_COIL', name: 'GHOST COIL', description: 'Grant temporary intangibility (phasing) after taking damage.', category: 'DEFENSE', rarity: 'RARE', icon: '👻', color: 'text-gray-300', maxLevel: 3 },
+  LUCK: { id: 'LUCK', name: 'RNG MANIPULATOR', description: 'Increases probability of high-rarity system upgrades.', category: 'UTILITY', rarity: 'RARE', icon: '🎲', color: 'text-green-300', maxLevel: 5 },
   
   // SYSTEM & PASSIVE
   FOOD: { id: 'FOOD', name: 'SYNTHETIC ENZYMES', description: 'Enhances healing and XP gain from consuming data.', category: 'ECONOMY', rarity: 'COMMON', icon: '💊', color: 'text-green-400', maxLevel: 999 },

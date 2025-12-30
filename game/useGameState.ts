@@ -1,42 +1,92 @@
 
-import { useRef, useState, useCallback } from 'react';
+import { useRef, useState, useCallback, useEffect } from 'react';
 import { 
   GameStatus, Difficulty, CharacterProfile, Direction, UpgradeStats, 
   Enemy, FoodItem, Projectile, Shockwave, LightningArc, Particle, 
-  FloatingText, Mine, Terminal, DigitalRainDrop, AudioRequest, Point, UpgradeOption, ModalState
+  FloatingText, Mine, Terminal, DigitalRainDrop, AudioRequest, Point, UpgradeOption, ModalState,
+  MobileControlScheme, CameraMode, Hitbox, DevBootstrapConfig, WeaponStats, CLIAnimation
 } from '../types';
-import { CHARACTERS } from '../constants';
+import { HUDConfig } from '../ui/hud/types';
+import { CHARACTERS, CANVAS_WIDTH, DEFAULT_SETTINGS, PHYSICS } from '../constants';
 import { resolveTraits, TraitModifiers } from './traitResolver';
+import { audio } from '../utils/audio';
+import { VisionProtocolId } from '../ui/vision/VisionProtocolRegistry';
+import { CosmeticProfile, loadCosmeticProfile, saveCosmeticProfile } from './cosmetics/CosmeticProfile';
+import { hasUnreadMemories, markMemoriesAsRead } from './memory/MemorySystem';
+import { CameraState, CameraBehavior } from './camera/types';
+import { PhysicsState } from './physics/types';
+import { useFloorVolumes } from './floor/useFloorVolumes';
+import { generateWalls } from './gameUtils';
+import { DevIntent } from './intents/DevIntents';
 
 export interface UserSettings {
   skipCountdown: boolean;
   uiScale: number;
-  fxIntensity: number; // 0.0 to 1.0
+  gameScale: number;
+  fxIntensity: number;
   screenShake: boolean;
   highContrast: boolean;
   musicVolume: number;
   sfxVolume: number;
+  mobileControlScheme: MobileControlScheme;
+  controlOpacity: number;
+  controlPos: Point | null;
+  isControlEditMode: boolean;
+  visionProtocolId: VisionProtocolId;
+  hudConfig: HUDConfig;
+  snakeStyle: string; 
 }
+
 
 export const DEFAULT_USER_SETTINGS: UserSettings = {
   skipCountdown: false,
   uiScale: 1.0,
+  gameScale: 1.0,
   fxIntensity: 1.0,
   screenShake: true,
   highContrast: false,
   musicVolume: 0.3,
-  sfxVolume: 0.4
+  sfxVolume: 0.4,
+  mobileControlScheme: 'JOYSTICK',
+  controlOpacity: 0.8,
+  controlPos: null,
+  isControlEditMode: false,
+  visionProtocolId: 'combat',
+  hudConfig: {
+    layout: 'CYBER',
+    numberStyle: 'DIGITAL',
+    theme: 'NEON',
+    showAnimations: true,
+    opacity: 1.0
+  },
+  snakeStyle: 'AUTO'
 };
+
+export interface UiStats {
+    globalDamage: number;
+    globalFireRate: number;
+    globalArea: number;
+    critChance: number;
+    critMultiplier: number;
+    projectileSpeed: number;
+    moveSpeed: number;
+    activeWeapons: string[];
+    maxWeaponSlots: number;
+    weaponLevels: Record<string, number>;
+    tailIntegrity: number;
+}
 
 export function useGameState() {
   const [status, setStatus] = useState<GameStatus>(GameStatus.IDLE);
-  const [modalState, setModalState] = useState<ModalState>('NONE'); // MODAL AUTHORITY
+  const [modalState, setModalState] = useState<ModalState>('NONE');
   
   const [difficulty, setDifficulty] = useState<Difficulty>(Difficulty.EASY);
   const [unlockedDifficulties, setUnlockedDifficulties] = useState<Difficulty[]>([Difficulty.EASY]);
   
   const [uiScore, setUiScore] = useState(0);
-  const [uiXp, setUiXp] = useState(0);
+  const [uiXp, setUiXp] = useState(0); 
+  const [uiXpValues, setUiXpValues] = useState({ current: 0, max: 100 }); 
+  
   const [uiLevel, setUiLevel] = useState(1);
   const [uiStage, setUiStage] = useState(1);
   const [highScore, setHighScore] = useState(0);
@@ -49,19 +99,56 @@ export function useGameState() {
   const [activePowerUps, setActivePowerUps] = useState({ slow: false, magnet: false });
   const [isMuted, setIsMuted] = useState(false);
   
-  // Settings State
+  const [uiStageStatus, setUiStageStatus] = useState<string>('');
+  
+  const [uiStats, setUiStats] = useState<UiStats>({
+      globalDamage: 1,
+      globalFireRate: 1,
+      globalArea: 1,
+      critChance: 0.05,
+      critMultiplier: 1.5,
+      projectileSpeed: 1,
+      moveSpeed: 1,
+      activeWeapons: [],
+      maxWeaponSlots: 3,
+      weaponLevels: {},
+      tailIntegrity: 100
+  });
+  
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_USER_SETTINGS);
 
+  // Camera Control Switch
+  const [cameraControlsEnabled, setCameraControlsEnabled] = useState(false);
+
+  // Cosmetic State
+  const [unlockedCosmetics, setUnlockedCosmetics] = useState<Set<string>>(new Set());
+  const [sessionNewUnlocks, setSessionNewUnlocks] = useState<string[]>([]);
+  const [toastQueue, setToastQueue] = useState<string[]>([]);
+  
+  // Lore State
+  const [hasUnreadArchiveData, setHasUnreadArchiveData] = useState(false);
+  
+  // Load profile on mount
+  useEffect(() => {
+      const profile = loadCosmeticProfile();
+      setUnlockedCosmetics(new Set((profile.unlocked as any) as string[]));
+      
+      // Load Lore State
+      setHasUnreadArchiveData(hasUnreadMemories());
+  }, []);
+
   // REFS
-  const runIdRef = useRef(0); // RUN BOUNDARY
+  const runIdRef = useRef(0);
   const settingsReturnRef = useRef<ModalState>('NONE');
 
+  // DEV INTENT QUEUE
+  const devIntentQueueRef = useRef<DevIntent[]>([]);
+
   const snakeRef = useRef<Point[]>([]);
-  const prevTailRef = useRef<Point | null>(null); // NEW: For smooth tail interpolation
-  const tailIntegrityRef = useRef(100); // NEW: Tail HP for physical blocking
+  const prevTailRef = useRef<Point | null>(null);
+  const tailIntegrityRef = useRef(100);
   
-  // TRAIT REF (Resolved on Reset)
-  const traitsRef = useRef<TraitModifiers>(resolveTraits(null));
+  const traitsRef = useRef<TraitModifiers>(resolveTraits(null, 1));
   
   const enemiesRef = useRef<Enemy[]>([]);
   const foodRef = useRef<FoodItem[]>([]);
@@ -74,28 +161,82 @@ export function useGameState() {
   const particlesRef = useRef<Particle[]>([]);
   const floatingTextsRef = useRef<FloatingText[]>([]);
   const digitalRainRef = useRef<DigitalRainDrop[]>([]);
+  const hitboxesRef = useRef<Hitbox[]>([]); // NEW: Boss Hitboxes
+  const cliAnimationsRef = useRef<CLIAnimation[]>([]); // NEW: CLI FX
   
+  // DEV FLAGS
+  const devModeFlagsRef = useRef<{ freeMovement: boolean; godMode: boolean }>({ freeMovement: false, godMode: false });
+
   const scoreRef = useRef(0);
   const enemiesKilledRef = useRef(0);
   const terminalsHackedRef = useRef(0);
   const startTimeRef = useRef(Date.now());
   const gameTimeRef = useRef(0);
   const failureMessageRef = useRef('');
+  const maxComboRef = useRef(0);
   
   const invulnerabilityTimeRef = useRef(0);
   const audioEventsRef = useRef<AudioRequest[]>([]);
+  const lastDamageTimeRef = useRef(-10000);
   
   const transitionStartTimeRef = useRef(0);
-  const transitionStateRef = useRef({ phase: 'NONE' as const });
   const pendingStatusRef = useRef<GameStatus | null>(null);
   const stageArmedRef = useRef(false);
-  const stageReadyRef = useRef(false); // NEW: Signals stage objectives complete (Arming transition)
+  const stageReadyRef = useRef(false);
   
   const bossEnemyRef = useRef<Enemy | null>(null);
   const bossActiveRef = useRef(false);
   const bossDefeatedRef = useRef(false);
-  const bossOverrideTimerRef = useRef(0); // NEW: Track periodic switch spawn
+  const bossOverrideTimerRef = useRef(0);
   
+  const transitionStateRef = useRef<{ phase: 'NONE' | 'intro' | 'outro' }>({ phase: 'NONE' });
+
+  // ADAPTIVE PROGRESSION REFS
+  const stageStatsRef = useRef({ damageTaken: 0, startTime: 0 });
+  const masteryRef = useRef(false);
+
+  // ─── FLOOR & CAMERA ───
+  const floor = useFloorVolumes(); // Registry Hook
+  const cameraRef = useRef<CameraState>({
+      mode: CameraMode.TOP_DOWN,
+      behavior: CameraBehavior.FOLLOW_PLAYER,
+      x: 0,
+      y: 0,
+      zoom: 1.0,
+      rotation: 0,
+      isLocked: false,
+      scrollSpeed: 0,
+      targetMode: null,
+      transitionT: 0,
+      transitionDuration: 1000
+  });
+
+  const requestCameraSwitch = useCallback((mode: CameraMode, durationMs: number = 1500) => {
+      const cam = cameraRef.current;
+      if (cam.mode === mode && !cam.targetMode) return;
+      if (cam.targetMode === mode) return;
+
+      // Start transition
+      cam.targetMode = mode;
+      cam.transitionT = 0;
+      cam.transitionDuration = durationMs;
+      
+      // Audio Tick
+      audioEventsRef.current.push({ type: 'UI_HARD_CLICK' });
+  }, []);
+
+  const updateCamera = useCallback((dt: number) => {
+      // Logic handled by useCameraController
+  }, []);
+
+  // ─── PHYSICS SYSTEM (Side Scroll) ───
+  const physicsRef = useRef<PhysicsState>({
+      vy: 0,
+      isGrounded: true
+  });
+  
+  const jumpIntentRef = useRef(false);
+
   const statsRef = useRef<UpgradeStats>({
     weapon: CHARACTERS[0].initialStats.weapon as any,
     slowDurationMod: 1,
@@ -107,9 +248,10 @@ export function useGameState() {
     critMultiplier: 1.5,
     hackSpeedMod: 1,
     moveSpeedMod: 1,
-    activeWeaponIds: [],
-    maxWeaponSlots: 3,
-    acquiredUpgradeIds: [],
+    luck: 0,
+    activeWeaponIds: [] as string[],
+    maxWeaponSlots: 3, 
+    acquiredUpgradeIds: [] as string[],
     globalDamageMod: 1,
     globalFireRateMod: 1,
     globalAreaMod: 1,
@@ -134,7 +276,7 @@ export function useGameState() {
   const shakeRef = useRef({ x: 0, y: 0 });
   const chromaticAberrationRef = useRef(0);
   const lastEatTimeRef = useRef(0);
-  
+
   const weaponFireTimerRef = useRef(0);
   const auraTickTimerRef = useRef(0);
   const mineDropTimerRef = useRef(0);
@@ -149,9 +291,7 @@ export function useGameState() {
   
   const lastPowerUpStateRef = useRef({ slow: false, magnet: false });
 
-  // ─────────────────────────────
-  // MODAL LOGIC
-  // ─────────────────────────────
+  // Modal Logic
   const openSettings = useCallback(() => {
     if (modalState === 'SETTINGS') return;
     settingsReturnRef.current = modalState;
@@ -163,44 +303,98 @@ export function useGameState() {
 
   const closeSettings = useCallback(() => {
     if (modalState !== 'SETTINGS') return;
+    setSettings(s => ({ ...s, isControlEditMode: false }));
     setModalState(settingsReturnRef.current);
     if (settingsReturnRef.current === 'NONE' && status === GameStatus.PAUSED) {
-        setStatus(GameStatus.PLAYING);
+        if (settings.skipCountdown) {
+            setStatus(GameStatus.PLAYING);
+        } else {
+            setResumeCountdown(3);
+            setStatus(GameStatus.RESUMING);
+        }
     }
-  }, [modalState, status]);
+  }, [modalState, status, settings.skipCountdown]);
 
   const togglePause = useCallback(() => {
-    if (modalState === 'SETTINGS') return; // Settings owns input
-    
+    if (modalState === 'SETTINGS') return;
     if (status === GameStatus.PLAYING) {
         setStatus(GameStatus.PAUSED);
         setModalState('PAUSE');
     } else if (status === GameStatus.PAUSED && modalState === 'PAUSE') {
-        setStatus(GameStatus.PLAYING);
         setModalState('NONE');
+        if (settings.skipCountdown) {
+            setStatus(GameStatus.PLAYING);
+        } else {
+            setResumeCountdown(3);
+            setStatus(GameStatus.RESUMING);
+        }
     }
-  }, [status, modalState]);
+  }, [status, modalState, settings.skipCountdown]);
 
-  // ─────────────────────────────
-  // RUN RESET (AUTHORITATIVE)
-  // ─────────────────────────────
+  const toggleMute = useCallback(() => {
+      setIsMuted(prev => {
+          const next = !prev;
+          if (next) {
+              audio.setVolume(0, 0);
+          } else {
+              audio.setVolume(settings.musicVolume, settings.sfxVolume);
+          }
+          return next;
+      });
+  }, [settings]);
+
+  const syncUiStats = useCallback(() => {
+      const s = statsRef.current;
+      const w = s.weapon;
+      
+      setUiStats({
+          globalDamage: s.globalDamageMod,
+          globalFireRate: s.globalFireRateMod,
+          globalArea: s.globalAreaMod,
+          critChance: s.critChance,
+          critMultiplier: s.critMultiplier,
+          projectileSpeed: s.globalProjectileSpeedMod,
+          moveSpeed: s.moveSpeedMod,
+          activeWeapons: [...s.activeWeaponIds],
+          maxWeaponSlots: s.maxWeaponSlots,
+          weaponLevels: {
+              'CANNON': w.cannonLevel,
+              'AURA': w.auraLevel,
+              'MINES': w.mineLevel,
+              'LIGHTNING': w.chainLightningLevel,
+              'NANO_SWARM': w.nanoSwarmLevel,
+              'PRISM_LANCE': w.prismLanceLevel,
+              'NEON_SCATTER': w.neonScatterLevel,
+              'VOLT_SERPENT': w.voltSerpentLevel,
+              'PHASE_RAIL': w.phaseRailLevel,
+              'REFLECTOR_MESH': w.reflectorMeshLevel,
+              'GHOST_COIL': w.ghostCoilLevel,
+              'NEURAL_MAGNET': w.neuralMagnetLevel,
+              'OVERCLOCK': w.overclockLevel,
+              'ECHO_CACHE': w.echoCacheLevel,
+              'LUCK': w.luckLevel
+          },
+          tailIntegrity: tailIntegrityRef.current
+      });
+  }, []);
+  
+  // NEW: Helper to update traits when level changes
+  const recalcTraits = useCallback(() => {
+      traitsRef.current = resolveTraits(selectedChar, levelRef.current);
+  }, [selectedChar]);
+
   const resetGame = useCallback((charProfile: CharacterProfile) => {
-    // 1. INCREMENT RUN ID (Invalidates previous run state)
     runIdRef.current += 1;
-
-    // 2. RESOLVE TRAITS (Single Source of Truth)
-    traitsRef.current = resolveTraits(charProfile);
-
-    // 3. ATOMIC METRIC RESET
-    // SAFE INITIALIZATION: Head(10), Neck(9), Tail(8) for Direction.RIGHT
-    // Prevents spawn collision/overlap
+    // Initial Traits at Level 1
+    traitsRef.current = resolveTraits(charProfile, 1);
+    
     snakeRef.current = [
       { x: 10, y: 10 },
       { x: 9, y: 10 },
       { x: 8, y: 10 }
     ];
-    prevTailRef.current = { x: 7, y: 10 }; // Phantom tail for interpolation on frame 0
-    tailIntegrityRef.current = 100; // Reset Block Integrity
+    prevTailRef.current = { x: 7, y: 10 };
+    tailIntegrityRef.current = 100;
 
     directionRef.current = Direction.RIGHT;
     directionQueueRef.current = [];
@@ -216,6 +410,16 @@ export function useGameState() {
     particlesRef.current = [];
     floatingTextsRef.current = [];
     digitalRainRef.current = [];
+    hitboxesRef.current = []; 
+    cliAnimationsRef.current = [];
+    
+    floor.clearFloors();
+    floor.addFloorVolume({
+        id: 'default_floor',
+        startX: -1000,
+        endX: 100000,
+        topY: PHYSICS.GROUND_Y_GRID
+    });
     
     scoreRef.current = 0;
     enemiesKilledRef.current = 0;
@@ -225,6 +429,7 @@ export function useGameState() {
     levelRef.current = 1;
     xpRef.current = 0;
     nextLevelXpRef.current = 500;
+    maxComboRef.current = 0;
     
     gameTimeRef.current = 0;
     startTimeRef.current = Date.now();
@@ -240,9 +445,33 @@ export function useGameState() {
     bossEnemyRef.current = null;
     bossOverrideTimerRef.current = 0;
     
-    // ATOMIC STATS RECONSTRUCTION
+    stageStatsRef.current = { damageTaken: 0, startTime: 0 };
+    masteryRef.current = false;
+
+    setSessionNewUnlocks([]);
+    
+    cameraRef.current = {
+        mode: CameraMode.TOP_DOWN,
+        behavior: CameraBehavior.FOLLOW_PLAYER,
+        x: 0,
+        y: 0,
+        zoom: 1.0,
+        rotation: 0,
+        isLocked: false,
+        scrollSpeed: 0,
+        targetMode: null,
+        transitionT: 0,
+        transitionDuration: 1000
+    };
+    
+    physicsRef.current = {
+        vy: 0,
+        isGrounded: true
+    };
+    jumpIntentRef.current = false;
+    
     const baseStats: UpgradeStats = {
-        weapon: JSON.parse(JSON.stringify(CHARACTERS[0].initialStats.weapon)),
+        weapon: (JSON.parse(JSON.stringify(CHARACTERS[0].initialStats.weapon)) || {}) as WeaponStats,
         slowDurationMod: 1,
         magnetRangeMod: 0,
         shieldActive: false,
@@ -252,9 +481,10 @@ export function useGameState() {
         critMultiplier: 1.5,
         hackSpeedMod: 1,
         moveSpeedMod: 1,
-        activeWeaponIds: [],
+        luck: 0,
+        activeWeaponIds: [] as string[],
         maxWeaponSlots: 3, 
-        acquiredUpgradeIds: [],
+        acquiredUpgradeIds: [] as string[],
         globalDamageMod: 1,
         globalFireRateMod: 1,
         globalAreaMod: 1,
@@ -282,26 +512,118 @@ export function useGameState() {
 
     statsRef.current.activeWeaponIds = initialWeapons.slice(0, statsRef.current.maxWeaponSlots);
     
-    // Robust Initialization of Acquired IDs (Deduplicate)
-    const uniqueAcquired = new Set([...initialWeapons]);
+    const uniqueAcquired = new Set<string>([...initialWeapons]);
     if (statsRef.current.shieldActive) uniqueAcquired.add('SHIELD');
-    statsRef.current.acquiredUpgradeIds = Array.from(uniqueAcquired);
+    statsRef.current.acquiredUpgradeIds = [...uniqueAcquired];
 
-    // UI Resets
     setUiScore(0);
     setUiXp(0);
+    setUiXpValues({ current: 0, max: 500 });
     setUiLevel(1);
     setUiStage(1);
     setUiCombo(0);
     setUiShield(!!statsRef.current.shieldActive);
     setBossActive(false);
+    setUiStageStatus('');
+    lastDamageTimeRef.current = -10000;
     
-    // Clear Modal State (except if handled by caller, but generally reset means new run)
+    syncUiStats();
     setModalState('NONE');
 
     powerUpsRef.current = { slowUntil: 0, magnetUntil: 0 };
     nanoSwarmAngleRef.current = 0;
     
+    weaponFireTimerRef.current = 0;
+    auraTickTimerRef.current = 0;
+    mineDropTimerRef.current = statsRef.current.weapon.mineDropRate || 0;
+    
+    prismLanceTimerRef.current = 0;
+    neonScatterTimerRef.current = 0;
+    voltSerpentTimerRef.current = 0;
+    phaseRailChargeRef.current = 0;
+    echoDamageStoredRef.current = 0;
+    overclockActiveRef.current = false;
+    overclockTimerRef.current = 0;
+
+  }, [syncUiStats, floor.clearFloors, floor.addFloorVolume]);
+
+  const devApplyBootstrap = useCallback((config: DevBootstrapConfig) => {
+    // 1. Reset Game (Use default char if none selected, or Striker)
+    resetGame(selectedChar || CHARACTERS[0]);
+
+    // 2. Apply Dev Flags
+    devModeFlagsRef.current = {
+        freeMovement: !!config.freeMovement,
+        godMode: false
+    };
+
+    // 3. Set Stage
+    stageRef.current = config.stageId;
+    setUiStage(config.stageId);
+    
+    // 4. Walls
+    if (config.disableWalls) {
+        wallsRef.current = [];
+    } else {
+        wallsRef.current = generateWalls(config.stageId);
+    }
+    
+    // 5. Camera
+    if (config.cameraMode) {
+        cameraRef.current.mode = config.cameraMode;
+        cameraRef.current.targetMode = null; // No transition
+        cameraRef.current.transitionT = 0;
+        cameraRef.current.zoom = 1.0;
+        cameraRef.current.rotation = 0;
+        
+        // Apply behavior from config, default to FOLLOW_PLAYER
+        if (config.cameraBehavior) {
+            cameraRef.current.behavior = config.cameraBehavior as CameraBehavior;
+        } else {
+            cameraRef.current.behavior = CameraBehavior.FOLLOW_PLAYER;
+        }
+
+        // Snap X for Side Scroll immediately (only if following)
+        if (config.cameraMode === CameraMode.SIDE_SCROLL && cameraRef.current.behavior === CameraBehavior.FOLLOW_PLAYER) {
+            const headPxX = 10 * DEFAULT_SETTINGS.gridSize; // 200
+            cameraRef.current.x = headPxX - (CANVAS_WIDTH / cameraRef.current.zoom) * 0.3;
+        }
+    }
+    
+    // 6. Boss
+    if (config.forceBoss || config.stageId % 5 === 0) {
+        // Note: The caller (SnakeGame) should invoke spawner.devSpawnBoss
+    }
+
+    // 7. UI Sync
+    setUiStageStatus('DEV_BOOT');
+    setStatus(GameStatus.PLAYING);
+
+  }, [resetGame, selectedChar, stageRef, setUiStage, wallsRef, cameraRef, setUiStageStatus, setStatus]);
+
+  const unlockCosmetic = useCallback((id: string) => {
+      setUnlockedCosmetics(prev => {
+          if (prev.has(id)) return prev;
+          const next = new Set(prev).add(id);
+          saveCosmeticProfile({ unlocked: Array.from(next), seen: [] });
+          return next;
+      });
+      setSessionNewUnlocks(prev => [...prev, id]);
+      setToastQueue(prev => [...prev, id]);
+  }, []);
+
+  const clearToast = useCallback(() => {
+      setToastQueue(prev => prev.slice(1));
+  }, []);
+
+  const markArchiveRead = useCallback(() => {
+      markMemoriesAsRead();
+      setHasUnreadArchiveData(false);
+  }, []);
+
+  // ─── DEV INTENT QUEUE ───
+  const queueDevIntent = useCallback((intent: DevIntent) => {
+    devIntentQueueRef.current.push(intent);
   }, []);
 
   return {
@@ -311,6 +633,7 @@ export function useGameState() {
     unlockedDifficulties, setUnlockedDifficulties,
     uiScore, setUiScore,
     uiXp, setUiXp,
+    uiXpValues, setUiXpValues,
     uiLevel, setUiLevel,
     uiStage, setUiStage,
     highScore, setHighScore,
@@ -322,86 +645,42 @@ export function useGameState() {
     resumeCountdown, setResumeCountdown,
     activePowerUps, setActivePowerUps,
     isMuted, setIsMuted,
-    
+    toggleMute,
+    uiStats, syncUiStats,
+    uiStageStatus, setUiStageStatus,
     settings, setSettings,
-    
-    runIdRef, // Expose Run ID
-    
-    snakeRef,
-    prevTailRef, // Exposed for rendering interpolation
-    tailIntegrityRef, // Exposed for logic
-    traitsRef, // Exposed for logic systems
-    
-    enemiesRef,
-    foodRef,
-    wallsRef,
-    terminalsRef,
-    projectilesRef,
-    minesRef,
-    shockwavesRef,
-    lightningArcsRef,
-    particlesRef,
-    floatingTextsRef,
-    digitalRainRef,
-    
-    scoreRef,
-    enemiesKilledRef,
-    terminalsHackedRef,
-    startTimeRef,
-    gameTimeRef,
-    failureMessageRef,
-    
-    invulnerabilityTimeRef,
-    audioEventsRef,
-    
-    transitionStartTimeRef,
-    transitionStateRef,
-    pendingStatusRef,
-    stageArmedRef,
-    stageReadyRef,
-    
-    bossEnemyRef,
-    bossActiveRef,
-    bossDefeatedRef,
-    bossOverrideTimerRef, // Added
-    
-    statsRef,
-    powerUpsRef,
-    ghostCoilCooldownRef,
-    
-    directionRef,
-    directionQueueRef,
-    levelRef,
-    xpRef,
-    nextLevelXpRef,
-    
-    enemySpawnTimerRef,
-    terminalSpawnTimerRef,
-    
-    stageRef,
-    stageScoreRef,
-    
-    shakeRef,
-    chromaticAberrationRef,
-    lastEatTimeRef,
-    
-    weaponFireTimerRef,
-    auraTickTimerRef,
-    mineDropTimerRef,
-    prismLanceTimerRef,
-    neonScatterTimerRef,
-    voltSerpentTimerRef,
-    phaseRailChargeRef,
-    echoDamageStoredRef,
-    overclockActiveRef,
-    overclockTimerRef,
-    nanoSwarmAngleRef,
-    
+    cameraControlsEnabled, setCameraControlsEnabled,
+    runIdRef,
+    snakeRef, prevTailRef, tailIntegrityRef, traitsRef, recalcTraits,
+    enemiesRef, foodRef, wallsRef, terminalsRef, projectilesRef, minesRef,
+    shockwavesRef, lightningArcsRef, particlesRef, floatingTextsRef, digitalRainRef,
+    hitboxesRef, // Export Hitboxes
+    cliAnimationsRef, // Export CLI Animations
+    devModeFlagsRef, // NEW: Dev Flags
+    scoreRef, enemiesKilledRef, terminalsHackedRef, startTimeRef, gameTimeRef, failureMessageRef,
+    invulnerabilityTimeRef, audioEventsRef, lastDamageTimeRef,
+    transitionStartTimeRef, pendingStatusRef, stageArmedRef, stageReadyRef,
+    bossEnemyRef, bossActiveRef, bossDefeatedRef, bossOverrideTimerRef, maxComboRef,
+    statsRef, powerUpsRef, ghostCoilCooldownRef,
+    directionRef, directionQueueRef, levelRef, xpRef, nextLevelXpRef,
+    enemySpawnTimerRef, terminalSpawnTimerRef,
+    stageRef, stageScoreRef, stageStatsRef, masteryRef,
+    shakeRef, chromaticAberrationRef, lastEatTimeRef,
+    weaponFireTimerRef, auraTickTimerRef, mineDropTimerRef, prismLanceTimerRef, neonScatterTimerRef,
+    voltSerpentTimerRef, phaseRailChargeRef, echoDamageStoredRef, overclockActiveRef, overclockTimerRef, nanoSwarmAngleRef,
     lastPowerUpStateRef,
-    
-    resetGame,
-    openSettings,
-    closeSettings,
-    togglePause
+    transitionStateRef,
+    cameraRef, updateCamera, requestCameraSwitch,
+    physicsRef, jumpIntentRef, 
+    floor, 
+    resetGame, openSettings, closeSettings, togglePause,
+    unlockedCosmetics, sessionNewUnlocks, toastQueue,
+    unlockCosmetic, clearToast,
+    hasUnreadArchiveData, setHasUnreadArchiveData, markArchiveRead,
+    devHelper: {
+        applyBootstrap: devApplyBootstrap,
+        queueDevIntent // Export intent queue method
+    },
+    devIntentQueueRef
   };
 }
