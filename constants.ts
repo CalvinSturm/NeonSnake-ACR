@@ -558,7 +558,7 @@ export const EMP_CHARGE_PER_FOOD = 9;
 
 export const XP_TO_LEVEL_UP = 200;
 export const PASSIVE_SCORE_PER_SEC = 8;
-export const POINTS_PER_STAGE = 500;
+export const POINTS_PER_STAGE = 10000;
 export const TRANSITION_DURATION = 4000;
 export const COMBO_DECAY_DURATION = 4000;
 
