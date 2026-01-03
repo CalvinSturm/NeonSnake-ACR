@@ -8,203 +8,232 @@ export const renderBoss = (
     now: number, 
     gridSize: number, 
     halfGrid: number, 
-    snakeHead: Point | undefined
+    snakeHead: Point | undefined,
+    reduceFlashing: boolean = false // Added param
 ) => {
-    // ─── STATE ANALYSIS ───
     const hpRatio = e.hp / e.maxHp;
     const isDamaged = hpRatio < 0.5;
-    const stateId = e.bossState?.stateId || 'IDLE';
-    const isTelegraph = stateId.includes('TELEGRAPH');
-    const isAttack = stateId.includes('EXECUTE');
-    const isRecover = stateId.includes('RECOVERY');
-    
-    // Facing logic (Standard Boss follows player X)
-    let facing = 1;
+    const phase = e.bossPhase || 1;
+
+    // 1. Calculate Facing Direction
+    let angle = 0;
     if (snakeHead) {
-        facing = snakeHead.x < e.x ? -1 : 1;
+        // Grid coordinate difference is sufficient for angle
+        angle = Math.atan2(snakeHead.y - e.y, snakeHead.x - e.x);
     }
 
-    // ─── PHYSICS & ANIMATION ───
-    // Hover sine wave
-    const hoverY = Math.sin(now / 800) * 5;
+    // 2. Hover Physics (2.5D Bobbing)
+    // Slower, heavy hover
+    const hoverY = Math.sin(now / 1000) * 8;
     
-    // Attack displacements
-    let attackY = 0;
-    let attackRot = 0;
+    // 3. Shake (Damage Feedback)
+    const shakeIntensity = (1 - hpRatio) * 4;
+    const shakeX = (Math.random() - 0.5) * shakeIntensity;
+    const shakeY = (Math.random() - 0.5) * shakeIntensity;
 
-    if (isTelegraph) {
-        // Tilt up slightly, charging
-        attackRot = -0.1 * facing;
-        attackY = -5; // Rise up
-    } else if (isAttack) {
-        // Slam down / Recoil from shot
-        attackY = 5;
-        attackRot = 0.05 * facing;
+    ctx.save();
+    
+    // Apply Shake globally to this entity context
+    ctx.translate(shakeX, shakeY);
+
+    // 4. Ground Shadow (Perspective: Below the hovering unit)
+    ctx.save();
+    ctx.rotate(angle);
+    ctx.translate(-10, 50); // 50px "below" (behind visual Z)
+    
+    // Elongated shadow for flying object
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.shadowColor = 'rgba(0,0,0,0.6)';
+    ctx.shadowBlur = 15;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 50, 30, 0, 0, Math.PI * 2); 
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.restore();
+
+    // 5. Apply Body Transformation
+    ctx.translate(0, hoverY); // Floating effect
+    ctx.rotate(angle);
+
+    // 6. Thrusters (Rear)
+    ctx.save();
+    ctx.translate(-35, 0); 
+    
+    // Main Engine (Pulsing)
+    drawVolumetricThruster(ctx, 0, 0, 24, 70 + (phase * 15), '#ffaa00', now);
+    
+    // Vectoring Engines (Angle out slightly)
+    ctx.save();
+    ctx.rotate(-0.4);
+    drawVolumetricThruster(ctx, 0, -25, 14, 45, '#ff5500', now, 100);
+    ctx.restore();
+    
+    ctx.save();
+    ctx.rotate(0.4);
+    drawVolumetricThruster(ctx, 0, 25, 14, 45, '#ff5500', now, 200);
+    ctx.restore();
+    
+    ctx.restore();
+
+    // 7. Rotating Shield/Field Emitter (Under Hull)
+    if (phase >= 2) {
+        ctx.save();
+        ctx.rotate(now / 500);
+        ctx.strokeStyle = phase === 3 ? 'rgba(255, 0, 0, 0.4)' : 'rgba(255, 100, 0, 0.2)';
+        ctx.lineWidth = 4;
+        ctx.setLineDash([20, 30]); 
+        ctx.beginPath();
+        ctx.arc(0, 0, 60, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        ctx.rotate(now / -250); // Counter ring
+        ctx.beginPath();
+        ctx.arc(0, 0, 45, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
     }
 
-    // Shake on damage
-    const shakeAmt = isDamaged ? 2 : 0;
-    const sx = (Math.random() - 0.5) * shakeAmt;
-    const sy = (Math.random() - 0.5) * shakeAmt;
+    // 8. Main Hull (2.5D Extrusion)
+    const thickness = 8;
+    
+    // Hull Path Definition
+    const defineHull = (ctx: CanvasRenderingContext2D) => {
+        ctx.beginPath();
+        ctx.moveTo(45, 0);    // Nose
+        ctx.lineTo(10, 30);   // Wing Front R
+        ctx.lineTo(-25, 40);  // Wing Tip R
+        ctx.lineTo(-35, 15);  // Engine Bay R
+        ctx.lineTo(-45, 0);   // Rear Center
+        ctx.lineTo(-35, -15); // Engine Bay L
+        ctx.lineTo(-25, -40); // Wing Tip L
+        ctx.lineTo(10, -30);  // Wing Front L
+        ctx.closePath();
+    };
 
+    // Lower Hull (Darker/Shadow)
     ctx.save();
-    ctx.translate(sx, sy);
-
-    // 1. SHADOW (Ground Plane)
-    ctx.save();
-    ctx.translate(0, 60); // Distance to ground
-    ctx.scale(1, 0.4);
-    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    ctx.beginPath();
-    // Shadow grows during attack (getting closer to ground/larger flare)
-    const shadowSize = isAttack ? 70 : 50;
-    ctx.arc(0, 0, shadowSize, 0, Math.PI * 2);
+    ctx.translate(0, thickness); // Shift "down"
+    ctx.fillStyle = '#0f0505';
+    defineHull(ctx);
     ctx.fill();
     ctx.restore();
 
-    // 2. SHIP TRANSFORM
-    ctx.translate(0, hoverY + attackY);
-    ctx.scale(facing * 1.5, 1.5); // Face direction, scale up 1.5x
-    ctx.rotate(attackRot);
+    // Upper Hull (Main)
+    const hullGrad = ctx.createLinearGradient(0, -40, 0, 40);
+    hullGrad.addColorStop(0, '#592a2a');    // Top Light
+    hullGrad.addColorStop(0.15, '#8c4b4b'); // Specular Ridge
+    hullGrad.addColorStop(0.3, '#3d1212');  // Shadow under ridge
+    hullGrad.addColorStop(0.8, '#260b0b');  // Deep shadow
+    hullGrad.addColorStop(1, '#1a0505');    // Bottom Edge
 
-    // 3. THRUSTERS
-    // Rear Main Engine
-    drawVolumetricThruster(ctx, -35, 0, 20, 60, '#00ffff', now);
-    
-    // Ventral Thrusters (For "Slam" attack)
-    if (isTelegraph || isAttack) {
-        const power = isAttack ? 80 : 30; // Length
-        const width = isAttack ? 15 : 5;
-        const color = isAttack ? '#ff0000' : '#ffaa00';
-        
-        // Front Ventral
-        ctx.save();
-        ctx.translate(20, 10);
-        ctx.rotate(Math.PI / 2); // Point down
-        drawVolumetricThruster(ctx, 0, 0, width, power, color, now);
-        ctx.restore();
-
-        // Rear Ventral
-        ctx.save();
-        ctx.translate(-20, 10);
-        ctx.rotate(Math.PI / 2);
-        drawVolumetricThruster(ctx, 0, 0, width, power, color, now, 100);
-        ctx.restore();
-    }
-
-    // 4. HULL GEOMETRY (The "Interceptor Capital" look)
-    // Drawn facing Right (Positive X)
-    
-    // Bottom plating (Darker)
-    ctx.fillStyle = '#0a0a0a';
-    ctx.beginPath();
-    ctx.moveTo(40, 5);
-    ctx.lineTo(-20, 15);
-    ctx.lineTo(-40, 5);
-    ctx.lineTo(-40, -5);
-    ctx.fill();
-
-    // Top plating (Main color)
-    const hullGrad = ctx.createLinearGradient(-40, -20, 20, 20);
-    hullGrad.addColorStop(0, '#1a1a2e');
-    hullGrad.addColorStop(0.5, '#202040');
-    hullGrad.addColorStop(1, '#1a1a2e');
     ctx.fillStyle = hullGrad;
-    
     ctx.shadowColor = '#000';
     ctx.shadowBlur = 10;
-
-    ctx.beginPath();
-    ctx.moveTo(50, 5);    // Nose tip (low)
-    ctx.lineTo(30, -10);  // Nose bridge
-    ctx.lineTo(0, -20);   // Cockpit start
-    ctx.lineTo(-30, -25); // Top Fin start
-    ctx.lineTo(-45, -15); // Rear Top
-    ctx.lineTo(-50, 0);   // Engine block center
-    ctx.lineTo(-40, 15);  // Rear Bottom
-    ctx.lineTo(-10, 10);  // Belly
-    ctx.lineTo(50, 5);    // Return to nose
-    ctx.closePath();
+    defineHull(ctx);
     ctx.fill();
     ctx.shadowBlur = 0;
 
-    // 5. DETAILS & HIGHLIGHTS
-    
     // Panel Lines
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+    ctx.save();
+    ctx.clip(); 
+    
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(35, 0); ctx.lineTo(-40, 0);
+    ctx.moveTo(5, 20); ctx.lineTo(-20, 25);
+    ctx.moveTo(5, -20); ctx.lineTo(-20, -25);
+    ctx.moveTo(-30, 15); ctx.lineTo(-20, 0);
+    ctx.moveTo(-30, -15); ctx.lineTo(-20, 0);
+    ctx.stroke();
+
+    ctx.strokeStyle = 'rgba(255, 100, 100, 0.2)';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(20, -15); ctx.lineTo(10, 5);
-    ctx.moveTo(-10, -22); ctx.lineTo(-15, 10);
-    ctx.moveTo(-30, -25); ctx.lineTo(-30, 0);
+    ctx.moveTo(35, 2); ctx.lineTo(-40, 2); 
+    ctx.moveTo(5, 22); ctx.lineTo(-20, 27);
+    ctx.stroke();
+    
+    ctx.restore();
+
+    // Outer Rim / Highlights
+    ctx.strokeStyle = '#ff4444';
+    ctx.lineWidth = 1.5;
+    defineHull(ctx);
     ctx.stroke();
 
-    // Neon Trim (Changes color based on state)
-    const neonColor = isAttack ? '#ff0000' : (isTelegraph ? '#ffaa00' : '#00ffff');
+    // Red Flash Overlay (Telegraph / Damage)
+    if (e.flash && e.flash > 0 && !reduceFlashing) {
+        ctx.fillStyle = `rgba(255, 0, 0, 0.5)`;
+        ctx.globalCompositeOperation = 'source-atop';
+        defineHull(ctx);
+        ctx.fill();
+        ctx.globalCompositeOperation = 'source-over';
+    }
+
+    // 9. Weapon Mounts
+    const weaponColor = e.attackTimer && e.attackTimer > 2000 
+        ? `rgba(255, ${Math.floor(Math.sin(now/50)*127+128)}, 0, 1)` 
+        : '#884400';
+        
+    ctx.fillStyle = weaponColor;
+    ctx.fillRect(-10, -35, 20, 6);
+    ctx.fillRect(-10, 29, 20, 6);
+
+    // 10. The Core
+    ctx.save();
+    const coreColor = phase === 3 ? '#ff0000' : (phase === 2 ? '#ff6600' : '#ffaa00');
+    const corePulse = 1 + Math.sin(now / 150) * 0.1;
+    const coreSize = 12 * corePulse;
     
-    ctx.strokeStyle = neonColor;
-    ctx.shadowColor = neonColor;
-    ctx.shadowBlur = 10;
-    ctx.lineWidth = 2;
+    ctx.translate(-5, 0);
     
-    // Wing/Side Stripe
+    ctx.shadowColor = coreColor;
+    ctx.shadowBlur = 20;
+    ctx.fillStyle = coreColor;
     ctx.beginPath();
-    ctx.moveTo(-40, 0);
-    ctx.lineTo(-10, 5);
-    ctx.lineTo(40, 0);
-    ctx.stroke();
-    
-    // Cockpit
-    ctx.fillStyle = '#000';
-    ctx.shadowBlur = 0;
-    ctx.beginPath();
-    ctx.moveTo(5, -15);
-    ctx.lineTo(20, -12);
-    ctx.lineTo(22, -8);
-    ctx.lineTo(5, -10);
+    ctx.arc(0, 0, coreSize, 0, Math.PI * 2);
     ctx.fill();
     
-    // Cockpit Glint
-    ctx.fillStyle = neonColor;
-    ctx.globalAlpha = 0.8;
-    ctx.fillRect(8, -13, 8, 2);
-    ctx.globalAlpha = 1.0;
-
-    // 6. DAMAGE SMOKE
-    if (isDamaged) {
-        const smokeX = -10 + Math.sin(now * 0.01) * 10;
-        ctx.fillStyle = 'rgba(100, 100, 100, 0.5)';
-        ctx.beginPath();
-        ctx.arc(smokeX, -10, 5 + Math.random() * 5, 0, Math.PI * 2);
-        ctx.fill();
-    }
-
-    // 7. HEAT VENTING (Recovery State)
-    if (isRecover) {
-        ctx.save();
-        ctx.globalCompositeOperation = 'screen';
-        ctx.fillStyle = 'rgba(255, 100, 0, 0.3)';
-        for(let i=0; i<3; i++) {
-            const vy = -10 - (now * 0.1 + i * 10) % 20;
-            ctx.beginPath();
-            ctx.arc(-20 + i*10, vy, 4, 0, Math.PI*2);
-            ctx.fill();
-        }
-        ctx.restore();
-    }
-
-    // 8. HP BAR (Floating above)
-    ctx.restore(); // Reset ship transform
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.shadowBlur = 0;
+    ctx.beginPath();
+    ctx.arc(coreSize * 0.3, -coreSize * 0.3, coreSize * 0.25, 0, Math.PI * 2);
+    ctx.fill();
     
-    // Draw Bar relative to boss center
-    const barW = 60;
-    const barY = -50 + hoverY; // Bob with ship
-    
-    ctx.fillStyle = '#000';
-    ctx.fillRect(-barW/2 - 1, barY - 1, barW + 2, 6);
-    
-    ctx.fillStyle = hpRatio < 0.3 ? '#ff0000' : '#00ffff';
-    ctx.fillRect(-barW/2, barY, barW * hpRatio, 4);
-
     ctx.restore();
+
+    // 11. Damage / Smoke Effects
+    if (isDamaged) {
+        if (Math.random() < 0.2) {
+            ctx.fillStyle = '#ffff00';
+            const sx = (Math.random() - 0.5) * 50;
+            const sy = (Math.random() - 0.5) * 50;
+            ctx.fillRect(sx, sy, 2, 2);
+        }
+    }
+
+    // 12. Floating HP Bar
+    ctx.restore(); // Undo Body transform
+    
+    ctx.translate(0, hoverY);
+
+    const barW = 80;
+    const barY = -60;
+    
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.beginPath();
+    ctx.roundRect(-barW/2 - 2, barY - 2, barW + 4, 8, 2);
+    ctx.fill();
+
+    const fillW = barW * hpRatio;
+    ctx.fillStyle = hpRatio > 0.5 ? '#00ff00' : (hpRatio > 0.2 ? '#ffff00' : '#ff0000');
+    ctx.shadowColor = ctx.fillStyle;
+    ctx.shadowBlur = 6;
+    ctx.fillRect(-barW/2, barY, fillW, 4);
+    ctx.shadowBlur = 0;
+    
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-barW/2, barY, barW, 4);
 };

@@ -1,13 +1,13 @@
 
-import { useRef, useState, useCallback, useEffect } from 'react';
+import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { 
   GameStatus, Difficulty, CharacterProfile, Direction, UpgradeStats, 
   Enemy, FoodItem, Projectile, Shockwave, LightningArc, Particle, 
   FloatingText, Mine, Terminal, DigitalRainDrop, AudioRequest, Point, UpgradeOption, ModalState,
-  MobileControlScheme, CameraMode, Hitbox, DevBootstrapConfig, WeaponStats, CLIAnimation
+  MobileControlScheme, CameraMode, Hitbox, WeaponStats
 } from '../types';
-import { HUDConfig } from '../ui/hud/types';
-import { CHARACTERS, CANVAS_WIDTH, DEFAULT_SETTINGS, PHYSICS } from '../constants';
+import { HUDConfig, HUDLayoutMode } from '../ui/hud/types';
+import { CHARACTERS, CANVAS_WIDTH, DEFAULT_SETTINGS, PHYSICS, STAMINA_CONFIG } from '../constants';
 import { resolveTraits, TraitModifiers } from './traitResolver';
 import { audio } from '../utils/audio';
 import { VisionProtocolId } from '../ui/vision/VisionProtocolRegistry';
@@ -16,8 +16,7 @@ import { hasUnreadMemories, markMemoriesAsRead } from './memory/MemorySystem';
 import { CameraState, CameraBehavior } from './camera/types';
 import { PhysicsState } from './physics/types';
 import { useFloorVolumes } from './floor/useFloorVolumes';
-import { generateWalls } from './gameUtils';
-import { DevIntent } from './intents/DevIntents';
+import { COSMETIC_REGISTRY } from './cosmetics/CosmeticRegistry';
 
 export interface UserSettings {
   skipCountdown: boolean;
@@ -26,6 +25,9 @@ export interface UserSettings {
   fxIntensity: number;
   screenShake: boolean;
   highContrast: boolean;
+  crtEffect: boolean; // New
+  reduceFlashing: boolean; // New
+  invertRotation: boolean; // New
   musicVolume: number;
   sfxVolume: number;
   mobileControlScheme: MobileControlScheme;
@@ -45,6 +47,9 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   fxIntensity: 1.0,
   screenShake: true,
   highContrast: false,
+  crtEffect: true,
+  reduceFlashing: false,
+  invertRotation: false,
   musicVolume: 0.3,
   sfxVolume: 0.4,
   mobileControlScheme: 'JOYSTICK',
@@ -115,13 +120,27 @@ export function useGameState() {
       tailIntegrity: 100
   });
   
-  const [settings, setSettings] = useState<UserSettings>(DEFAULT_USER_SETTINGS);
+  // Lazy init settings from persistent profile
+  const [settings, setSettings] = useState<UserSettings>(() => {
+      const profile = loadCosmeticProfile();
+      return {
+          ...DEFAULT_USER_SETTINGS,
+          snakeStyle: profile.equippedSkin || 'AUTO',
+          hudConfig: {
+              ...DEFAULT_USER_SETTINGS.hudConfig,
+              layout: (profile.equippedHud as HUDLayoutMode) || 'CYBER'
+          }
+      };
+  });
 
   // Camera Control Switch
   const [cameraControlsEnabled, setCameraControlsEnabled] = useState(false);
 
   // Cosmetic State
   const [unlockedCosmetics, setUnlockedCosmetics] = useState<Set<string>>(new Set());
+  const [purchasedCosmetics, setPurchasedCosmetics] = useState<Set<string>>(new Set());
+  const [seenCosmetics, setSeenCosmetics] = useState<Set<string>>(new Set());
+  const [neonFragments, setNeonFragments] = useState(0);
   const [sessionNewUnlocks, setSessionNewUnlocks] = useState<string[]>([]);
   const [toastQueue, setToastQueue] = useState<string[]>([]);
   
@@ -131,24 +150,45 @@ export function useGameState() {
   // Load profile on mount
   useEffect(() => {
       const profile = loadCosmeticProfile();
-      setUnlockedCosmetics(new Set((profile.unlocked as any) as string[]));
+      setUnlockedCosmetics(new Set(profile.unlocked));
+      setPurchasedCosmetics(new Set(profile.purchased));
+      setSeenCosmetics(new Set(profile.seen || []));
+      setNeonFragments(profile.neonFragments);
       
       // Load Lore State
       setHasUnreadArchiveData(hasUnreadMemories());
   }, []);
 
+  // Derived Cosmetic State
+  const hasNewCosmetics = useMemo(() => {
+      for (const id of unlockedCosmetics) {
+          // Only flag as new if it exists in the current registry and hasn't been seen
+          if (COSMETIC_REGISTRY[id] && !seenCosmetics.has(id)) return true;
+      }
+      return false;
+  }, [unlockedCosmetics, seenCosmetics]);
+
+  // Persist equipped cosmetics when settings change
+  useEffect(() => {
+      const current = loadCosmeticProfile();
+      if (current.equippedSkin !== settings.snakeStyle || current.equippedHud !== settings.hudConfig.layout) {
+          saveCosmeticProfile({
+              ...current,
+              equippedSkin: settings.snakeStyle,
+              equippedHud: settings.hudConfig.layout
+          });
+      }
+  }, [settings.snakeStyle, settings.hudConfig.layout]);
+
   // REFS
   const runIdRef = useRef(0);
   const settingsReturnRef = useRef<ModalState>('NONE');
-
-  // DEV INTENT QUEUE
-  const devIntentQueueRef = useRef<DevIntent[]>([]);
 
   const snakeRef = useRef<Point[]>([]);
   const prevTailRef = useRef<Point | null>(null);
   const tailIntegrityRef = useRef(100);
   
-  const traitsRef = useRef<TraitModifiers>(resolveTraits(null, 1));
+  const traitsRef = useRef<TraitModifiers>(resolveTraits(null));
   
   const enemiesRef = useRef<Enemy[]>([]);
   const foodRef = useRef<FoodItem[]>([]);
@@ -161,12 +201,8 @@ export function useGameState() {
   const particlesRef = useRef<Particle[]>([]);
   const floatingTextsRef = useRef<FloatingText[]>([]);
   const digitalRainRef = useRef<DigitalRainDrop[]>([]);
-  const hitboxesRef = useRef<Hitbox[]>([]); // NEW: Boss Hitboxes
-  const cliAnimationsRef = useRef<CLIAnimation[]>([]); // NEW: CLI FX
+  const hitboxesRef = useRef<Hitbox[]>([]); 
   
-  // DEV FLAGS
-  const devModeFlagsRef = useRef<{ freeMovement: boolean; godMode: boolean }>({ freeMovement: false, godMode: false });
-
   const scoreRef = useRef(0);
   const enemiesKilledRef = useRef(0);
   const terminalsHackedRef = useRef(0);
@@ -191,12 +227,14 @@ export function useGameState() {
   
   const transitionStateRef = useRef<{ phase: 'NONE' | 'intro' | 'outro' }>({ phase: 'NONE' });
 
-  // ADAPTIVE PROGRESSION REFS
-  const stageStatsRef = useRef({ damageTaken: 0, startTime: 0 });
-  const masteryRef = useRef(false);
+  // ─── STAMINA / TIME STOP ───
+  const staminaRef = useRef(STAMINA_CONFIG.MAX);
+  const stopIntentRef = useRef(false);
+  const isStoppedRef = useRef(false);
+  const stopCooldownRef = useRef(false); // Prevents rapid toggle when depleted
 
   // ─── FLOOR & CAMERA ───
-  const floor = useFloorVolumes(); // Registry Hook
+  const floor = useFloorVolumes(); 
   const cameraRef = useRef<CameraState>({
       mode: CameraMode.TOP_DOWN,
       behavior: CameraBehavior.FOLLOW_PLAYER,
@@ -216,20 +254,17 @@ export function useGameState() {
       if (cam.mode === mode && !cam.targetMode) return;
       if (cam.targetMode === mode) return;
 
-      // Start transition
       cam.targetMode = mode;
       cam.transitionT = 0;
       cam.transitionDuration = durationMs;
       
-      // Audio Tick
       audioEventsRef.current.push({ type: 'UI_HARD_CLICK' });
   }, []);
 
   const updateCamera = useCallback((dt: number) => {
-      // Logic handled by useCameraController
   }, []);
 
-  // ─── PHYSICS SYSTEM (Side Scroll) ───
+  // ─── PHYSICS SYSTEM ───
   const physicsRef = useRef<PhysicsState>({
       vy: 0,
       isGrounded: true
@@ -377,17 +412,10 @@ export function useGameState() {
           tailIntegrity: tailIntegrityRef.current
       });
   }, []);
-  
-  // NEW: Helper to update traits when level changes
-  const recalcTraits = useCallback(() => {
-      traitsRef.current = resolveTraits(selectedChar, levelRef.current);
-  }, [selectedChar]);
 
   const resetGame = useCallback((charProfile: CharacterProfile) => {
     runIdRef.current += 1;
-    // Initial Traits at Level 1
-    traitsRef.current = resolveTraits(charProfile, 1);
-    
+    traitsRef.current = resolveTraits(charProfile);
     snakeRef.current = [
       { x: 10, y: 10 },
       { x: 9, y: 10 },
@@ -411,7 +439,6 @@ export function useGameState() {
     floatingTextsRef.current = [];
     digitalRainRef.current = [];
     hitboxesRef.current = []; 
-    cliAnimationsRef.current = [];
     
     floor.clearFloors();
     floor.addFloorVolume({
@@ -444,10 +471,13 @@ export function useGameState() {
     bossDefeatedRef.current = false;
     bossEnemyRef.current = null;
     bossOverrideTimerRef.current = 0;
-    
-    stageStatsRef.current = { damageTaken: 0, startTime: 0 };
-    masteryRef.current = false;
 
+    // Reset Stamina
+    staminaRef.current = STAMINA_CONFIG.MAX;
+    stopIntentRef.current = false;
+    isStoppedRef.current = false;
+    stopCooldownRef.current = false;
+    
     setSessionNewUnlocks([]);
     
     cameraRef.current = {
@@ -482,9 +512,9 @@ export function useGameState() {
         hackSpeedMod: 1,
         moveSpeedMod: 1,
         luck: 0,
-        activeWeaponIds: [] as string[],
+        activeWeaponIds: [],
         maxWeaponSlots: 3, 
-        acquiredUpgradeIds: [] as string[],
+        acquiredUpgradeIds: [],
         globalDamageMod: 1,
         globalFireRateMod: 1,
         globalAreaMod: 1,
@@ -547,83 +577,73 @@ export function useGameState() {
 
   }, [syncUiStats, floor.clearFloors, floor.addFloorVolume]);
 
-  const devApplyBootstrap = useCallback((config: DevBootstrapConfig) => {
-    // 1. Reset Game (Use default char if none selected, or Striker)
-    resetGame(selectedChar || CHARACTERS[0]);
-
-    // 2. Apply Dev Flags
-    devModeFlagsRef.current = {
-        freeMovement: !!config.freeMovement,
-        godMode: false
-    };
-
-    // 3. Set Stage
-    stageRef.current = config.stageId;
-    setUiStage(config.stageId);
-    
-    // 4. Walls
-    if (config.disableWalls) {
-        wallsRef.current = [];
-    } else {
-        wallsRef.current = generateWalls(config.stageId);
-    }
-    
-    // 5. Camera
-    if (config.cameraMode) {
-        cameraRef.current.mode = config.cameraMode;
-        cameraRef.current.targetMode = null; // No transition
-        cameraRef.current.transitionT = 0;
-        cameraRef.current.zoom = 1.0;
-        cameraRef.current.rotation = 0;
-        
-        // Apply behavior from config, default to FOLLOW_PLAYER
-        if (config.cameraBehavior) {
-            cameraRef.current.behavior = config.cameraBehavior as CameraBehavior;
-        } else {
-            cameraRef.current.behavior = CameraBehavior.FOLLOW_PLAYER;
-        }
-
-        // Snap X for Side Scroll immediately (only if following)
-        if (config.cameraMode === CameraMode.SIDE_SCROLL && cameraRef.current.behavior === CameraBehavior.FOLLOW_PLAYER) {
-            const headPxX = 10 * DEFAULT_SETTINGS.gridSize; // 200
-            cameraRef.current.x = headPxX - (CANVAS_WIDTH / cameraRef.current.zoom) * 0.3;
-        }
-    }
-    
-    // 6. Boss
-    if (config.forceBoss || config.stageId % 5 === 0) {
-        // Note: The caller (SnakeGame) should invoke spawner.devSpawnBoss
-    }
-
-    // 7. UI Sync
-    setUiStageStatus('DEV_BOOT');
-    setStatus(GameStatus.PLAYING);
-
-  }, [resetGame, selectedChar, stageRef, setUiStage, wallsRef, cameraRef, setUiStageStatus, setStatus]);
-
   const unlockCosmetic = useCallback((id: string) => {
-      setUnlockedCosmetics(prev => {
+      setUnlockedCosmetics((prev: Set<string>) => {
           if (prev.has(id)) return prev;
-          const next = new Set(prev).add(id);
-          saveCosmeticProfile({ unlocked: Array.from(next), seen: [] });
+          const next = new Set(prev);
+          next.add(id);
+          const currentProfile = loadCosmeticProfile();
+          saveCosmeticProfile({ ...currentProfile, unlocked: Array.from(next) });
           return next;
       });
-      setSessionNewUnlocks(prev => [...prev, id]);
-      setToastQueue(prev => [...prev, id]);
+      setSessionNewUnlocks((prev: string[]) => [...prev, id]);
+      setToastQueue((prev: string[]) => [...prev, id]);
+  }, []);
+  
+  const addNeonFragments = useCallback((amount: number) => {
+      setNeonFragments(prev => {
+          const next = prev + amount;
+          const currentProfile = loadCosmeticProfile();
+          saveCosmeticProfile({ ...currentProfile, neonFragments: next });
+          return next;
+      });
+  }, []);
+  
+  const purchaseCosmetic = useCallback((id: string) => {
+      const def = COSMETIC_REGISTRY[id];
+      if (!def) return false;
+      
+      // Load current to be safe
+      const currentProfile = loadCosmeticProfile();
+      if (currentProfile.neonFragments < def.cost) return false;
+      
+      const newFragments = currentProfile.neonFragments - def.cost;
+      const newPurchased = [...currentProfile.purchased, id];
+      // Implicitly mark as seen when purchasing if not already
+      const newSeen = new Set(currentProfile.seen || []);
+      newSeen.add(id);
+
+      saveCosmeticProfile({
+          ...currentProfile,
+          neonFragments: newFragments,
+          purchased: newPurchased,
+          seen: Array.from(newSeen)
+      });
+      
+      setNeonFragments(newFragments);
+      setPurchasedCosmetics(new Set(newPurchased));
+      setSeenCosmetics(newSeen);
+      return true;
+  }, []);
+  
+  const markCosmeticSeen = useCallback((id: string) => {
+      setSeenCosmetics((prev: Set<string>) => {
+          if (prev.has(id)) return prev;
+          const next = new Set(prev);
+          next.add(id);
+          const currentProfile = loadCosmeticProfile();
+          saveCosmeticProfile({ ...currentProfile, seen: Array.from(next) });
+          return next;
+      });
   }, []);
 
   const clearToast = useCallback(() => {
-      setToastQueue(prev => prev.slice(1));
+      setToastQueue((prev: string[]) => prev.slice(1));
   }, []);
 
   const markArchiveRead = useCallback(() => {
       markMemoriesAsRead();
       setHasUnreadArchiveData(false);
-  }, []);
-
-  // ─── DEV INTENT QUEUE ───
-  const queueDevIntent = useCallback((intent: DevIntent) => {
-    devIntentQueueRef.current.push(intent);
   }, []);
 
   return {
@@ -651,12 +671,10 @@ export function useGameState() {
     settings, setSettings,
     cameraControlsEnabled, setCameraControlsEnabled,
     runIdRef,
-    snakeRef, prevTailRef, tailIntegrityRef, traitsRef, recalcTraits,
+    snakeRef, prevTailRef, tailIntegrityRef, traitsRef,
     enemiesRef, foodRef, wallsRef, terminalsRef, projectilesRef, minesRef,
     shockwavesRef, lightningArcsRef, particlesRef, floatingTextsRef, digitalRainRef,
-    hitboxesRef, // Export Hitboxes
-    cliAnimationsRef, // Export CLI Animations
-    devModeFlagsRef, // NEW: Dev Flags
+    hitboxesRef, 
     scoreRef, enemiesKilledRef, terminalsHackedRef, startTimeRef, gameTimeRef, failureMessageRef,
     invulnerabilityTimeRef, audioEventsRef, lastDamageTimeRef,
     transitionStartTimeRef, pendingStatusRef, stageArmedRef, stageReadyRef,
@@ -664,7 +682,7 @@ export function useGameState() {
     statsRef, powerUpsRef, ghostCoilCooldownRef,
     directionRef, directionQueueRef, levelRef, xpRef, nextLevelXpRef,
     enemySpawnTimerRef, terminalSpawnTimerRef,
-    stageRef, stageScoreRef, stageStatsRef, masteryRef,
+    stageRef, stageScoreRef,
     shakeRef, chromaticAberrationRef, lastEatTimeRef,
     weaponFireTimerRef, auraTickTimerRef, mineDropTimerRef, prismLanceTimerRef, neonScatterTimerRef,
     voltSerpentTimerRef, phaseRailChargeRef, echoDamageStoredRef, overclockActiveRef, overclockTimerRef, nanoSwarmAngleRef,
@@ -674,13 +692,9 @@ export function useGameState() {
     physicsRef, jumpIntentRef, 
     floor, 
     resetGame, openSettings, closeSettings, togglePause,
-    unlockedCosmetics, sessionNewUnlocks, toastQueue,
-    unlockCosmetic, clearToast,
+    unlockedCosmetics, purchasedCosmetics, neonFragments, sessionNewUnlocks, toastQueue, seenCosmetics, hasNewCosmetics,
+    unlockCosmetic, purchaseCosmetic, addNeonFragments, clearToast, markCosmeticSeen,
     hasUnreadArchiveData, setHasUnreadArchiveData, markArchiveRead,
-    devHelper: {
-        applyBootstrap: devApplyBootstrap,
-        queueDevIntent // Export intent queue method
-    },
-    devIntentQueueRef
+    staminaRef, stopIntentRef, isStoppedRef, stopCooldownRef
   };
 }

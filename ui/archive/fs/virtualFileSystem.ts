@@ -35,14 +35,6 @@ export const VIRTUAL_DIRECTORIES: Record<string, VirtualDir> = {
     icon: '🌐',
     description: 'External Connections',
     isRestricted: true
-  },
-  CLASSIC: {
-    id: 'v_classic',
-    name: 'SNAKE_V1',
-    resolvesTo: '/bin/snake_classic',
-    icon: '🐍',
-    description: 'Legacy Simulation Protocol',
-    isRestricted: true
   }
 } as const;
 

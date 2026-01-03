@@ -144,10 +144,6 @@ export function useCameraController(game: ReturnType<typeof useGameState>) {
             duration: intent.duration
           };
           break;
-
-        case 'SET_SCROLL_SPEED':
-            cam.scrollSpeed = intent.speed;
-            break;
       }
     }
 
@@ -202,13 +198,6 @@ export function useCameraController(game: ReturnType<typeof useGameState>) {
             
             cam.x += (targetX - cam.x) * smooth;
             cam.y += (targetY - cam.y) * smooth;
-        } 
-        else if (cam.behavior === CameraBehavior.AUTO_SCROLL_X) {
-            // Constant X advancement
-            const dx = cam.scrollSpeed * (dt / 1000);
-            cam.x += dx;
-            // Lock Y to center
-            cam.y += (0 - cam.y) * smooth; 
         }
     }
 

@@ -5,8 +5,7 @@ export enum CameraBehavior {
   FOLLOW_PLAYER = 'FOLLOW_PLAYER',
   FIXED = 'FIXED', // Locks X/Y to specific coordinates
   MANUAL = 'MANUAL', // Controlled via intents only
-  SIDE_SCROLL_LOCK = 'SIDE_SCROLL_LOCK', // Follows X, locks Y
-  AUTO_SCROLL_X = 'AUTO_SCROLL_X' // Automatically advances X at a fixed rate
+  SIDE_SCROLL_LOCK = 'SIDE_SCROLL_LOCK' // Follows X, locks Y
 }
 
 export interface CameraState {
@@ -49,5 +48,4 @@ export type CameraIntent =
   | { type: 'SNAP_TO_PLAYER' }
   | { type: 'RESET_DEFAULT'; duration: number }
   | { type: 'LOCK_CAMERA' }
-  | { type: 'UNLOCK_CAMERA' }
-  | { type: 'SET_SCROLL_SPEED'; speed: number }; // NEW
+  | { type: 'UNLOCK_CAMERA' };

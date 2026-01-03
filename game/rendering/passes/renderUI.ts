@@ -15,19 +15,19 @@ export const renderUI = (rc: RenderContext, status: GameStatus, transitionStartT
         
         const cx = width / 2;
         const cy = height / 2;
-        const bps = 2.25; 
+        const bps = 1.0; 
         const beatPhase = (t / 1000) * bps; 
         const pulse = 1 + Math.pow(Math.sin(beatPhase * Math.PI), 10) * 0.2; 
         
         ctx.save();
         ctx.translate(cx, cy);
         
-        const rotSpeed = 0.002 + (Math.sin(beatPhase * 0.5) * 0.0005);
+        const rotSpeed = 0.0005 + (Math.sin(beatPhase * 0.5) * 0.0002);
         ctx.rotate(t * rotSpeed);
         ctx.scale(pulse, pulse);
         
         const numRings = 16;
-        const tunnelSpeed = 0.005; 
+        const tunnelSpeed = 0.002; 
         const scroll = (t * tunnelSpeed) % 1;
         
         ctx.lineWidth = 2;

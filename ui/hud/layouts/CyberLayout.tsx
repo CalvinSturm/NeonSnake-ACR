@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { HUDData, HUDConfig } from '../types';
 import { HUDBar, HUDTooltip } from '../HUDPrimitives';
@@ -148,6 +149,20 @@ export const CyberLayout: React.FC<CyberLayoutProps> = ({ data, config, children
                             />
                             {/* Grid Overlay on Bar */}
                             <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(0,0,0,0.5)_1px,transparent_1px)] bg-[length:4px_100%] opacity-30"></div>
+                        </div>
+                    </div>
+
+                    {/* STAMINA BAR */}
+                    <div className="mt-1">
+                        <div className="flex justify-between text-[10px] text-yellow-500 tracking-widest mb-0.5">
+                            <span>BRAKE_HYDRO</span>
+                            <span>{Math.floor(data.vitals.stamina)}%</span>
+                        </div>
+                        <div className="h-1.5 w-full bg-gray-900/50 skew-x-[-20deg] relative overflow-hidden">
+                             <div 
+                                className={`h-full transition-all duration-100 ${data.vitals.stamina < 20 ? 'bg-red-500' : 'bg-yellow-400 shadow-[0_0_5px_#fbbf24]'}`}
+                                style={{ width: `${data.vitals.stamina}%` }}
+                            />
                         </div>
                     </div>
 

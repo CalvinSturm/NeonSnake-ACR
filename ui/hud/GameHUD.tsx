@@ -1,7 +1,7 @@
-
 import React from 'react';
 import { useGameState } from '../../game/useGameState';
 import { useHUDData } from './useHUDData';
+import { HUDData, HUDConfig } from './types';
 import { CyberLayout } from './layouts/CyberLayout';
 import { Cyber2Layout } from './layouts/Cyber2Layout';
 import { Cyber3Layout } from './layouts/Cyber3Layout';
@@ -59,17 +59,14 @@ import { Glass5Layout } from './layouts/Glass5Layout';
 import { Glass6Layout } from './layouts/Glass6Layout';
 import { Glass7Layout } from './layouts/Glass7Layout';
 
-interface GameHUDProps {
-    game: ReturnType<typeof useGameState>;
+interface GameHUDViewProps {
+    data: HUDData;
+    config: HUDConfig;
     children?: React.ReactNode;
     showUI?: boolean;
 }
 
-export const GameHUD: React.FC<GameHUDProps> = ({ game, children, showUI = true }) => {
-  const data = useHUDData(game);
-  const { settings } = game;
-  const config = settings.hudConfig;
-
+export const GameHUDView: React.FC<GameHUDViewProps> = ({ data, config, children, showUI = true }) => {
   // Render the selected layout
   switch (config.layout) {
       case 'RETRO': return <RetroLayout data={data} config={config} showUI={showUI}>{children}</RetroLayout>;
@@ -139,4 +136,18 @@ export const GameHUD: React.FC<GameHUDProps> = ({ game, children, showUI = true 
       default:
           return <CyberLayout data={data} config={config} showUI={showUI}>{children}</CyberLayout>;
   }
+};
+
+interface GameHUDProps {
+    game: ReturnType<typeof useGameState>;
+    children?: React.ReactNode;
+    showUI?: boolean;
+}
+
+export const GameHUD: React.FC<GameHUDProps> = ({ game, children, showUI = true }) => {
+  const data = useHUDData(game);
+  const { settings } = game;
+  const config = settings.hudConfig;
+
+  return <GameHUDView data={data} config={config} showUI={showUI}>{children}</GameHUDView>;
 };

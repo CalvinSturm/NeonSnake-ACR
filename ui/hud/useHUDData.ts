@@ -1,7 +1,7 @@
 
 import { useMemo } from 'react';
 import { useGameState } from '../../game/useGameState';
-import { DIFFICULTY_CONFIGS } from '../../constants';
+import { DIFFICULTY_CONFIGS, STAMINA_CONFIG } from '../../constants';
 import { useVisionProtocol } from '../vision/useVisionProtocol';
 import { HUDData, HUDSkillData } from './types';
 import { DESCRIPTOR_REGISTRY } from '../../game/descriptors';
@@ -11,7 +11,8 @@ export function useHUDData(game: ReturnType<typeof useGameState>): HUDData {
     uiScore, highScore, uiCombo, uiLevel, uiXp, uiXpValues, uiStage, uiStageStatus,
     uiStats, uiShield, difficulty, status, statsRef, snakeRef,
     weaponFireTimerRef, mineDropTimerRef,
-    prismLanceTimerRef, neonScatterTimerRef, voltSerpentTimerRef, phaseRailChargeRef
+    prismLanceTimerRef, neonScatterTimerRef, voltSerpentTimerRef, phaseRailChargeRef,
+    staminaRef
   } = game;
 
   const vision = useVisionProtocol();
@@ -75,6 +76,9 @@ export function useHUDData(game: ReturnType<typeof useGameState>): HUDData {
       });
 
     const head = snakeRef.current[0] || { x: 0, y: 0 };
+    
+    // Calculate Stamina Percentage
+    const staminaPct = Math.min(100, Math.max(0, (staminaRef.current / STAMINA_CONFIG.MAX) * 100));
 
     return {
       status,
@@ -98,7 +102,8 @@ export function useHUDData(game: ReturnType<typeof useGameState>): HUDData {
       },
       vitals: {
         integrity: Math.floor(uiStats.tailIntegrity),
-        shieldActive: uiShield
+        shieldActive: uiShield,
+        stamina: staminaPct
       },
       metrics: {
         damage: Math.round(uiStats.globalDamage * 100),
@@ -123,6 +128,7 @@ export function useHUDData(game: ReturnType<typeof useGameState>): HUDData {
     uiStats, uiShield, difficulty, status, vision,
     weaponFireTimerRef.current, mineDropTimerRef.current, prismLanceTimerRef.current,
     neonScatterTimerRef.current, voltSerpentTimerRef.current, phaseRailChargeRef.current,
-    snakeRef.current[0]
+    snakeRef.current[0],
+    staminaRef.current
   ]);
 }

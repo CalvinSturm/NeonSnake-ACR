@@ -1,7 +1,206 @@
 
 import { Enemy, EnemyType } from '../../../types';
 import { COLORS } from '../../../constants';
-import { drawVolumetricThruster, drawShadow } from '../primitives';
+import { drawShadow, drawVolumetricThruster } from '../primitives';
+import { RenderContext } from '../types'; // Import Context
+
+// ─── SPECIFIC RENDERERS ───
+
+const renderHunter = (ctx: CanvasRenderingContext2D, hull: string, accent: string, now: number) => {
+    // ENGINE
+    drawVolumetricThruster(ctx, -10, 0, 6, 18, accent, now);
+
+    // HULL (Delta Wing)
+    // Dark metallic with gradient
+    const grad = ctx.createLinearGradient(-10, 0, 10, 0);
+    grad.addColorStop(0, '#111');
+    grad.addColorStop(0.5, hull);
+    grad.addColorStop(1, '#222');
+    ctx.fillStyle = grad;
+
+    ctx.beginPath();
+    ctx.moveTo(14, 0);    // Nose
+    ctx.lineTo(-8, 10);   // Left Wingtip
+    ctx.lineTo(-4, 0);    // Rear Notch
+    ctx.lineTo(-8, -10);  // Right Wingtip
+    ctx.closePath();
+    ctx.fill();
+
+    // PANEL LINES
+    ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // EYE SENSOR
+    ctx.fillStyle = accent;
+    ctx.shadowColor = accent;
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.arc(2, 0, 3, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Specular dot
+    ctx.fillStyle = '#fff';
+    ctx.shadowBlur = 0;
+    ctx.beginPath();
+    ctx.arc(3, -1, 1, 0, Math.PI * 2);
+    ctx.fill();
+};
+
+const renderInterceptor = (ctx: CanvasRenderingContext2D, hull: string, accent: string, now: number) => {
+    // DUAL ENGINES (High speed trail)
+    drawVolumetricThruster(ctx, -8, -5, 4, 30, accent, now, 100);
+    drawVolumetricThruster(ctx, -8, 5, 4, 30, accent, now, 200);
+
+    // HULL (Needle / Dart)
+    const grad = ctx.createLinearGradient(-10, 0, 20, 0);
+    grad.addColorStop(0, '#000');
+    grad.addColorStop(0.4, hull);
+    grad.addColorStop(1, '#eee'); // Sharp nose
+    ctx.fillStyle = grad;
+
+    ctx.beginPath();
+    ctx.moveTo(22, 0);
+    ctx.lineTo(-10, 6);
+    ctx.lineTo(-6, 0);
+    ctx.lineTo(-10, -6);
+    ctx.closePath();
+    ctx.fill();
+
+    // WINGS (Swept Forward)
+    ctx.fillStyle = '#1a1a1a';
+    ctx.beginPath();
+    ctx.moveTo(-4, 0);
+    ctx.lineTo(-12, 14);
+    ctx.lineTo(-6, 4);
+    ctx.lineTo(-6, -4);
+    ctx.lineTo(-12, -14);
+    ctx.closePath();
+    ctx.fill();
+
+    // ENGINE GLOWS ON HULL
+    ctx.fillStyle = accent;
+    ctx.fillRect(-10, -5, 4, 2);
+    ctx.fillRect(-10, 3, 4, 2);
+};
+
+const renderShooter = (ctx: CanvasRenderingContext2D, hull: string, accent: string, now: number, e: Enemy) => {
+    // ENGINE (Wide, heavy)
+    drawVolumetricThruster(ctx, -12, 0, 10, 12, accent, now);
+
+    // HULL (Heavy Block / Hexagon)
+    ctx.fillStyle = hull;
+    // 2.5D Extrusion effect manually
+    ctx.beginPath();
+    ctx.moveTo(8, -8);
+    ctx.lineTo(8, 8);
+    ctx.lineTo(-8, 12);
+    ctx.lineTo(-14, 0);
+    ctx.lineTo(-8, -12);
+    ctx.closePath();
+    ctx.fill();
+    
+    // Top Plate
+    ctx.fillStyle = '#222';
+    ctx.fillRect(-6, -6, 12, 12);
+
+    // TURRET MECHANISM
+    ctx.save();
+    
+    // Recoil (Visual shift back when attacking)
+    const recoil = (e.attackTimer && e.attackTimer > 2000) ? Math.sin(now * 0.5) * 2 : 0;
+    
+    // Barrel
+    ctx.fillStyle = '#111';
+    ctx.fillRect(0 - recoil, -3, 16, 6);
+    
+    // Turret Dome
+    ctx.fillStyle = '#444';
+    ctx.beginPath();
+    ctx.arc(0, 0, 5, 0, Math.PI*2);
+    ctx.fill();
+    
+    // CHARGING GLOW
+    if (e.attackTimer && e.attackTimer > 2000) {
+        const charge = (e.attackTimer - 2000) / 1000; // 0 to 1 approx
+        const flicker = Math.random() * 0.5 + 0.5;
+        
+        ctx.fillStyle = accent;
+        ctx.shadowColor = accent;
+        ctx.shadowBlur = 10 * charge * flicker;
+        
+        // Muzzle
+        ctx.beginPath();
+        ctx.arc(16 - recoil, 0, 2 + (charge * 2), 0, Math.PI*2);
+        ctx.fill();
+        
+        // Venting
+        ctx.globalAlpha = charge * 0.5;
+        ctx.fillRect(-4, -4, 8, 8);
+    }
+    
+    ctx.restore();
+    
+    // DECAL
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-5, -5, 10, 10);
+};
+
+const renderDasher = (ctx: CanvasRenderingContext2D, hull: string, accent: string, now: number, e: Enemy) => {
+    // ENGINES (Burst potential)
+    const isDashing = e.dashState === 'DASH';
+    const boost = isDashing ? 2.5 : 1;
+    drawVolumetricThruster(ctx, -5, 0, 8 * boost, 15 * boost, accent, now);
+
+    // HULL (Spiked / Aggressive)
+    ctx.fillStyle = hull;
+    ctx.beginPath();
+    ctx.moveTo(16, 0); // Point
+    ctx.lineTo(4, 6);
+    ctx.lineTo(-4, 10); // Rear Spike R
+    ctx.lineTo(0, 4);
+    ctx.lineTo(-8, 0);  // Engine Mount
+    ctx.lineTo(0, -4);
+    ctx.lineTo(-4, -10); // Rear Spike L
+    ctx.lineTo(4, -6);
+    ctx.closePath();
+    ctx.fill();
+
+    // ENERGY BLADES (Mandibles)
+    if (e.dashState === 'CHARGE' || isDashing) {
+        ctx.shadowColor = accent;
+        ctx.shadowBlur = isDashing ? 20 : 10;
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = 2;
+        
+        // Flicker effect
+        if (Math.random() > 0.1) {
+            // Right Blade
+            ctx.beginPath();
+            ctx.moveTo(4, 6); 
+            ctx.lineTo(18, 10);
+            ctx.stroke();
+            
+            // Left Blade
+            ctx.beginPath();
+            ctx.moveTo(4, -6); 
+            ctx.lineTo(18, -10);
+            ctx.stroke();
+        }
+        ctx.shadowBlur = 0;
+    }
+    
+    // CORE
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.moveTo(10, 0);
+    ctx.lineTo(2, 2);
+    ctx.lineTo(2, -2);
+    ctx.fill();
+};
+
+// ─── MAIN EXPORT ───
 
 export const renderEnemy = (
     ctx: CanvasRenderingContext2D, 
@@ -9,345 +208,124 @@ export const renderEnemy = (
     gridSize: number, 
     halfGrid: number, 
     snakeHead: any, 
-    now: number
+    now: number,
+    reduceFlashing: boolean
 ) => {
-    // Context is already translated to enemy center (0,0) and scaled by spawn animation
-    
-    // 1. Calculate Orientation
+    let color = COLORS.enemyHunter;
+    let accentColor = '#ef4444';
+    let hullColor = '#1a0505';
+    let scale = 1.0;
+
+    switch (e.type) {
+        case EnemyType.INTERCEPTOR:
+            color = COLORS.enemyInterceptor;
+            accentColor = '#d946ef';
+            hullColor = '#1a051a';
+            scale = 0.9;
+            break;
+        case EnemyType.SHOOTER:
+            color = COLORS.enemyShooter;
+            accentColor = '#22c55e';
+            hullColor = '#051a05';
+            scale = 1.2;
+            break;
+        case EnemyType.DASHER:
+            color = COLORS.enemyDasher;
+            accentColor = '#f97316';
+            hullColor = '#1a1005';
+            break;
+    }
+
+    // DAMAGE FLASH (Override colors to white, UNLESS reduceFlashing is on)
+    if (e.flash && e.flash > 0 && !reduceFlashing) {
+        hullColor = '#ffffff';
+        color = '#ffffff';
+        accentColor = '#ffffff';
+    }
+
+    ctx.save();
+
     let angle = 0;
-    // If snakeHead is provided, face the player (standard behavior)
     if (snakeHead) {
-        const cx = e.x * gridSize + halfGrid; // Need world coords for atan2 if e.x is grid units?
-        // Wait, renderEntities passes `e` which has grid coordinates.
-        // But the context is already translated to `cx, cy`.
-        // We need to calculate angle based on grid deltas.
-        
         const dx = snakeHead.x - e.x;
         const dy = snakeHead.y - e.y;
         angle = Math.atan2(dy, dx);
-    }
-    
-    // Override angle for Dasher if it has a target angle (charging)
-    if (e.type === EnemyType.DASHER && e.angle !== undefined && e.dashState !== 'IDLE') {
-        angle = e.angle;
+    } else if (e.vx || e.vy) {
+        angle = Math.atan2(e.vy, e.vx);
     }
 
-    // 2. Physics / Animation State
-    const hoverOffset = Math.sin((now / 500) + e.id.charCodeAt(0)) * 3;
-    const isDamaged = e.flash > 0;
+    const hoverY = Math.sin(now / 250 + e.x) * 4;
+    const zHeight = 15;
 
-    // 3. Render Shadow (Ground Plane)
     ctx.save();
-    ctx.translate(0, 15); // Fixed distance to floor
-    ctx.rotate(angle);
-    
-    // Shadow shape varies by type
-    let shadowScaleX = 1;
-    let shadowScaleY = 0.6;
-    if (e.type === EnemyType.INTERCEPTOR) { shadowScaleX = 1.4; shadowScaleY = 0.4; }
-    if (e.type === EnemyType.SHOOTER) { shadowScaleX = 0.9; shadowScaleY = 0.9; }
-    
-    ctx.scale(shadowScaleX, shadowScaleY);
-    drawShadow(ctx, 0, 0, gridSize * 0.6, 10);
+    ctx.translate(0, zHeight); 
+    const shadowScale = 1.0 - (hoverY / 40); 
+    drawShadow(ctx, 0, 0, gridSize * 0.6 * scale * shadowScale, 8);
     ctx.restore();
 
-    // 4. Render Body (Floating)
-    ctx.save();
-    ctx.translate(0, hoverOffset);
+    ctx.translate(0, hoverY);
     ctx.rotate(angle);
-
-    // Apply Damage Flash Overlay Mode
-    if (isDamaged) {
-        // We render normally, then overlay white/red at end? 
-        // Or simpler: just shake and brighten here.
-        ctx.translate((Math.random()-0.5)*4, (Math.random()-0.5)*4);
-    }
+    ctx.scale(scale, scale);
 
     switch (e.type) {
-        case EnemyType.HUNTER:
-            renderHunter(ctx, gridSize, now, isDamaged);
-            break;
         case EnemyType.INTERCEPTOR:
-            renderInterceptor(ctx, gridSize, now, isDamaged);
+            renderInterceptor(ctx, hullColor, accentColor, now);
             break;
         case EnemyType.SHOOTER:
-            renderShooter(ctx, gridSize, now, isDamaged);
+            renderShooter(ctx, hullColor, accentColor, now, e);
             break;
         case EnemyType.DASHER:
-            renderDasher(ctx, gridSize, now, isDamaged);
+            renderDasher(ctx, hullColor, accentColor, now, e);
             break;
+        case EnemyType.HUNTER:
         default:
-            renderGeneric(ctx, gridSize, now);
+            renderHunter(ctx, hullColor, accentColor, now);
             break;
     }
 
-    ctx.restore();
-};
-
-// ─── ARCHETYPE RENDERERS ───
-
-const renderHunter = (ctx: CanvasRenderingContext2D, size: number, now: number, damaged: boolean) => {
-    // "VIPER" DRONE
-    // Triangular, sleek, single eye
-    const scale = 0.8;
-    ctx.scale(scale, scale);
-
-    // Thruster
-    drawVolumetricThruster(ctx, -10, 0, 8, 25, '#ff4400', now);
-
-    // Chassis Path
-    const drawChassis = () => {
-        ctx.beginPath();
-        ctx.moveTo(20, 0);   // Nose
-        ctx.lineTo(-10, 15); // Wing R
-        ctx.lineTo(-5, 0);   // Notch
-        ctx.lineTo(-10, -15);// Wing L
-        ctx.closePath();
-    };
-
-    // Lower Hull (Darkness/Thickness)
-    ctx.save();
-    ctx.translate(0, 4);
-    ctx.fillStyle = '#110505';
-    drawChassis();
-    ctx.fill();
-    ctx.restore();
-
-    // Main Hull
-    ctx.fillStyle = damaged ? '#ffffff' : '#aa2222';
-    // Gradient
-    if (!damaged) {
-        const g = ctx.createLinearGradient(-10, 0, 20, 0);
-        g.addColorStop(0, '#550000');
-        g.addColorStop(1, '#ff3333');
-        ctx.fillStyle = g;
-    }
-    
-    ctx.shadowColor = '#ff0000';
-    ctx.shadowBlur = 10;
-    drawChassis();
-    ctx.fill();
-    ctx.shadowBlur = 0;
-
-    // Details
-    ctx.fillStyle = '#111';
-    ctx.beginPath();
-    ctx.moveTo(10, 0);
-    ctx.lineTo(-2, 5);
-    ctx.lineTo(-2, -5);
-    ctx.fill();
-
-    // Sensor Eye
-    ctx.fillStyle = '#00ffff';
-    ctx.shadowColor = '#00ffff';
-    ctx.shadowBlur = 5;
-    ctx.beginPath();
-    ctx.arc(0, 0, 2, 0, Math.PI*2);
-    ctx.fill();
-};
-
-const renderInterceptor = (ctx: CanvasRenderingContext2D, size: number, now: number, damaged: boolean) => {
-    // "DART" JET
-    // Long, thin, fast. Twin engines.
-    const scale = 0.9;
-    ctx.scale(scale, scale);
-
-    // Twin Ion Engines
-    drawVolumetricThruster(ctx, -12, -6, 4, 35, '#00ffff', now);
-    drawVolumetricThruster(ctx, -12, 6, 4, 35, '#00ffff', now, 100);
-
-    const drawHull = () => {
-        ctx.beginPath();
-        ctx.moveTo(25, 0);    // Nose
-        ctx.lineTo(-5, 8);    // Wing R Mid
-        ctx.lineTo(-15, 12);  // Wing R Tip
-        ctx.lineTo(-12, 4);   // Engine R
-        ctx.lineTo(-12, -4);  // Engine L
-        ctx.lineTo(-15, -12); // Wing L Tip
-        ctx.lineTo(-5, -8);   // Wing L Mid
-        ctx.closePath();
-    };
-
-    // 3D Depth
-    ctx.save();
-    ctx.translate(0, 3);
-    ctx.fillStyle = '#111';
-    drawHull();
-    ctx.fill();
-    ctx.restore();
-
-    // Body
-    ctx.fillStyle = damaged ? '#fff' : '#4400aa';
-    if (!damaged) {
-        const g = ctx.createLinearGradient(-15, 0, 25, 0);
-        g.addColorStop(0, '#220055');
-        g.addColorStop(0.5, '#6600ff');
-        g.addColorStop(1, '#aa00ff');
-        ctx.fillStyle = g;
-    }
-    drawHull();
-    ctx.fill();
-
-    // Stripes
-    ctx.strokeStyle = '#00ffff';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(10, 0); ctx.lineTo(-5, 5);
-    ctx.moveTo(10, 0); ctx.lineTo(-5, -5);
-    ctx.stroke();
-};
-
-const renderShooter = (ctx: CanvasRenderingContext2D, size: number, now: number, damaged: boolean) => {
-    // "MONITOR" TANK
-    // Heavy, boxy, big cannon.
-    const scale = 1.0;
-    ctx.scale(scale, scale);
-
-    // Rear exhaust vents (small)
-    drawVolumetricThruster(ctx, -12, -8, 6, 10, '#00ff00', now);
-    drawVolumetricThruster(ctx, -12, 8, 6, 10, '#00ff00', now);
-
-    // Main Chassis
-    const drawBox = () => {
-        ctx.beginPath();
-        // Octagon-ish
-        ctx.moveTo(10, -10);
-        ctx.lineTo(15, -5);
-        ctx.lineTo(15, 5);
-        ctx.lineTo(10, 10);
-        ctx.lineTo(-10, 10);
-        ctx.lineTo(-15, 5);
-        ctx.lineTo(-15, -5);
-        ctx.lineTo(-10, -10);
-        ctx.closePath();
-    };
-
-    // Depth
-    ctx.save();
-    ctx.translate(0, 5);
-    ctx.fillStyle = '#051105';
-    drawBox();
-    ctx.fill();
-    ctx.restore();
-
-    // Armor
-    ctx.fillStyle = damaged ? '#fff' : '#225522';
-    if (!damaged) {
-        const g = ctx.createRadialGradient(0, -5, 0, 0, 0, 20);
-        g.addColorStop(0, '#44aa44');
-        g.addColorStop(1, '#113311');
-        ctx.fillStyle = g;
-    }
-    drawBox();
-    ctx.fill();
-    
-    // Hazard Stripes
-    if (!damaged) {
+    if (e.stunTimer && e.stunTimer > 0) {
         ctx.save();
-        ctx.clip();
-        ctx.fillStyle = '#000';
-        ctx.globalAlpha = 0.3;
-        for(let i=0; i<4; i++) {
+        ctx.globalCompositeOperation = 'screen';
+        ctx.strokeStyle = '#00ffff';
+        ctx.lineWidth = 2;
+        ctx.shadowColor = '#00ffff';
+        ctx.shadowBlur = 10;
+        
+        ctx.rotate(now * 0.01);
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        const r = gridSize * 0.9;
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        if (Math.random() < 0.3) {
             ctx.beginPath();
-            ctx.moveTo(-20 + i*10, -20);
-            ctx.lineTo(-10 + i*10, 20);
-            ctx.lineTo(-15 + i*10, 20);
-            ctx.lineTo(-25 + i*10, -20);
-            ctx.fill();
+            ctx.moveTo(r, 0);
+            ctx.lineTo(-r, 0);
+            ctx.strokeStyle = '#fff';
+            ctx.setLineDash([]);
+            ctx.lineWidth = 1;
+            ctx.stroke();
         }
         ctx.restore();
     }
-    
-    // Cannon Barrel
-    ctx.fillStyle = '#111';
-    ctx.fillRect(10, -3, 12, 6);
-    ctx.fillStyle = '#00ff00'; // Muzzle glow
-    ctx.shadowColor = '#00ff00';
-    ctx.shadowBlur = 5;
-    ctx.fillRect(20, -2, 2, 4);
-    ctx.shadowBlur = 0;
-};
 
-const renderDasher = (ctx: CanvasRenderingContext2D, size: number, now: number, damaged: boolean) => {
-    // "RAZOR" MINE
-    // Spiked, aggressive, maybe rotating outer shell
-    const scale = 0.9;
-    ctx.scale(scale, scale);
-    
-    // Rotation of blades
-    const rot = now * 0.01;
-
-    // Thruster (Omni-directional glow)
-    ctx.shadowColor = '#ff00aa';
-    ctx.shadowBlur = 20;
-    ctx.fillStyle = 'rgba(255, 0, 170, 0.5)';
-    ctx.beginPath();
-    ctx.arc(0, 0, 10, 0, Math.PI*2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-
-    // Spinning Blades
-    ctx.save();
-    ctx.rotate(rot);
-    
-    const drawBlade = () => {
-        ctx.beginPath();
-        const count = 4;
-        for(let i=0; i<count; i++) {
-            const a = (i / count) * Math.PI * 2;
-            const rO = 18;
-            const rI = 6;
-            const ax = Math.cos(a);
-            const ay = Math.sin(a);
-            
-            // Blade Tip
-            ctx.lineTo(ax * rO, ay * rO);
-            // Inner Notch
-            const a2 = a + (Math.PI / count);
-            const ax2 = Math.cos(a2);
-            const ay2 = Math.sin(a2);
-            ctx.lineTo(ax2 * rI, ay2 * rI);
-        }
-        ctx.closePath();
-    };
-
-    // Shadow/Depth
-    ctx.save();
-    ctx.translate(0, 4);
-    ctx.fillStyle = '#110000';
-    drawBlade();
-    ctx.fill();
     ctx.restore();
 
-    // Metal
-    ctx.fillStyle = damaged ? '#fff' : '#aa0044';
-    drawBlade();
-    ctx.fill();
-    
-    // Edges
-    ctx.strokeStyle = '#ff88aa';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    
-    ctx.restore(); // Stop rotation
-
-    // Central Core (Static)
-    ctx.fillStyle = '#330011';
-    ctx.beginPath();
-    ctx.arc(0, 0, 6, 0, Math.PI*2);
-    ctx.fill();
-    
-    ctx.fillStyle = '#ff0055';
-    ctx.beginPath();
-    ctx.arc(0, 0, 3, 0, Math.PI*2);
-    ctx.fill();
-};
-
-const renderGeneric = (ctx: CanvasRenderingContext2D, size: number, now: number) => {
-    ctx.fillStyle = '#666';
-    ctx.beginPath();
-    ctx.moveTo(10, 0);
-    ctx.lineTo(-5, 5);
-    ctx.lineTo(-5, -5);
-    ctx.fill();
+    if (e.hp < e.maxHp) {
+        const hpPct = Math.max(0, e.hp / e.maxHp);
+        const barW = gridSize * 1.5;
+        const barH = 4;
+        const yOff = -gridSize * 0.8 + hoverY; 
+        
+        ctx.fillStyle = 'rgba(0,0,0,0.8)';
+        ctx.fillRect(-barW/2, yOff, barW, barH);
+        
+        let fillColor = '#00ff00';
+        if (hpPct <= 0.2) fillColor = '#ff0000';
+        else if (hpPct <= 0.5) fillColor = '#ffaa00';
+        
+        ctx.fillStyle = fillColor;
+        ctx.fillRect(-barW/2, yOff, barW * hpPct, barH);
+    }
 };

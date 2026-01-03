@@ -32,24 +32,19 @@ export const generateWalls = (stage: number): Point[] => {
     const walls: Point[] = [];
     
     // WARDEN ARENA (Stage 5) - OPEN ARENA
-    // Previously platformer, now cleared for omni-directional combat
     if (stage === 5) {
-        // Outer Boundary Only
         for(let x=0; x<GRID_COLS; x++) {
-            walls.push({x, y: 0}); // Top
-            walls.push({x, y: GRID_ROWS - 1}); // Bottom
+            walls.push({x, y: 0});
+            walls.push({x, y: GRID_ROWS - 1});
         }
         for(let y=1; y<GRID_ROWS-1; y++) {
-            walls.push({x: 0, y}); // Left
-            walls.push({x: GRID_COLS - 1, y}); // Right
+            walls.push({x: 0, y});
+            walls.push({x: GRID_COLS - 1, y});
         }
         return walls;
     }
 
-    // Clear walls for generic Boss Stages (10, 15, 20...)
     if (stage % 5 === 0) return walls;
-    
-    // Stage 1 is empty tutorial
     if (stage <= 1) return walls;
 
     const patternType = stage % 4; 
@@ -87,7 +82,6 @@ export const generateWalls = (stage: number): Point[] => {
         }
     }
     
-    // SAFE SPAWN RESOLVER: Enforce 3-tile radius around (10,10)
     return walls.filter(w => {
         const distFromCenter = Math.abs(w.x - GRID_COLS/2) > 6 || Math.abs(w.y - GRID_ROWS/2) > 6;
         const distFromSpawn = Math.abs(w.x - 10) > 3 || Math.abs(w.y - 10) > 3;

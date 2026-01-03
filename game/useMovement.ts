@@ -15,7 +15,8 @@ import {
   DIFFICULTY_CONFIGS,
   DEFAULT_SETTINGS,
   MAGNET_RADIUS,
-  XP_BASE_MAGNET_RADIUS
+  XP_BASE_MAGNET_RADIUS,
+  STAMINA_CONFIG
 } from '../constants';
 import { useSpawner } from './useSpawner';
 import { audio } from '../utils/audio';
@@ -44,7 +45,11 @@ export function useMovement(
     terminalsRef, // Need access to terminal state for Boss logic
     uiCombo,
     traitsRef, // NEW: Traits Access
-    stageReadyRef // NEW: Access stage completion state
+    stageReadyRef, // NEW: Access stage completion state
+    staminaRef,
+    stopIntentRef,
+    isStoppedRef,
+    stopCooldownRef
   } = game;
 
   const { spawnEnemy } = spawner;
@@ -72,6 +77,56 @@ export function useMovement(
       return interval;
   }, [overclockActiveRef, statsRef, traitsRef, uiCombo]);
 
+  // ─────────────────────────────
+  // STAMINA LOGIC
+  // ─────────────────────────────
+  const updateStamina = useCallback((dt: number) => {
+      const max = STAMINA_CONFIG.MAX;
+      
+      // Determine if we can stop
+      // If cooldown is active, we must wait until stamina reaches threshold
+      if (stopCooldownRef.current) {
+          if (staminaRef.current > STAMINA_CONFIG.MIN_TO_REENGAGE) {
+              stopCooldownRef.current = false;
+          } else {
+              // Force release
+              stopIntentRef.current = false; // Logically ignore input even if held
+          }
+      }
+
+      // Check Intent
+      if (stopIntentRef.current && !stopCooldownRef.current && staminaRef.current > 0) {
+          // ENGAGE STOP
+          if (!isStoppedRef.current) {
+              isStoppedRef.current = true;
+              audio.setStopEffect(true);
+          }
+          
+          // Drain
+          staminaRef.current -= dt * STAMINA_CONFIG.DRAIN_RATE;
+          
+          // Depletion Check
+          if (staminaRef.current <= 0) {
+              staminaRef.current = 0;
+              isStoppedRef.current = false;
+              stopCooldownRef.current = true; // Trigger cooldown
+              audio.setStopEffect(false);
+              audio.play('UI_HARD_CLICK'); // Release snap sound
+          }
+      } else {
+          // DISENGAGE / RECHARGE
+          if (isStoppedRef.current) {
+              isStoppedRef.current = false;
+              audio.setStopEffect(false);
+          }
+          
+          // Recharge
+          if (staminaRef.current < max) {
+              staminaRef.current = Math.min(max, staminaRef.current + dt * STAMINA_CONFIG.RECHARGE_RATE);
+          }
+      }
+  }, [staminaRef, stopIntentRef, isStoppedRef, stopCooldownRef]);
+
   const getMoveProgress = useCallback(() => {
       const interval = getMoveInterval();
       // Returns 0.0 to 1.0 representing progress TOWARDS the next grid cell
@@ -81,6 +136,15 @@ export function useMovement(
   }, [getMoveInterval]);
 
   const getNextHead = useCallback((dt: number): Point | null => {
+    // 1. Update Stamina System first
+    updateStamina(dt);
+
+    // 2. If Stopped, freeze movement accumulator
+    if (isStoppedRef.current) {
+        // We do NOT increment accumulator.
+        return null; 
+    }
+
     const interval = getMoveInterval();
 
     moveAccumulatorRef.current += dt;
@@ -105,18 +169,15 @@ export function useMovement(
     }
 
     return head;
-  }, [directionRef, directionQueueRef, snakeRef, getMoveInterval]);
+  }, [directionRef, directionQueueRef, snakeRef, getMoveInterval, updateStamina, isStoppedRef]);
 
 
   const commitMove = useCallback(
     (newHead: Point, grew: boolean) => {
       // 🛑 INVARIANT CHECK: HEAD OVERLAP (FRAME STABILITY)
-      // Ensure the new head is not identical to the current head (zero velocity frame glitch)
       const currentHead = snakeRef.current[0];
       if (currentHead && newHead.x === currentHead.x && newHead.y === currentHead.y) {
-          if (process.env.NODE_ENV !== 'production') {
-              console.warn("Snake invariant violated: Head didn't move. Skipping frame.");
-          }
+          // Warning suppressed for browser build
           return;
       }
 
@@ -141,9 +202,7 @@ export function useMovement(
       const head = snakeRef.current[0];
       const neck = snakeRef.current[1];
       if (neck && head.x === neck.x && head.y === neck.y) {
-          if (process.env.NODE_ENV !== 'production') {
-              console.error(`CRITICAL INVARIANT VIOLATION: Snake Head overlapping Neck at (${head.x},${head.y})! Repairing state.`);
-          }
+          // Error suppressed for browser build
           // Remove the duplicate neck segment to restore manifold
           snakeRef.current.splice(1, 1);
       }
@@ -345,7 +404,9 @@ export function useMovement(
                           damage: 15,
                           color: '#ff3333',
                           owner: 'ENEMY',
-                          size: 6
+                          size: 6,
+                          type: 'STANDARD',
+                          usesGravity: false
                       });
                   }
                   audioEventsRef.current.push({ type: 'SHOOT' });
@@ -401,7 +462,9 @@ export function useMovement(
                               damage: 20,
                               color: '#ff3333',
                               owner: 'ENEMY',
-                              size: 6
+                              size: 6,
+                              type: 'STANDARD',
+                              usesGravity: false
                           });
                       }
                       audioEventsRef.current.push({ type: 'SHOOT' });
@@ -450,7 +513,9 @@ export function useMovement(
                               damage: 15,
                               color: '#cc00ff',
                               owner: 'ENEMY',
-                              size: 7
+                              size: 7,
+                              type: 'STANDARD',
+                              usesGravity: false
                           });
                       }
                       audioEventsRef.current.push({ type: 'SHOOT' });
@@ -505,7 +570,9 @@ export function useMovement(
                           color: '#ff4400',
                           owner: 'ENEMY',
                           size: 6,
-                          life: 120
+                          life: 120,
+                          type: 'STANDARD',
+                          usesGravity: false
                       });
                   }
               }
@@ -527,7 +594,9 @@ export function useMovement(
                                   damage: 12,
                                   color: '#ffaa00',
                                   owner: 'ENEMY',
-                                  size: 5
+                                  size: 5,
+                                  type: 'STANDARD',
+                                  usesGravity: false
                               });
                           });
                           
@@ -598,7 +667,9 @@ export function useMovement(
       getMoveInterval,
       statsRef,
       game.stageRef,
-      terminalsRef
+      terminalsRef,
+      updateStamina, // Added dependency
+      isStoppedRef, // Added dependency
     ]
   );
 
@@ -607,6 +678,7 @@ export function useMovement(
     commitMove,
     updateEnemies,
     updateLoot,
-    getMoveProgress
+    getMoveProgress,
+    updateStamina
   };
 }

@@ -33,7 +33,7 @@ export const UnlockToast: React.FC<UnlockToastProps> = ({ queue, onClear }) => {
         }
 
         // A. Start Sequence
-        audio.play('BONUS');
+        audio.play('COSMETIC_UNLOCK');
         
         // Small delay to ensure DOM is mounted with opacity-0 before transitioning
         const enterTimer = setTimeout(() => {
@@ -72,16 +72,16 @@ export const UnlockToast: React.FC<UnlockToastProps> = ({ queue, onClear }) => {
     return (
         <div 
             className={`
-                fixed top-24 left-1/2 -translate-x-1/2 z-[100] 
+                absolute top-2 left-1/2 -translate-x-1/2 z-[90] 
                 transition-all duration-500 ease-out transform pointer-events-none
-                ${isVisible ? 'translate-y-0 opacity-100 scale-100' : '-translate-y-8 opacity-0 scale-95'}
+                ${isVisible ? 'translate-y-0 opacity-100 scale-100' : '-translate-y-4 opacity-0 scale-95'}
             `}
         >
             {/* Container */}
-            <div className="bg-[#050505] border border-green-500/50 shadow-[0_0_30px_rgba(0,255,0,0.2)] p-1 min-w-[320px] rounded-sm relative overflow-hidden group">
+            <div className="bg-[#050505]/95 border border-green-500/40 shadow-[0_0_15px_rgba(0,255,0,0.15)] p-0.5 min-w-[280px] rounded-sm relative overflow-hidden group backdrop-blur-md">
                 
                 {/* Scanline BG */}
-                <div className="absolute inset-0 bg-[linear-gradient(rgba(0,255,0,0.03)_1px,transparent_1px)] bg-[length:100%_2px] pointer-events-none" />
+                <div className="absolute inset-0 bg-[linear-gradient(rgba(0,255,0,0.05)_1px,transparent_1px)] bg-[length:100%_2px] pointer-events-none" />
                 
                 {/* Progress Bar (Visual timer) */}
                 <div 
@@ -92,40 +92,36 @@ export const UnlockToast: React.FC<UnlockToastProps> = ({ queue, onClear }) => {
                     }}
                 />
 
-                <div className="bg-green-950/20 backdrop-blur-md p-3 flex items-start gap-4">
+                <div className="flex items-center gap-3 px-3 py-2">
                     {/* Icon */}
-                    <div className="w-10 h-10 border border-green-500/30 bg-black/50 flex items-center justify-center shrink-0 shadow-inner">
-                        <span className="text-xl filter drop-shadow-[0_0_5px_rgba(0,255,0,0.8)]">
+                    <div className="w-8 h-8 border border-green-500/30 bg-black/50 flex items-center justify-center shrink-0 shadow-inner rounded">
+                        <span className="text-lg filter drop-shadow-[0_0_5px_rgba(0,255,0,0.5)]">
                             {def.type === 'HUD' ? '🖥️' : '🎨'}
                         </span>
                     </div>
 
                     {/* Text */}
-                    <div className="flex-1 min-w-0">
-                        <div className="flex justify-between items-center mb-1">
-                            <span className="text-[10px] font-bold text-green-400 tracking-widest uppercase">
-                                SYSTEM UNLOCK
+                    <div className="flex-1 min-w-0 flex flex-col justify-center">
+                        <div className="flex justify-between items-baseline w-full">
+                            <span className="text-[9px] font-bold text-green-400 tracking-widest uppercase">
+                                UNLOCKED
                             </span>
-                            <span className="text-[9px] text-green-600/70 font-mono">
-                                [{def.type}]
+                            <span className="text-[8px] text-green-600/70 font-mono uppercase">
+                                {def.type} MODULE
                             </span>
                         </div>
                         
-                        <div className="text-sm font-bold text-white font-mono truncate shadow-black drop-shadow-md">
+                        <div className="text-xs font-bold text-white font-mono truncate shadow-black drop-shadow-sm leading-tight mt-0.5">
                             {def.displayName}
-                        </div>
-                        
-                        <div className="text-[10px] text-green-400/70 font-mono mt-0.5 leading-tight">
-                            {def.description}
                         </div>
                     </div>
                 </div>
                 
                 {/* Corner Accents */}
-                <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-green-500"></div>
-                <div className="absolute top-0 right-0 w-2 h-2 border-t border-r border-green-500"></div>
-                <div className="absolute bottom-0 left-0 w-2 h-2 border-b border-l border-green-500"></div>
-                <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-green-500"></div>
+                <div className="absolute top-0 left-0 w-1.5 h-1.5 border-t border-l border-green-500"></div>
+                <div className="absolute top-0 right-0 w-1.5 h-1.5 border-t border-r border-green-500"></div>
+                <div className="absolute bottom-0 left-0 w-1.5 h-1.5 border-b border-l border-green-500"></div>
+                <div className="absolute bottom-0 right-0 w-1.5 h-1.5 border-b border-r border-green-500"></div>
             </div>
         </div>
     );

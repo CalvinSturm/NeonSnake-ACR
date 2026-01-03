@@ -6,7 +6,7 @@
  *
  * - It may ONLY mutate visual refs:
  *   particlesRef, floatingTextsRef, shockwavesRef,
- *   lightningArcsRef, shakeRef, cliAnimationsRef.
+ *   lightningArcsRef, shakeRef.
  *
  * - It must NEVER:
  *   - change gameplay state
@@ -22,7 +22,7 @@
 import { useCallback, useRef } from 'react';
 import { useGameState } from './useGameState';
 import { DEFAULT_SETTINGS, COLORS, FX_LIMITS, CANVAS_WIDTH, CANVAS_HEIGHT } from '../constants';
-import { Shockwave, LightningArc, TerminalType } from '../types';
+import { Shockwave, LightningArc } from '../types';
 
 export function useFX(game: ReturnType<typeof useGameState>) {
   const { 
@@ -33,8 +33,6 @@ export function useFX(game: ReturnType<typeof useGameState>) {
     shakeRef,
     digitalRainRef,
     chromaticAberrationRef,
-    cliAnimationsRef, // NEW
-    audioEventsRef, // NEW
     settings // Access settings
   } = game;
 
@@ -131,139 +129,6 @@ export function useFX(game: ReturnType<typeof useGameState>) {
   );
 
   // ─────────────────────────────────────────────
-  // CLI ANIMATION SYSTEM
-  // ─────────────────────────────────────────────
-  const triggerCLISequence = useCallback((x: number, y: number, type: TerminalType, color: string, data?: any) => {
-      cliAnimationsRef.current.push({
-          id: Math.random().toString(36),
-          x,
-          y,
-          type,
-          phase: 1,
-          timer: 0,
-          lines: [],
-          progress: 0,
-          color,
-          data
-      });
-      // Initial Audio Burst
-      audioEventsRef.current.push({ type: 'CLI_BURST' });
-  }, [cliAnimationsRef, audioEventsRef]);
-
-  const updateCLISequences = useCallback((dt: number) => {
-      const anims = cliAnimationsRef.current;
-      if (anims.length === 0) return;
-
-      anims.forEach(anim => {
-          if (anim.shouldRemove) return;
-          anim.timer += dt;
-
-          const data = anim.data || {};
-          const isMemory = anim.type === 'MEMORY';
-
-          if (isMemory) {
-              // ─── MEMORY TERMINAL FLOW ───
-              if (anim.phase === 1) {
-                  // Phase 1: Archive Handshake
-                  if (anim.lines.length === 0) {
-                      anim.lines.push('> accessing archive node...');
-                      audioEventsRef.current.push({ type: 'MOVE' });
-                  }
-                  if (anim.timer > 200 && anim.lines.length === 1) {
-                      anim.lines.push('> decrypting memory sector...');
-                      audioEventsRef.current.push({ type: 'MOVE' });
-                  }
-                  if (anim.timer > 600) {
-                      anim.phase = 2;
-                      anim.timer = 0;
-                  }
-              }
-              else if (anim.phase === 2) {
-                  // Phase 2: Identification
-                  if (anim.timer > 200 && anim.lines.length === 2) {
-                       anim.lines.push('> MEMORY MODULE DETECTED');
-                       audioEventsRef.current.push({ type: 'CLI_BURST' });
-                  }
-                  if (anim.timer > 600) {
-                      anim.phase = 3;
-                      anim.timer = 0;
-                  }
-              }
-              else if (anim.phase === 3) {
-                  // Phase 3: Reveal (Dopamine Hit)
-                  if (anim.timer > 0 && anim.lines.length === 3) {
-                      anim.lines.push('✔ MODULE RECOVERED');
-                      anim.lines.push(`  └─ [${data.id || '???'}] ${data.title || 'ENCRYPTED'}`);
-                      audioEventsRef.current.push({ type: 'HACK_COMPLETE' }); // Success tone
-                  }
-                  if (anim.timer > 1000) {
-                      anim.phase = 4;
-                      anim.timer = 0;
-                  }
-              }
-              else if (anim.phase === 4) {
-                  // Phase 4: Confirmation
-                  if (anim.timer > 0 && anim.lines.length === 5) {
-                      anim.lines.push('✔ archive updated');
-                      audioEventsRef.current.push({ type: 'UI_HARD_CLICK' });
-                  }
-                  if (anim.timer > 1500) {
-                      anim.shouldRemove = true;
-                  }
-              }
-          } 
-          else {
-              // ─── RESOURCE / STANDARD FLOW ───
-              if (anim.phase === 1) {
-                  // Phase 1: Init
-                  if (anim.lines.length === 0) {
-                      const verb = anim.type === 'OVERRIDE' ? 'Override' : 'Miner';
-                      anim.lines.push(`> ${verb} initiated`);
-                  }
-                  if (anim.timer > 0) {
-                      // Immediate transition to progress
-                      anim.phase = 2;
-                      anim.timer = 0;
-                  }
-              }
-              else if (anim.phase === 2) {
-                  // Phase 2: Progress (Animated Dots)
-                  // We simulate progress via text updates or just waiting
-                  const dotCount = Math.floor(anim.timer / 150) % 4;
-                  const dots = '.'.repeat(dotCount);
-                  
-                  // Ensure line exists
-                  if (anim.lines.length < 2) anim.lines.push(`> processing${dots}`);
-                  else anim.lines[1] = `> processing${dots}`;
-                  
-                  if (anim.timer > 500) {
-                      anim.phase = 3;
-                      anim.timer = 0;
-                      audioEventsRef.current.push({ type: 'HACK_COMPLETE' }); 
-                      
-                      const val = data.value || 'DATA';
-                      let finalLine = `✔ ${val} mined and exported`;
-                      
-                      if (anim.type === 'OVERRIDE') finalLine = `✔ OVERRIDE SIGNAL SENT`;
-                      if (anim.type === 'CLEARANCE') finalLine = `✔ SECURITY LEVEL UPGRADED`;
-                      
-                      anim.lines.push(finalLine);
-                  }
-              }
-              else if (anim.phase === 3) {
-                  // Phase 3: Hold & Fade
-                  if (anim.timer > 1000) {
-                      anim.shouldRemove = true;
-                  }
-              }
-          }
-      });
-      
-      // Cleanup
-      cliAnimationsRef.current = anims.filter(a => !a.shouldRemove);
-  }, [cliAnimationsRef, audioEventsRef]);
-
-  // ─────────────────────────────────────────────
   // DIGITAL RAIN (FULLSCREEN FX)
   // ─────────────────────────────────────────────
   const initDigitalRain = useCallback(() => {
@@ -323,24 +188,22 @@ export function useFX(game: ReturnType<typeof useGameState>) {
     });
     
     updateDigitalRain();
-    
-    // Process CLI Animations using approximate frame time (assuming 60fps for smoothing if dt not passed)
-    updateCLISequences(16);
 
     // Decay Chromatic Aberration
     if (chromaticAberrationRef.current > 0) {
         chromaticAberrationRef.current *= 0.9;
         if (chromaticAberrationRef.current < 0.01) chromaticAberrationRef.current = 0;
     }
-  }, [particlesRef, floatingTextsRef, updateDigitalRain, chromaticAberrationRef, updateCLISequences]);
+  }, [particlesRef, floatingTextsRef, updateDigitalRain, chromaticAberrationRef]);
 
   const clearTransientFX = useCallback(() => {
     lightningArcsRef.current = [];
     shockwavesRef.current = [];
     floatingTextsRef.current = [];
-    cliAnimationsRef.current = [];
     chromaticAberrationRef.current = 0;
-  }, [lightningArcsRef, shockwavesRef, floatingTextsRef, chromaticAberrationRef, cliAnimationsRef]);
+    // Note: We intentionally do NOT clear digitalRainRef here, 
+    // it fades out via opacity or is cleared by stage controller on new stage
+  }, [lightningArcsRef, shockwavesRef, floatingTextsRef, chromaticAberrationRef]);
 
   // ─────────────────────────────────────────────
   // PUBLIC API
@@ -352,7 +215,6 @@ export function useFX(game: ReturnType<typeof useGameState>) {
     triggerShockwave,
     triggerLightning,
     triggerShake,
-    triggerCLISequence, // NEW
     initDigitalRain,
     pulseBeat,
     pulseBar,

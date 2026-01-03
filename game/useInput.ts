@@ -1,10 +1,4 @@
 
-/**
- * ARCHITECTURE LOCK:
- *
- * useInput is an INTENT CAPTURE system.
- */
-
 import { useEffect, useCallback, useRef } from 'react';
 import { Direction, GameStatus, UpgradeOption, CameraMode } from '../types';
 import { useGameState } from './useGameState';
@@ -15,7 +9,7 @@ import { CameraBehavior } from './camera/types';
 
 export function useInput(
   game: ReturnType<typeof useGameState>,
-  applyUpgrade: (option: UpgradeOption) => void,
+  applyUpgrade: (id: UpgradeId) => void,
   handleStartClick: () => void
 ) {
   const {
@@ -29,9 +23,10 @@ export function useInput(
     closeSettings,
     setResumeCountdown,
     cameraRef,
-    jumpIntentRef, // Physics intent
-    devModeFlagsRef, // Access dev flags
-    cameraControlsEnabled // State
+    jumpIntentRef, 
+    cameraControlsEnabled,
+    stopIntentRef,
+    settings // Access settings for invert flag
   } = game;
 
   const { queueCameraIntent } = useCameraController(game);
@@ -50,8 +45,7 @@ export function useInput(
 
     // SIDE SCROLL OVERRIDE: 
     // In Side Scroll mode, UP acts as Jump, not directional change.
-    // UNLESS in Free Movement Dev Mode.
-    if (cameraRef.current.mode === CameraMode.SIDE_SCROLL && !devModeFlagsRef.current.freeMovement) {
+    if (cameraRef.current.mode === CameraMode.SIDE_SCROLL) {
         if (newDir === Direction.UP) {
             jumpIntentRef.current = true;
             return;
@@ -74,7 +68,7 @@ export function useInput(
         directionQueueRef.current.push(newDir);
       }
     }
-  }, [directionRef, directionQueueRef, modalState, cameraRef, jumpIntentRef, devModeFlagsRef]);
+  }, [directionRef, directionQueueRef, modalState, cameraRef, jumpIntentRef]);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     // 1. SETTINGS OVERRIDE (Must close settings first)
@@ -85,7 +79,19 @@ export function useInput(
         return; // Block all other input
     }
 
-    // 2. RESUME / PAUSE CONTROLS
+    // 2. MENU NAVIGATION (Escape Back)
+    if (e.key === 'Escape') {
+        if (status === GameStatus.DIFFICULTY_SELECT) {
+             setStatus(GameStatus.IDLE);
+             return;
+        }
+        if (status === GameStatus.CHARACTER_SELECT) {
+             setStatus(GameStatus.DIFFICULTY_SELECT);
+             return;
+        }
+    }
+
+    // 3. RESUME / PAUSE CONTROLS
     // Allow skipping countdown with Space or Enter
     if (status === GameStatus.RESUMING && (e.key === ' ' || e.key === 'Enter')) {
          setResumeCountdown(0);
@@ -96,7 +102,7 @@ export function useInput(
     // Toggle Pause with Escape, P, or Space
     if (e.key === 'Escape' || e.key === 'p' || e.key === 'P' || e.key === ' ') {
         if (status === GameStatus.PLAYING || status === GameStatus.PAUSED) {
-            const isJumpMode = cameraRef.current.mode === CameraMode.SIDE_SCROLL && !devModeFlagsRef.current.freeMovement;
+            const isJumpMode = cameraRef.current.mode === CameraMode.SIDE_SCROLL;
 
             if (e.key === ' ' && isJumpMode) {
                 // JUMP
@@ -109,7 +115,7 @@ export function useInput(
         }
     }
 
-    // 3. GAME OVER
+    // 4. GAME OVER
     if (status === GameStatus.GAME_OVER) {
       if (e.key === ' ' || e.key === 'Enter') {
         handleStartClick();
@@ -117,18 +123,18 @@ export function useInput(
       return;
     }
 
-    // 4. LEVEL UP
+    // 5. LEVEL UP
     if (status === GameStatus.LEVEL_UP) {
       if (e.key === '1' && upgrades[0])
-        applyUpgrade(upgrades[0]);
+        applyUpgrade(upgrades[0].id as UpgradeId);
       if (e.key === '2' && upgrades[1])
-        applyUpgrade(upgrades[1]);
+        applyUpgrade(upgrades[1].id as UpgradeId);
       if (e.key === '3' && upgrades[2])
-        applyUpgrade(upgrades[2]);
+        applyUpgrade(upgrades[2].id as UpgradeId);
       return;
     }
 
-    // 5. CAMERA CONTROLS (GATED)
+    // 6. CAMERA CONTROLS (GATED)
     if (status === GameStatus.PLAYING && cameraControlsEnabled) {
         if (e.key === '=' || e.key === '+') {
             queueCameraIntent({ type: 'ADJUST_ZOOM', delta: 0.1, duration: 150 });
@@ -141,11 +147,13 @@ export function useInput(
         }
         
         // Rotation (Q/E)
+        const invertMult = settings.invertRotation ? -1 : 1;
+        
         if (e.key === 'q' || e.key === 'Q') {
-            queueCameraIntent({ type: 'ROTATE', angle: cameraRef.current.rotation - Math.PI / 4, duration: 300 });
+            queueCameraIntent({ type: 'ROTATE', angle: cameraRef.current.rotation - (Math.PI / 4) * invertMult, duration: 300 });
         }
         if (e.key === 'e' || e.key === 'E') {
-            queueCameraIntent({ type: 'ROTATE', angle: cameraRef.current.rotation + Math.PI / 4, duration: 300 });
+            queueCameraIntent({ type: 'ROTATE', angle: cameraRef.current.rotation + (Math.PI / 4) * invertMult, duration: 300 });
         }
 
         // Cycle Mode (C)
@@ -154,7 +162,14 @@ export function useInput(
         }
     }
 
-    // 6. GAMEPLAY (Only if playing and no modal)
+    // 7. STOP MECHANIC (Shift)
+    if (status === GameStatus.PLAYING && modalState === 'NONE') {
+        if (e.key === 'Shift') {
+            stopIntentRef.current = true;
+        }
+    }
+
+    // 8. GAMEPLAY (Only if playing and no modal)
     if (status !== GameStatus.PLAYING || modalState !== 'NONE') return;
 
     switch (e.key) {
@@ -197,9 +212,16 @@ export function useInput(
     cameraRef,
     jumpIntentRef,
     queueCameraIntent,
-    devModeFlagsRef,
-    cameraControlsEnabled
+    cameraControlsEnabled,
+    stopIntentRef,
+    settings.invertRotation
   ]);
+
+  const handleKeyUp = useCallback((e: KeyboardEvent) => {
+      if (e.key === 'Shift') {
+          stopIntentRef.current = false;
+      }
+  }, [stopIntentRef]);
 
   useEffect(() => {
     // ─── MOUSE / WHEEL HANDLERS ───
@@ -237,7 +259,8 @@ export function useInput(
         if (isDraggingRef.current) {
             // Rotation Logic
             const sensitivity = 0.01;
-            const newRotation = cam.rotation + (dx * sensitivity);
+            const invertMult = settings.invertRotation ? -1 : 1;
+            const newRotation = cam.rotation + (dx * sensitivity * invertMult);
             
             queueCameraIntent({ type: 'ROTATE', angle: newRotation, duration: 0 }); // Instant
             
@@ -272,6 +295,7 @@ export function useInput(
     }
 
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
     window.addEventListener('wheel', handleWheel, { passive: true });
     window.addEventListener('mousedown', handleMouseDown);
     window.addEventListener('mousemove', handleMouseMove);
@@ -280,13 +304,14 @@ export function useInput(
     
     return () => {
         window.removeEventListener('keydown', handleKeyDown);
+        window.removeEventListener('keyup', handleKeyUp);
         window.removeEventListener('wheel', handleWheel);
         window.removeEventListener('mousedown', handleMouseDown);
         window.removeEventListener('mousemove', handleMouseMove);
         window.removeEventListener('mouseup', handleMouseUp);
         window.removeEventListener('contextmenu', handleContextMenu);
     };
-  }, [handleKeyDown, status, cameraRef, queueCameraIntent, cameraControlsEnabled]);
+  }, [handleKeyDown, handleKeyUp, status, cameraRef, queueCameraIntent, cameraControlsEnabled, settings.invertRotation]);
 
   return { handleInput };
 }

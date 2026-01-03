@@ -5,7 +5,7 @@ import { PHYSICS, DEFAULT_SETTINGS } from '../../constants';
 import { CameraMode } from '../../types';
 
 export function useVerticalPhysics(game: ReturnType<typeof useGameState>) {
-  const { snakeRef, physicsRef, jumpIntentRef, cameraRef, floor, enemiesRef, devModeFlagsRef } = game;
+  const { snakeRef, physicsRef, jumpIntentRef, cameraRef, floor, enemiesRef } = game;
 
   // Reusable Physics Logic
   const applyGravityAndFloor = useCallback((
@@ -27,7 +27,6 @@ export function useVerticalPhysics(game: ReturnType<typeof useGameState>) {
 
     // 3. COLLISION RESOLUTION (Floor Volumes)
     // Only resolve landing if we are falling or stationary (vy >= 0)
-    // This allows jumping through platforms from below if we support that later
     if (entity.vy >= 0) {
         const supportingFloor = floor.getSupportingFloor(entity.x, entity.y);
         
@@ -40,8 +39,6 @@ export function useVerticalPhysics(game: ReturnType<typeof useGameState>) {
             // No floor found below us, OR we are above the floor we found
             // If we were grounded, check if we walked off ledge
             if (entity.isGrounded) {
-                // Double check: Is there a floor directly below us within a tiny epsilon?
-                // `getSupportingFloor` returns null if we walked off X range.
                 if (!supportingFloor || entity.y < supportingFloor.topY - 0.1) {
                     entity.isGrounded = false;
                 }
@@ -60,16 +57,6 @@ export function useVerticalPhysics(game: ReturnType<typeof useGameState>) {
       physicsRef.current.vy = 0;
       physicsRef.current.isGrounded = true;
       return;
-    }
-
-    // 2. GUARD: DEV FREE MOVEMENT
-    // If active, we skip gravity processing entirely, allowing "Flight" via normal input
-    if (devModeFlagsRef.current.freeMovement) {
-        physicsRef.current.vy = 0;
-        physicsRef.current.isGrounded = true; // Effectively grounded logic but without gravity
-        // Note: useMovement handles X/Y updates based on directionRef. 
-        // By disabling this gravity logic, snake moves like top-down mode.
-        return;
     }
 
     const dtSec = dt / 1000;
@@ -122,7 +109,7 @@ export function useVerticalPhysics(game: ReturnType<typeof useGameState>) {
         }
     }
 
-  }, [snakeRef, physicsRef, jumpIntentRef, cameraRef, floor, enemiesRef, applyGravityAndFloor, devModeFlagsRef]);
+  }, [snakeRef, physicsRef, jumpIntentRef, cameraRef, floor, enemiesRef, applyGravityAndFloor]);
 
   return { update };
 }

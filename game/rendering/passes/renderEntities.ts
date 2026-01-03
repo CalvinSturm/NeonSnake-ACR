@@ -7,10 +7,6 @@ import { renderBoss } from '../entities/renderBoss';
 import { renderWarden } from '../entities/renderWarden';
 import { renderEnemy } from '../entities/renderEnemy';
 import { renderSnake } from '../entities/renderSnake';
-import { renderBarrier } from '../entities/renderBarrier';
-import { renderSpaceship } from '../entities/renderSpaceship';
-import { renderTailAura } from '../entities/weapons/renderTailAura';
-import { getInterpolatedSegments } from '../../utils/interpolation';
 
 export const renderEntities = (
     rc: RenderContext,
@@ -30,7 +26,7 @@ export const renderEntities = (
     echoDamageStored: number,
     prismLanceTimer: number
 ) => {
-    const { ctx, gridSize, halfGrid, now, gameTime } = rc;
+    const { ctx, gridSize, halfGrid, now, gameTime, reduceFlashing } = rc;
     const PI2 = Math.PI * 2;
 
     // 1. MINES
@@ -170,33 +166,18 @@ export const renderEntities = (
         if (e.type === EnemyType.BOSS) {
             // Dispatch based on config ID
             if (e.bossConfigId === 'WARDEN_07') {
-                renderWarden(ctx, e, now, gridSize);
-            } else if (e.bossConfigId === 'SPACESHIP_BOSS') {
-                renderSpaceship(ctx, e, gridSize, halfGrid, now);
+                renderWarden(ctx, e, now, gridSize, !!reduceFlashing);
             } else {
-                renderBoss(ctx, e, now, gridSize, halfGrid, snake[0]);
+                renderBoss(ctx, e, now, gridSize, halfGrid, snake[0], !!reduceFlashing);
             }
-        } else if (e.type === EnemyType.BARRIER) {
-            // Specific renderer for the wall
-            ctx.restore(); // Barrier uses its own transform
-            renderBarrier(ctx, e, gridSize, halfGrid, now);
-            return; // Skip restore below
         } else {
-            renderEnemy(ctx, e, gridSize, halfGrid, snake[0], now);
+            renderEnemy(ctx, e, gridSize, halfGrid, snake[0], now, !!reduceFlashing);
         }
 
         ctx.restore();
     });
 
-    // 4. TAIL AURA PASS
-    // Renders behind snake body but above floor
-    if (stats.weapon.auraLevel > 0) {
-        const segments = getInterpolatedSegments(snake, prevTail, moveProgress, gridSize, halfGrid);
-        const radiusPx = (stats.weapon.auraRadius * gridSize) * stats.globalAreaMod;
-        renderTailAura(rc, segments, radiusPx);
-    }
-
-    // 5. SNAKE
+    // 4. SNAKE
     renderSnake(
         rc, 
         snake, 

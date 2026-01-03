@@ -1,4 +1,16 @@
 
+export enum Direction {
+  UP = 'UP',
+  DOWN = 'DOWN',
+  LEFT = 'LEFT',
+  RIGHT = 'RIGHT'
+}
+
+export interface Point {
+  x: number;
+  y: number;
+}
+
 export enum GameStatus {
   IDLE = 'IDLE',
   PLAYING = 'PLAYING',
@@ -6,24 +18,13 @@ export enum GameStatus {
   GAME_OVER = 'GAME_OVER',
   LEVEL_UP = 'LEVEL_UP',
   STAGE_TRANSITION = 'STAGE_TRANSITION',
+  READY = 'READY',
   DIFFICULTY_SELECT = 'DIFFICULTY_SELECT',
   CHARACTER_SELECT = 'CHARACTER_SELECT',
-  RESUMING = 'RESUMING',
-  ARCHIVE = 'ARCHIVE',
   CONFIGURATION = 'CONFIGURATION',
-  READY = 'READY'
-}
-
-export type ModalState = 'NONE' | 'PAUSE' | 'SETTINGS';
-
-export interface DevBootstrapConfig {
-  stageId: number;
-  bossPhase?: number; // 1, 2, 3
-  cameraMode?: CameraMode;
-  cameraBehavior?: 'FOLLOW_PLAYER' | 'FIXED' | 'MANUAL'; // Added
-  forceBoss?: boolean; // If true, spawns boss even if stage ID doesn't match default
-  freeMovement?: boolean; // If true, disables gravity/jump restrictions in side-scroll
-  disableWalls?: boolean; // If true, clears stage walls
+  ARCHIVE = 'ARCHIVE',
+  COSMETICS = 'COSMETICS',
+  RESUMING = 'RESUMING'
 }
 
 export enum Difficulty {
@@ -38,11 +39,9 @@ export enum CameraMode {
   SIDE_SCROLL = 'SIDE_SCROLL'
 }
 
-export enum Direction {
-  UP = 'UP',
-  DOWN = 'DOWN',
-  LEFT = 'LEFT',
-  RIGHT = 'RIGHT'
+export enum FoodType {
+  NORMAL = 'NORMAL',
+  XP_ORB = 'XP_ORB'
 }
 
 export enum EnemyType {
@@ -50,21 +49,12 @@ export enum EnemyType {
   INTERCEPTOR = 'INTERCEPTOR',
   SHOOTER = 'SHOOTER',
   DASHER = 'DASHER',
-  BOSS = 'BOSS',
-  BARRIER = 'BARRIER' // New Entity
+  BOSS = 'BOSS'
 }
 
-export enum FoodType {
-  NORMAL = 'NORMAL',
-  XP_ORB = 'XP_ORB'
-}
-
-export type EnemyState = 'SPAWNING' | 'ENTERING' | 'ACTIVE';
-
-export interface Point {
-  x: number;
-  y: number;
-}
+export type MobileControlScheme = 'JOYSTICK' | 'ARROWS' | 'SWIPE';
+export type TerminalType = 'RESOURCE' | 'MEMORY' | 'OVERRIDE' | 'CLEARANCE';
+export type ModalState = 'NONE' | 'SETTINGS' | 'PAUSE';
 
 export interface WeaponStats {
   cannonLevel: number;
@@ -98,7 +88,7 @@ export interface WeaponStats {
   neuralMagnetLevel: number;
   overclockLevel: number;
   echoCacheLevel: number;
-  luckLevel: number; // NEW
+  luckLevel: number;
 }
 
 export interface UpgradeStats {
@@ -112,116 +102,68 @@ export interface UpgradeStats {
   critMultiplier: number;
   hackSpeedMod: number;
   moveSpeedMod: number;
-  luck: number; // NEW
+  luck: number;
   activeWeaponIds: string[];
   maxWeaponSlots: number;
   acquiredUpgradeIds: string[];
-  // GLOBAL SCALARS
   globalDamageMod: number;
   globalFireRateMod: number;
   globalAreaMod: number;
   globalProjectileSpeedMod: number;
 }
 
-export interface CharacterTrait {
+export interface Trait {
   name: string;
   description: string;
-  type: 'SCALABLE' | 'STATIC';
+  type: 'GROWTH' | 'STATIC';
 }
 
 export interface CharacterProfile {
   id: string;
   name: string;
   description: string;
-  traits: CharacterTrait[];
   color: string;
-  tag: 'STABLE' | 'ADAPTIVE' | 'VOLATILE';
+  tag: string;
   payoff: string;
+  traits: Trait[];
   initialStats: Partial<UpgradeStats>;
-}
-
-export interface StageTheme {
-  name: string;
-  primary: string;
-  secondary: string;
-  background: string;
-  wall: string;
-  enemy: string;
-}
-
-export type MobileControlScheme = 'JOYSTICK' | 'ARROWS' | 'SWIPE';
-
-export interface GameSettings {
-  gridSize: number;
-  initialSpeed: number;
-  volume: number;
-}
-
-export interface DifficultyConfig {
-  id: Difficulty;
-  label: string;
-  description: string;
-  spawnRateMod: number;
-  hpMod: number;
-  speedMod: number;
-  allowedEnemies: EnemyType[];
-  bossHpMod: number;
-  unlockCondition: string;
-  stageGoal: number;
-  color: string;
 }
 
 export interface EnemyPhysicsProfile {
   usesVerticalPhysics: boolean;
-  canJump?: boolean;
-  jumpCooldown?: number; // ms
+  canJump: boolean;
+  jumpCooldown: number;
 }
 
 export interface Enemy extends Point {
   id: string;
   type: EnemyType;
-  state: EnemyState;
-  spawnSide?: 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT';
-  spawnTime: number;
   hp: number;
   maxHp: number;
+  state: 'SPAWNING' | 'ACTIVE' | 'ENTERING';
+  spawnTime: number;
+  spawnSide?: string;
   flash: number;
   hitCooldowns?: Record<string, number>;
   stunTimer?: number;
-  // Physics Properties
+  vx: number;
   vy: number;
   isGrounded: boolean;
   physicsProfile: EnemyPhysicsProfile;
-  // Jump AI
   jumpCooldownTimer: number;
   jumpIntent: boolean;
-  // Boss specific
+  shouldRemove?: boolean;
   bossPhase?: number;
   attackTimer?: number;
   spawnTimer?: number;
   dashTimer?: number;
-  dashState?: 'IDLE' | 'CHARGE' | 'DASH';
+  dashState?: string;
+  bossConfigId?: string;
+  bossState?: any;
+  facing?: number;
+  summons?: number;
   targetPos?: Point;
   angle?: number;
-  summons?: number;
-  // New Boss System
-  bossConfigId?: string;
-  bossState?: {
-      stateId: string;
-      timer: number;
-      phaseIndex: number;
-  };
-  facing?: number; // 1 (Right) or -1 (Left)
-  shouldRemove?: boolean;
-}
-
-export interface FoodItem extends Point {
-  id: string;
-  type: FoodType;
-  value?: number; // for XP orbs
-  createdAt: number;
-  lifespan?: number;
-  shouldRemove?: boolean;
 }
 
 export interface Projectile extends Point {
@@ -230,33 +172,54 @@ export interface Projectile extends Point {
   vy: number;
   damage: number;
   color: string;
-  owner: 'PLAYER' | 'ENEMY';
   size: number;
-  type?: 'STANDARD' | 'LANCE' | 'SHARD' | 'SERPENT' | 'RAIL';
+  type: 'STANDARD' | 'LANCE' | 'SHARD' | 'SERPENT' | 'RAIL';
+  owner: 'PLAYER' | 'ENEMY';
+  shouldRemove?: boolean;
   piercing?: boolean;
   hitIds?: string[];
+  age?: number;
+  life?: number;
   homing?: boolean;
   targetId?: string;
-  life?: number;
-  age?: number; // New: Tracks frame lifespan for animations (Lance charging)
-  usesGravity?: boolean; // NEW: Side-scroll physics
+  usesGravity: boolean;
+}
+
+export interface FoodItem extends Point {
+  type: FoodType;
+  id: string;
+  createdAt: number;
+  value?: number;
+  lifespan?: number;
   shouldRemove?: boolean;
 }
 
-export interface Hitbox extends Point {
-    id: string; // Unique ID (e.g. BOSS_ID + TAG)
-    ownerId: string;
-    width: number;
-    height: number;
-    damage: number;
-    color: string;
-    shouldRemove?: boolean;
+export interface Terminal extends Point {
+  id: string;
+  type: TerminalType;
+  radius: number;
+  progress: number;
+  totalTime: number;
+  isLocked: boolean;
+  color: string;
+  associatedFileId?: string;
+  isBeingHacked?: boolean;
+  justCompleted?: boolean;
+  shouldRemove?: boolean;
+  lastEffectTime?: number;
 }
 
-export interface Shockwave {
+export interface Mine extends Point {
   id: string;
-  x: number;
-  y: number;
+  damage: number;
+  radius: number;
+  triggerRadius: number;
+  createdAt: number;
+  shouldRemove?: boolean;
+}
+
+export interface Shockwave extends Point {
+  id: string;
   currentRadius: number;
   maxRadius: number;
   damage: number;
@@ -294,74 +257,61 @@ export interface FloatingText extends Point {
   shouldRemove?: boolean;
 }
 
-export interface Mine extends Point {
-  id: string;
-  damage: number;
-  radius: number;
-  triggerRadius: number;
-  createdAt: number;
-  shouldRemove?: boolean;
-}
-
-export type TerminalType = 'RESOURCE' | 'CLEARANCE' | 'OVERRIDE' | 'MEMORY';
-
-export interface Terminal extends Point {
-  id: string;
-  type: TerminalType;
-  radius: number;
-  progress: number;
-  totalTime: number;
-  isLocked: boolean;
-  color: string;
-  particleTimer?: number;
-  lastEffectTime?: number;
-  justDisconnected?: boolean;
-  justCompleted?: boolean;
-  isBeingHacked?: boolean; // NEW: Tracks active hacking state
-  shouldRemove?: boolean;
-  associatedFileId?: string; // For MEMORY terminals
-}
-
-export interface DigitalRainDrop {
-  x: number;
-  y: number;
+export interface DigitalRainDrop extends Point {
   speed: number;
   chars: string;
   size: number;
   opacity: number;
 }
 
-export interface CLIAnimation {
+export interface Hitbox extends Point {
   id: string;
-  x: number;
-  y: number;
-  type: TerminalType;
-  phase: 1 | 2 | 3 | 4 | 5; // Extended phases
-  timer: number;
-  lines: string[];
-  progress: number; // Keep for compatibility, though maybe unused
+  ownerId: string;
+  width: number;
+  height: number;
+  damage: number;
   color: string;
   shouldRemove?: boolean;
-  data?: any; // For reward values, file titles, etc.
+}
+
+export interface GameSettings {
+  gridSize: number;
+  initialSpeed: number;
+  volume: number;
+}
+
+export interface StageTheme {
+  name: string;
+  primary: string;
+  secondary: string;
+  background: string;
+  wall: string;
+  enemy: string;
+}
+
+export interface DifficultyConfig {
+  id: Difficulty;
+  label: string;
+  description: string;
+  spawnRateMod: number;
+  hpMod: number;
+  speedMod: number;
+  allowedEnemies: EnemyType[];
+  bossHpMod: number;
+  unlockCondition: string;
+  stageGoal: number;
+  color: string;
 }
 
 export type AudioEvent = 
   | 'MOVE' | 'EAT' | 'XP_COLLECT' | 'SHOOT' | 'EMP' | 'HIT' 
   | 'GAME_OVER' | 'LEVEL_UP' | 'BONUS' | 'POWER_UP' | 'SHIELD_HIT' 
   | 'ENEMY_DESTROY' | 'HACK_LOST' | 'HACK_COMPLETE' | 'ENEMY_SPAWN' | 'COMPRESS'
-  | 'ARCHIVE_LOCK' | 'PLAY_MUSIC_INTRO'
-  // CLI / INIT EVENTS
+  | 'ARCHIVE_LOCK' | 'COSMETIC_UNLOCK'
   | 'CLI_POWER' | 'CLI_BURST' | 'GLITCH_TEAR' | 'SYS_RECOVER' | 'UI_HARD_CLICK';
 
 export type UpgradeCategory = 'WEAPON' | 'DEFENSE' | 'UTILITY' | 'SYSTEM' | 'HACKING' | 'MOBILITY' | 'THREAT' | 'ECONOMY' | 'REACTIVE' | 'SCALAR';
 export type UpgradeRarity = 'COMMON' | 'UNCOMMON' | 'RARE' | 'ULTRA_RARE' | 'MEGA_RARE' | 'LEGENDARY' | 'OVERCLOCKED';
-
-export interface StatModifier {
-  path: string; // e.g. "weapon.cannonDamage" or "critChance"
-  value: number; // Delta value
-  op: 'ADD' | 'MULTIPLY' | 'SET' | 'UNLOCK'; // Operation
-  label: string; // Text description
-}
 
 export interface UpgradeOption {
   id: string;
@@ -372,11 +322,18 @@ export interface UpgradeOption {
   rarity: UpgradeRarity;
   icon: string;
   isNewWeapon?: boolean;
-  stats: string[]; // For UI visualization
-  modifiers: StatModifier[]; // For Logic application
+  stats: string[]; 
 }
 
 export interface AudioRequest {
   type: AudioEvent;
   data?: any;
+}
+
+export interface AudioPlayData {
+    multiplier?: number;
+    level?: number;
+    difficulty?: Difficulty;
+    combo?: number;
+    terminalType?: string;
 }

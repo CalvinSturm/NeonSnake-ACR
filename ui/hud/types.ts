@@ -66,6 +66,7 @@ export interface HUDData {
   vitals: {
     integrity: number; // 0-100
     shieldActive: boolean;
+    stamina: number; // 0-100 (percentage)
   };
   metrics: {
     damage: number;

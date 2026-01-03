@@ -8,13 +8,10 @@ import { GameStatus, EnemyType, Direction, CameraMode } from '../types';
 import {
   DIFFICULTY_CONFIGS,
   POINTS_PER_STAGE,
-  TRANSITION_DURATION,
-  GRID_COLS
+  TRANSITION_DURATION
 } from '../constants';
 import { generateWalls } from './gameUtils';
-import { CameraBehavior } from './camera/types';
-import { SPACESHIP_BOSS_CONFIG } from './boss/definitions/SpaceshipBoss';
-import { ENEMY_PHYSICS_DEFAULTS } from '../constants';
+import { audio } from '../utils/audio';
 
 const READY_MIN_TIME = 1.0; // seconds (simulation time)
 
@@ -60,19 +57,14 @@ export function useStageController(
     setUiShield,
     setUiStageStatus,
     requestCameraSwitch,
-    cameraRef,
-    devHelper,
-    stageStatsRef,
-    masteryRef
+    addNeonFragments, // Currency
+    audioEventsRef
   } = game;
 
   const { unlockNextDifficulty } = progression;
 
   const lastStageStatusStrRef = useRef('IN PROGRESS');
   const stageReadyTimeRef = useRef(0);
-  const stageAdvanceRequestedRef = useRef(false);
-  const lastTransitionRequestTimeRef = useRef(0); // Debounce
-  const barrierBrokenRef = useRef(false); // Track if barrier break event fired
 
   // ─────────────────────────────────────────────
   // BOSS CACHE
@@ -84,40 +76,28 @@ export function useStageController(
   }, [bossActiveRef, enemiesRef, bossEnemyRef]);
 
   // ─────────────────────────────────────────────
-  // STAGE RESET (Executed by Orchestrator)
+  // STAGE ADVANCE (AUTHORITATIVE RESET)
   // ─────────────────────────────────────────────
-  const resetForNewStage = useCallback((newStageIndex: number) => {
-    console.log('[STAGE][RESET]', newStageIndex);
+  const advanceStage = useCallback(() => {
+    console.log('[STAGE][ADVANCE]', {
+      from: stageRef.current,
+      to: stageRef.current + 1
+    });
 
-    setUiStage(newStageIndex);
-    
-    // RESET ADAPTIVE METRICS
-    stageStatsRef.current = { damageTaken: 0, startTime: gameTimeRef.current };
-    
+    stageRef.current += 1;
+    setUiStage(stageRef.current);
+
     // ── CAMERA MODE LOGIC ──
     // FIXED: Enforce TOP_DOWN for standard progression (Stages 1-12)
+    // Removed Side Scroll switching ("Bounce")
     requestCameraSwitch(CameraMode.TOP_DOWN, 1000);
 
     lastStageStatusStrRef.current = 'IN PROGRESS';
     setUiStageStatus('IN PROGRESS');
 
-    // ── WALL GENERATION (Adaptive Stage 2) ──
-    if (newStageIndex === 2) {
-        if (masteryRef.current) {
-            wallsRef.current = generateWalls(newStageIndex);
-        } else {
-            wallsRef.current = []; // Remedial Stage 2
-        }
-    } else {
-        wallsRef.current = generateWalls(newStageIndex);
-    }
-    
-    // Reset Mastery for current stage tracking
-    masteryRef.current = false;
-
+    wallsRef.current = generateWalls(stageRef.current);
     stageScoreRef.current = 0;
     bossDefeatedRef.current = false;
-    barrierBrokenRef.current = false;
 
     snakeRef.current = [
       { x: 10, y: 10 },
@@ -149,21 +129,11 @@ export function useStageController(
     stageArmedRef.current = false;
     stageReadyRef.current = false;
     stageReadyTimeRef.current = 0;
-    
-    // FIX: Set transition time to current time to prevent 'checkTransition' 
-    // from immediately re-triggering if multiple updates occur in one frame loop.
-    transitionStartTimeRef.current = gameTimeRef.current;
-    
-    stageAdvanceRequestedRef.current = false;
+    transitionStartTimeRef.current = 0;
 
     if (statsRef.current.acquiredUpgradeIds.includes('SHIELD')) {
       statsRef.current.shieldActive = true;
       setUiShield(true);
-    }
-
-    // ─── STAGE 5 SPECIFIC SETUP ───
-    if (newStageIndex === 5) {
-        setupStage5();
     }
 
     if (settings.skipCountdown) {
@@ -174,6 +144,7 @@ export function useStageController(
       setResumeCountdown(3);
     }
   }, [
+    stageRef,
     setUiStage,
     wallsRef,
     snakeRef,
@@ -201,140 +172,41 @@ export function useStageController(
     setUiShield,
     bossOverrideTimerRef,
     setUiStageStatus,
-    requestCameraSwitch,
-    stageStatsRef,
-    masteryRef,
-    gameTimeRef
+    requestCameraSwitch
   ]);
-
-  const setupStage5 = () => {
-      // 1. Clear Walls
-      wallsRef.current = [];
-
-      // 2. Spawn Barrier (Centered, blocking)
-      const barrierX = 20; // Grid column
-      enemiesRef.current.push({
-          id: 'BARRIER_GATE',
-          type: EnemyType.BARRIER,
-          x: barrierX,
-          y: 15, // Centered Y
-          hp: 2000,
-          maxHp: 2000,
-          state: 'ACTIVE',
-          spawnTime: 0,
-          flash: 0,
-          vy: 0, isGrounded: false, physicsProfile: ENEMY_PHYSICS_DEFAULTS[EnemyType.BOSS],
-          jumpCooldownTimer: 0, jumpIntent: false
-      });
-
-      // 3. Spawn Spaceship Boss (Behind barrier)
-      const bossX = 28;
-      enemiesRef.current.push({
-          id: 'BOSS_SPACESHIP',
-          type: EnemyType.BOSS,
-          x: bossX,
-          y: 15,
-          hp: 10000, // Effectively invincible until sequence end
-          maxHp: 10000,
-          state: 'ACTIVE',
-          spawnTime: 0,
-          flash: 0,
-          bossConfigId: 'SPACESHIP_BOSS',
-          bossState: { stateId: 'IDLE', timer: 0, phaseIndex: 0 },
-          bossPhase: 1,
-          vy: 0, isGrounded: false, physicsProfile: ENEMY_PHYSICS_DEFAULTS[EnemyType.BOSS],
-          jumpCooldownTimer: 0, jumpIntent: false,
-          facing: -1 // Face Left
-      });
-
-      bossActiveRef.current = true;
-      setUiStageStatus('ENGAGE');
-      
-      // Lock Camera to Arena
-      devHelper.queueDevIntent({ 
-          type: 'DEV_SET_ZOOM', 
-          zoom: 1.0 
-      });
-      // Ensure behavior is FIXED or FOLLOW_PLAYER clamped
-      cameraRef.current.behavior = CameraBehavior.FOLLOW_PLAYER;
-  };
 
   // ─────────────────────────────────────────────
   // TRANSITION HANDLER (ABSOLUTE TIME)
   // ─────────────────────────────────────────────
-  const checkTransition = useCallback(() => {
+  const handleTransition = useCallback(() => {
     if (status !== GameStatus.STAGE_TRANSITION) return;
-
-    // DEBOUNCE: Prevent multiple transition requests in short succession
-    // This fixes the "Stage 4 -> 7" jump bug where update loops might re-trigger 
-    // before state is fully settled.
-    if (gameTimeRef.current - lastTransitionRequestTimeRef.current < 2000) return;
 
     const elapsed =
       gameTimeRef.current - transitionStartTimeRef.current;
 
     if (elapsed < TRANSITION_DURATION) return;
-    
-    // Emit Intent: Request Advance
-    stageAdvanceRequestedRef.current = true;
-    lastTransitionRequestTimeRef.current = gameTimeRef.current;
+
+    transitionStartTimeRef.current = 0;
+    advanceStage();
   }, [
     status,
     gameTimeRef,
-    transitionStartTimeRef
+    transitionStartTimeRef,
+    advanceStage
   ]);
 
   // ─────────────────────────────────────────────
-  // STAGE COMPLETION LOGIC
+  // STAGE COMPLETION LOGIC (SOLE AUTHORITY)
   // ─────────────────────────────────────────────
   const checkStageCompletion = useCallback(() => {
     if (status !== GameStatus.PLAYING) return;
-    
-    // ─── STAGE 5 SPECIAL LOGIC: BARRIER BREAK ───
-    if (stageRef.current === 5 && !barrierBrokenRef.current) {
-        const barrier = enemiesRef.current.find(e => e.type === EnemyType.BARRIER);
-        if (!barrier) {
-            barrierBrokenRef.current = true;
-            setUiStageStatus('SCROLL_INIT');
-            fx.triggerShake(30, 30);
-            fx.spawnFloatingText(20 * 20, 15 * 20, "BARRIER BREACHED", '#00ffff', 30);
-            
-            devHelper.queueDevIntent({ type: 'DEV_SET_SCROLL_SPEED', speed: 80 }); // 80px/s
-            cameraRef.current.behavior = CameraBehavior.AUTO_SCROLL_X;
-        }
-    }
-
     if (pendingStatusRef.current !== null) return;
     if (!stageArmedRef.current) return;
 
-    const isBossStage = stageRef.current % 5 === 0;
-    
-    let objectivesMet = false;
-
-    // ─── ADAPTIVE LOGIC (Stage 1) ───
-    if (stageRef.current === 1) {
-        const timeElapsedSec = (gameTimeRef.current - stageStatsRef.current.startTime) / 1000;
-        const damage = stageStatsRef.current.damageTaken;
-        const score = stageScoreRef.current;
-
-        if (timeElapsedSec > 30 && score >= 300 && damage === 0) {
-            objectivesMet = true;
-            masteryRef.current = true;
-            console.log('[STAGE 1] Mastery Exit Triggered');
-        }
-        else if (timeElapsedSec > 120) {
-            objectivesMet = true;
-            masteryRef.current = false;
-        }
-        else if (score >= POINTS_PER_STAGE) {
-             objectivesMet = true;
-             masteryRef.current = damage === 0 && timeElapsedSec < 90;
-        }
-    } else {
-        objectivesMet = isBossStage
-          ? bossDefeatedRef.current
-          : stageScoreRef.current >= POINTS_PER_STAGE;
-    }
+    const isBossStage = stageRef.current % 5 === 0; // Fixed: Matches useSpawner's 5-stage interval
+    const objectivesMet = isBossStage
+      ? bossDefeatedRef.current
+      : stageScoreRef.current >= POINTS_PER_STAGE;
 
     // ── ARM READY STATE (ONCE)
     if (objectivesMet && !stageReadyRef.current) {
@@ -342,9 +214,18 @@ export function useStageController(
       stageReadyTimeRef.current = gameTimeRef.current;
       setUiStageStatus('CLEARING');
       
-      if (cameraRef.current.behavior === CameraBehavior.AUTO_SCROLL_X) {
-          cameraRef.current.behavior = CameraBehavior.FOLLOW_PLAYER;
-      }
+      // AWARD CURRENCY
+      const reward = isBossStage ? 200 : 50;
+      addNeonFragments(reward);
+      fx.spawnFloatingText(
+          snakeRef.current[0].x * 20, 
+          snakeRef.current[0].y * 20, 
+          `+${reward} NF`, 
+          '#00ffff', 
+          20
+      );
+      audioEventsRef.current.push({ type: 'BONUS' });
+
       return;
     }
 
@@ -388,21 +269,19 @@ export function useStageController(
     terminalsRef,
     gameTimeRef,
     setUiStageStatus,
+    addNeonFragments,
     fx,
-    devHelper,
-    cameraRef,
-    stageStatsRef,
-    masteryRef
+    snakeRef,
+    audioEventsRef
   ]);
 
   return useMemo(
     () => ({
       checkStageCompletion,
-      checkTransition,
-      resetForNewStage,
-      cacheBossRef,
-      stageAdvanceRequestedRef
+      advanceStage,
+      handleTransition,
+      cacheBossRef
     }),
-    [checkStageCompletion, checkTransition, resetForNewStage, cacheBossRef, stageAdvanceRequestedRef]
+    [checkStageCompletion, advanceStage, handleTransition, cacheBossRef]
   );
 }

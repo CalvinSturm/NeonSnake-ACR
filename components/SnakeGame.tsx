@@ -1,5 +1,5 @@
 
-import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useGameState } from '../game/useGameState';
 import { useGameLoop } from '../game/useGameLoop';
 import { useRendering } from '../game/useRendering';
@@ -13,8 +13,8 @@ import { useProgression } from '../game/useProgression';
 import { useFX } from '../game/useFX';
 import { useMusic } from '../game/useMusic';
 import { useAnalytics } from '../game/useAnalytics';
-import { GameStatus, Difficulty, CharacterProfile, DevBootstrapConfig, UpgradeOption, UpgradeStats } from '../types';
-import { DIFFICULTY_CONFIGS, CHARACTERS, CANVAS_WIDTH, CANVAS_HEIGHT, IS_DEV, MUSIC_STAGE_MAP, MUSIC_INTRO_DURATION, MUSIC_LAYERS } from '../constants';
+import { GameStatus, Difficulty, CharacterProfile, WeaponStats } from '../types';
+import { DIFFICULTY_CONFIGS, CHARACTERS, CANVAS_WIDTH, CANVAS_HEIGHT } from '../constants';
 import { audio } from '../utils/audio';
 import { ArrowControls } from './ArrowControls';
 import { VirtualJoystick } from './VirtualJoystick';
@@ -29,18 +29,17 @@ import { useVisionProtocol } from '../ui/vision/useVisionProtocol';
 import { GameHUD } from '../ui/hud/GameHUD';
 import { evaluateUnlocks } from '../game/cosmetics/CosmeticUnlockSystem';
 import { UnlockToast } from '../ui/cosmetics/UnlockToast';
+import { UnlockSummary } from '../ui/cosmetics/UnlockSummary';
 import { ModelConfigurationPass } from '../ui/transitions/ModelConfigurationPass';
 import { useVoidHazard } from '../game/hazards/useVoidHazard';
 import { useEnemyGapAwareness } from '../game/ai/useEnemyGapAwareness';
 import { useProjectilePhysics } from '../game/physics/useProjectilePhysics';
 import { useBossController } from '../game/boss/useBossController';
-import { DevBootstrap } from '../game/dev/DevBootstrap';
 import { CameraBehavior } from '../game/camera/types';
-import { consumeDevIntents } from '../game/orchestration/consumeDevIntents';
 import { DevTools } from '../ui/devtools/DevTools';
 import { DESCRIPTOR_REGISTRY } from '../game/descriptors';
-import { HUDTooltip } from '../ui/hud/HUDPrimitives';
-import { DEV_START_CONFIG } from '../game/dev/DevStartConfig';
+import { CosmeticsMenu } from './CosmeticsMenu';
+import { GameOverScreen } from '../ui/screens/GameOverScreen'; // NEW IMPORT
 
 // UI Constants & Styles
 const RARITY_STYLES: Record<string, string> = {
@@ -89,7 +88,7 @@ const CompactStatBar: React.FC<{ label: string; value: number; max: number; colo
         </div>
         <span className="w-4 text-right text-gray-600 font-bold">{value}</span>
     </div>
-);
+  );
 
 const CHAR_STATS: Record<string, { off: number, def: number, spd: number, util: number }> = {
     striker: { off: 9, def: 4, spd: 6, util: 3 },
@@ -100,33 +99,24 @@ const CHAR_STATS: Record<string, { off: number, def: number, spd: number, util: 
     overdrive: { off: 10, def: 1, spd: 10, util: 2 }
 };
 
-const getStartingLoadout = (stats: Partial<UpgradeStats> | undefined): string[] => {
-    if (!stats) return [];
-    const ids: string[] = [];
-    
-    if (stats.shieldActive) ids.push('SHIELD');
-    
-    const w = stats.weapon;
-    if (w) {
-        if ((w.cannonLevel || 0) > 0) ids.push('CANNON');
-        if ((w.auraLevel || 0) > 0) ids.push('AURA');
-        if ((w.mineLevel || 0) > 0) ids.push('MINES');
-        if ((w.chainLightningLevel || 0) > 0) ids.push('LIGHTNING');
-        if ((w.nanoSwarmLevel || 0) > 0) ids.push('NANO_SWARM');
-        if ((w.prismLanceLevel || 0) > 0) ids.push('PRISM_LANCE');
-        if ((w.neonScatterLevel || 0) > 0) ids.push('NEON_SCATTER');
-        if ((w.voltSerpentLevel || 0) > 0) ids.push('VOLT_SERPENT');
-        if ((w.phaseRailLevel || 0) > 0) ids.push('PHASE_RAIL');
-    }
-    
-    return ids;
+// Map weapon stats to descriptor IDs for loadout icons
+const getLoadoutIcons = (weaponStats: Partial<WeaponStats> = {}) => {
+    const icons: string[] = [];
+    if (weaponStats.cannonLevel && weaponStats.cannonLevel > 0) icons.push(DESCRIPTOR_REGISTRY.CANNON?.icon || '🔫');
+    if (weaponStats.auraLevel && weaponStats.auraLevel > 0) icons.push(DESCRIPTOR_REGISTRY.AURA?.icon || '⭕');
+    if (weaponStats.mineLevel && weaponStats.mineLevel > 0) icons.push(DESCRIPTOR_REGISTRY.MINES?.icon || '💣');
+    if (weaponStats.chainLightningLevel && weaponStats.chainLightningLevel > 0) icons.push(DESCRIPTOR_REGISTRY.LIGHTNING?.icon || '⚡');
+    if (weaponStats.nanoSwarmLevel && weaponStats.nanoSwarmLevel > 0) icons.push(DESCRIPTOR_REGISTRY.NANO_SWARM?.icon || '🛰️');
+    // Add shield explicitly if in stats or just use Shield icon
+    // Bulwark has shieldActive, logic below
+    return icons;
 };
 
 const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [damageOpacity, setDamageOpacity] = useState(0);
   const [isTouch, setIsTouch] = useState(false);
-  const [showDevMenu, setShowDevMenu] = useState(false); 
+  const [showUnlockSummary, setShowUnlockSummary] = useState(false);
   
   const [initPhase, setInitPhase] = useState<'NONE' | 'GLITCH' | 'STALL' | 'RECOVER'>('NONE');
   const [recoveryText, setRecoveryText] = useState('RECONVERGING INPUT CONTEXT');
@@ -134,20 +124,10 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
   const [bindingState, setBindingState] = useState<{ charId: string; phase: 'LOCK' | 'SYNC' } | null>(null);
   const [bindText, setBindText] = useState('BINDING OPERATOR PROFILE');
   const [hudBooted, setHudBooted] = useState(true);
-  
-  const [isIntroPlaying, setIsIntroPlaying] = useState(false); // Music Intro State
-  const [armingProgress, setArmingProgress] = useState(0);
-  const [armingTextStep, setArmingTextStep] = useState(0);
-  const inputActiveRef = useRef(false);
 
   const uiStyle = useUIStyle();
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const vision = useVisionProtocol();
-
-  // Generate a static hex dump for the crash screen once
-  const hexDump = useMemo(() => {
-    return Array.from({length: 400}).map(() => Math.floor(Math.random() * 0xFFFFFF).toString(16).padStart(6, '0')).join(' ').toUpperCase();
-  }, []);
 
   useEffect(() => {
     const checkTouch = () => {
@@ -159,26 +139,6 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
     return () => window.removeEventListener('resize', checkTouch);
   }, []);
   
-  useEffect(() => {
-      if (!IS_DEV) return;
-      const handler = (e: KeyboardEvent) => {
-          if (e.key === 'D' && e.shiftKey) {
-              setShowDevMenu(prev => !prev);
-          }
-      };
-      window.addEventListener('keydown', handler);
-      return () => window.removeEventListener('keydown', handler);
-  }, []);
-
-  // ─── DEV BOOT CHECK ───
-  useEffect(() => {
-      if (IS_DEV && DEV_START_CONFIG.enabled && game.status === GameStatus.IDLE) {
-          console.log('[DEV] Auto-Booting with Config...');
-          game.devHelper.queueDevIntent({ type: 'RESET_GAME' });
-          game.setStatus(GameStatus.PLAYING); // Force loop start
-      }
-  }, []);
-
   const {
     status, setStatus, modalState, setModalState,
     difficulty, setDifficulty, unlockedDifficulties,
@@ -193,13 +153,12 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
     lastDamageTimeRef,
     invulnerabilityTimeRef,
     stageArmedRef,
-    unlockedCosmetics, toastQueue, 
+    unlockedCosmetics, toastQueue, sessionNewUnlocks, hasNewCosmetics,
     unlockCosmetic, clearToast, maxComboRef, tailIntegrityRef, bossDefeatedRef,
     hasUnreadArchiveData, markArchiveRead,
-    devHelper,
-    devModeFlagsRef,
     cameraRef,
-    cameraControlsEnabled, setCameraControlsEnabled
+    cameraControlsEnabled, setCameraControlsEnabled,
+    highScore // Add high score for passing to game over
   } = game;
 
   const fx = useFX(game);
@@ -217,61 +176,37 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
   const projectilePhysics = useProjectilePhysics(game);
   const bossController = useBossController(game);
   
-  const handleBootstrap = useCallback((config: DevBootstrapConfig) => {
-      devHelper.applyBootstrap(config);
-      
-      if (!selectedChar) {
-          setSelectedChar(CHARACTERS[0]);
-      }
-      
-      spawner.spawnFood(); 
-      if (config.forceBoss || config.stageId % 5 === 0) {
-          spawner.devSpawnBoss(config.stageId, config.bossPhase || 0);
-      }
-      
-      // Force music layer update on bootstrap
-      const stage = config.stageId;
-      const isBoss = stage % 5 === 0;
-      const mapKey = isBoss ? 0 : ((stage - 1) % 4) + 1;
-      const layers = MUSIC_STAGE_MAP[mapKey];
-      audio.setLayers(layers);
-      
-      setShowDevMenu(false);
-  }, [devHelper, selectedChar, setSelectedChar, spawner]);
-
-  const handleToggleFreeRoam = useCallback(() => {
-      const isFree = !devModeFlagsRef.current.freeMovement;
-      devModeFlagsRef.current.freeMovement = isFree;
-      
-      if (isFree) {
-          cameraRef.current.behavior = CameraBehavior.MANUAL;
-          audio.play('POWER_UP');
-      } else {
-          cameraRef.current.behavior = CameraBehavior.FOLLOW_PLAYER;
-          audio.play('UI_HARD_CLICK');
-      }
-  }, [devModeFlagsRef, cameraRef]);
-
   useEffect(() => {
     if (status === GameStatus.PLAYING) {
       stageArmedRef.current = true;
     }
   }, [status, stageArmedRef]);
 
-  // ─── AUDIO LIFECYCLE ───
-  // Ensure sustained SFX (like hacking hum) are killed when not playing
+  // Silence loops on non-gameplay states
   useEffect(() => {
-      if (status !== GameStatus.PLAYING && status !== GameStatus.READY) {
-          // READY state manages its own sustain for the intro build-up
-          audio.stopSustained();
+      if (status !== GameStatus.PLAYING && status !== GameStatus.STAGE_TRANSITION) {
+          audio.stopGameplayLoops();
       }
-      // Also stop if modal is open (even if playing in background/paused)
-      if (modalState !== 'NONE') {
-          audio.stopSustained();
+  }, [status]);
+  
+  // Handle Game Over Summary Trigger
+  useEffect(() => {
+      if (status === GameStatus.GAME_OVER && sessionNewUnlocks.length > 0) {
+          // Delay slightly to let the "FATAL ERROR" sink in
+          const t = setTimeout(() => {
+              setShowUnlockSummary(true);
+          }, 1500);
+          return () => clearTimeout(t);
+      } else {
+          setShowUnlockSummary(false);
       }
-  }, [status, modalState]);
+  }, [status, sessionNewUnlocks]);
 
   const handleStartClick = useCallback(() => {
+    // START MUSIC ON FIRST INTERACTION
+    audio.startMusic();
+
+    // GAME OVER RESTART
     if (status === GameStatus.GAME_OVER && selectedChar) {
       game.resetGame(selectedChar);
       spawner.spawnFood(); 
@@ -280,6 +215,7 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
       return;
     } 
     
+    // INITIAL BOOT LOGIC
     const hasInit = localStorage.getItem('acr_first_init_v1');
     if (!hasInit && status === GameStatus.IDLE) {
         audio.play('UI_HARD_CLICK');
@@ -305,10 +241,6 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
             setInitPhase('NONE');
             setStatus(GameStatus.DIFFICULTY_SELECT);
             audio.play('MOVE'); 
-            
-            // Start Menu Music (First Time)
-            audio.setMode('MENU');
-            audio.startMusic();
         }, 850);
         
         return;
@@ -316,104 +248,39 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
 
     setStatus(GameStatus.DIFFICULTY_SELECT);
     audio.play('MOVE');
-    
-    // Start Menu Music (Normal)
-    audio.setMode('MENU');
-    audio.startMusic();
   }, [status, selectedChar, game, setStatus, spawner]);
 
-  // ─────────────────────────────
-  // SEQUENCE START (ARMING)
-  // ─────────────────────────────
-  
-  // Reset Arming State
-  useEffect(() => {
-    if (status === GameStatus.READY) {
-        setArmingProgress(0);
-        setArmingTextStep(0);
-        
-        // Sequence text appearance
-        const t1 = setTimeout(() => setArmingTextStep(1), 200);
-        const t2 = setTimeout(() => setArmingTextStep(2), 500);
-        const t3 = setTimeout(() => setArmingTextStep(3), 800);
-        
-        return () => {
-            clearTimeout(t1);
-            clearTimeout(t2);
-            clearTimeout(t3);
-        };
-    }
-  }, [status]);
-
-  const handleReadyStart = useCallback(() => {
-      // 1. Enter Intro State (Visual Flash)
-      setIsIntroPlaying(true);
-      
-      // 2. Play Launch Sound (Single hit)
-      audio.play('UI_HARD_CLICK'); 
-      
-      // 3. Immediate Transition (Fast)
-      setTimeout(() => {
-          setIsIntroPlaying(false);
-          setStatus(GameStatus.PLAYING);
-          
-          // 4. Start Stage 1 Music
-          audio.setMode('GAME');
-          audio.setLayers(MUSIC_STAGE_MAP[1]);
-          audio.startMusic();
-          
-      }, 200); // 200ms flash
+  // NEW: Navigate to Main Screen (IDLE) from Game Over
+  const handleMenuClick = useCallback(() => {
+      audio.play('MOVE');
+      setStatus(GameStatus.IDLE);
   }, [setStatus]);
 
-  // Arming Input Loop
-  useEffect(() => {
-    if (status !== GameStatus.READY || isIntroPlaying) return;
-    
-    let raf: number;
-    const loop = () => {
-        if (inputActiveRef.current) {
-            setArmingProgress(p => Math.min(1, p + 0.04)); // ~400ms to fill
-        } else {
-            // Very slow decay
-            setArmingProgress(p => Math.max(0, p - 0.01));
-        }
-        
-        // Audio Ramp using Hack SFX (Oscillator)
-        audio.setHackProgress(inputActiveRef.current ? Math.max(0.1, armingProgress) : 0);
+  // NEW: Centralized Back Navigation
+  const handleBack = useCallback(() => {
+      audio.play('MOVE');
+      if (status === GameStatus.CHARACTER_SELECT) {
+          setStatus(GameStatus.DIFFICULTY_SELECT);
+      } else if (status === GameStatus.DIFFICULTY_SELECT) {
+          setStatus(GameStatus.IDLE);
+      }
+  }, [status, setStatus]);
 
-        if (armingProgress >= 1) {
-            handleReadyStart();
-            audio.setHackProgress(0); // Stop hum
-            inputActiveRef.current = false;
-            return; // Stop loop
-        }
-        
-        raf = requestAnimationFrame(loop);
-    };
-    raf = requestAnimationFrame(loop);
-    
-    const startInput = () => { inputActiveRef.current = true; };
-    const endInput = () => { inputActiveRef.current = false; };
-    
-    // Bind all inputs
-    window.addEventListener('keydown', startInput);
-    window.addEventListener('keyup', endInput);
-    window.addEventListener('mousedown', startInput);
-    window.addEventListener('mouseup', endInput);
-    window.addEventListener('touchstart', startInput);
-    window.addEventListener('touchend', endInput);
-    
-    return () => {
-        cancelAnimationFrame(raf);
-        window.removeEventListener('keydown', startInput);
-        window.removeEventListener('keyup', endInput);
-        window.removeEventListener('mousedown', startInput);
-        window.removeEventListener('mouseup', endInput);
-        window.removeEventListener('touchstart', startInput);
-        window.removeEventListener('touchend', endInput);
-        audio.setHackProgress(0);
-    };
-  }, [status, isIntroPlaying, armingProgress, handleReadyStart]);
+  const handleReadyStart = useCallback(() => {
+      setStatus(GameStatus.PLAYING);
+      audio.startMusic();
+      audio.play('UI_HARD_CLICK');
+  }, [setStatus]);
+
+  useEffect(() => {
+      const handler = (e: KeyboardEvent) => {
+          if (status === GameStatus.READY) {
+              handleReadyStart();
+          }
+      };
+      window.addEventListener('keydown', handler);
+      return () => window.removeEventListener('keydown', handler);
+  }, [status, handleReadyStart]);
 
   const { handleInput } = useInput(
     game,
@@ -436,7 +303,10 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
     }
 
     const timeSinceHit = gameTimeRef.current - lastDamageTimeRef.current;
-    setDamageOpacity(timeSinceHit < 500 ? (500 - timeSinceHit) / 500 : 0);
+    
+    // Reduce flashing intensity based on setting
+    const flashMax = settings.reduceFlashing ? 0.3 : 1.0; 
+    setDamageOpacity(timeSinceHit < 500 ? ((500 - timeSinceHit) / 500) * flashMax : 0);
 
     // ─────────────────────────────
     // CORE LOOP PHASES
@@ -444,34 +314,9 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
 
     // 1. STAGE TRANSITION (Blocking)
     if (status === GameStatus.STAGE_TRANSITION) {
-      // Advance time for transition animation
-      stageController.checkTransition(); // Updates timer and requests advance if done
-      
-      // Check if controller requested advance
-      if (stageController.stageAdvanceRequestedRef.current) {
-          // ORCHESTRATOR COMMIT: Update State
-          game.stageRef.current += 1;
-          
-          // ORCHESTRATOR COMMIT: Update Music
-          const newStage = game.stageRef.current;
-          const isBoss = newStage % 5 === 0;
-          const mapKey = isBoss ? 0 : ((newStage - 1) % 4) + 1;
-          const targetLayers = MUSIC_STAGE_MAP[mapKey] || MUSIC_STAGE_MAP[1];
-          audio.setLayers(targetLayers);
-          
-          // Reset Simulation for new stage
-          stageController.resetForNewStage(newStage);
-          
-          // Audio Cue
-          if (isBoss) {
-             // audio.play('BOSS_WARNING'); // Optional
-          }
-      }
-
+      stageController.handleTransition();
       fx.updateFX();
       fx.tickTranslation(dt);
-      // Consume Dev Intents even during transition (e.g. force skip)
-      consumeDevIntents(game, spawner, progression, stageController);
       return;
     }
 
@@ -504,11 +349,8 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
       progression.applyPassiveScore(dt);
     }
 
-    // 3. DEV INTENT CONSUMPTION (Authoritative Phase)
-    consumeDevIntents(game, spawner, progression, stageController);
-
     // 4. AUDIO & PROGRESSION CHECKS
-    music.updateMusic(); // Only updates dynamic SFX parameters now
+    music.updateMusic();
 
     if (uiCombo > maxComboRef.current) {
         maxComboRef.current = uiCombo;
@@ -523,7 +365,8 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
             terminalsHacked: terminalsHackedRef.current,
             bossDefeated: bossDefeatedRef.current,
             integrity: tailIntegrityRef.current,
-            xpOrbsCollected: 0 
+            xpOrbsCollected: 0,
+            difficulty: difficulty 
         }, unlockedCosmetics);
         
         if (unlocks.length > 0) {
@@ -552,7 +395,6 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
     game.foodRef.current = cleanup(game.foodRef.current);
     game.terminalsRef.current = cleanup(game.terminalsRef.current);
     game.hitboxesRef.current = cleanup(game.hitboxesRef.current);
-    game.cliAnimationsRef.current = cleanup(game.cliAnimationsRef.current);
 
   }, [
     status, stageController, movement, collisions, combat, spawner, progression, music, fx,
@@ -561,7 +403,8 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
     gapAwareness, projectilePhysics, bossController, game.enemiesRef, game.projectilesRef,
     game.particlesRef, game.floatingTextsRef, game.shockwavesRef, game.lightningArcsRef,
     game.minesRef, game.foodRef, game.terminalsRef, game.hitboxesRef, game.snakeRef,
-    game.audioEventsRef, gameTimeRef, invulnerabilityTimeRef, lastDamageTimeRef, game
+    game.audioEventsRef, gameTimeRef, invulnerabilityTimeRef, lastDamageTimeRef, game, difficulty,
+    settings.reduceFlashing // Dependency for damage opacity calc
   ]);
 
   useGameLoop(game, update, draw);
@@ -611,12 +454,15 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
     setBindingState({ charId: char.id, phase: 'LOCK' });
     audio.play('UI_HARD_CLICK'); 
 
-    // Deterministic flow
-    setBindText('PILOT LOCKED');
+    if (Math.random() < 0.02) {
+        setBindText('PROFILE ACCEPTED WITH WARNINGS');
+    } else {
+        setBindText('BINDING OPERATOR PROFILE');
+    }
 
     setTimeout(() => {
         setBindingState(prev => prev ? { ...prev, phase: 'SYNC' } : null);
-        // audio.play('SYS_RECOVER'); // Sound effect transition
+        audio.play('SYS_RECOVER');
     }, 500);
 
     setTimeout(() => {
@@ -651,119 +497,100 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
     return <ArchiveTerminal onClose={() => setStatus(GameStatus.IDLE)} />;
   }
 
+  if (status === GameStatus.COSMETICS) {
+      return <CosmeticsMenu onClose={() => setStatus(GameStatus.IDLE)} />;
+  }
+
   if (status === GameStatus.CONFIGURATION) {
       return <ModelConfigurationPass difficultyId={difficulty} onComplete={handleConfigurationComplete} />;
   }
 
   return (
       <div 
-        className="w-full h-full flex items-center justify-center bg-black overflow-hidden select-none"
+        className="w-full h-full flex items-center justify-center bg-black overflow-hidden select-none relative"
         style={{ fontFamily: uiStyle.typography.fontFamily }}
       >
-          <UnlockToast queue={toastQueue} onClear={clearToast} />
-
-          {/* ENGINE TOOLS (DEV ONLY) */}
-          {IS_DEV && <DevTools game={game} />}
-
-          <GameHUD game={game} showUI={showHUD}>
-              <div className="relative w-full h-full">
-                  <canvas
-                      ref={canvasRef}
-                      width={CANVAS_WIDTH}
-                      height={CANVAS_HEIGHT}
-                      className="w-full h-full block object-contain z-0"
-                      style={{
-                          filter: `contrast(${settings.highContrast ? 1.2 : 1.0}) brightness(${settings.highContrast ? 1.1 : 1.0})`
-                      }}
-                  />
-                  
-                  {/* DAMAGE OVERLAY */}
-                  <div 
-                    className="absolute inset-0 pointer-events-none z-20 transition-opacity duration-75"
-                    style={{ 
-                        opacity: damageOpacity * 0.4,
-                        backgroundColor: uiStyle.colors.danger,
-                        mixBlendMode: 'overlay'
-                    }}
-                  />
-                  <div 
-                    className="absolute inset-0 pointer-events-none z-20 transition-opacity duration-75"
-                    style={{ 
-                        opacity: damageOpacity,
-                        boxShadow: `inset 0 0 100px ${uiStyle.colors.danger}80` 
-                    }}
-                  />
-
-                  {status === GameStatus.STAGE_TRANSITION && (
-                      <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none">
-                          <div className="text-4xl md:text-6xl font-display text-cyan-400 tracking-[0.2em] animate-[pulse_0.5s_ease-in-out_infinite] drop-shadow-[0_0_30px_#0ff] text-center">
-                              SECTOR DECRYPTION
-                          </div>
-                      </div>
-                  )}
-
-                  {/* ─── SEQUENCE ARMED (REPLACES PASSIVE READY) ─── */}
-                  {status === GameStatus.READY && (
-                      <div 
-                          className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/80 backdrop-blur-[2px] pointer-events-auto cursor-pointer animate-in fade-in duration-300" 
-                          // Click handler logic moved to global listeners to support hold
-                      >
-                          {isIntroPlaying ? (
-                              <div className="flex flex-col items-center gap-4">
-                                  <div className="text-6xl text-cyan-400 font-bold animate-ping">///</div>
-                                  <div className="text-white font-mono text-sm tracking-widest animate-pulse">SEQUENCE START</div>
-                              </div>
-                          ) : (
-                              <div className="flex flex-col items-center w-full max-w-md">
-                                  {/* Background Elements */}
-                                  <div className="absolute inset-0 bg-[linear-gradient(rgba(0,255,255,0.05)_1px,transparent_1px)] bg-[length:100%_4px] pointer-events-none opacity-50"></div>
-                                  
-                                  {/* CLI Text */}
-                                  <div className="font-mono text-xs text-cyan-600 mb-8 space-y-1 w-64">
-                                      {armingTextStep >= 1 && <div className="animate-in fade-in slide-in-from-left-2 duration-300">{`> PILOT LOCKED`}</div>}
-                                      {armingTextStep >= 2 && <div className="animate-in fade-in slide-in-from-left-2 duration-300 delay-75">{`> NEURAL LINK STABLE`}</div>}
-                                      {armingTextStep >= 3 && <div className="animate-in fade-in slide-in-from-left-2 duration-300 delay-150 text-cyan-400 font-bold">{`> SEQUENCE ARMED`}</div>}
-                                  </div>
-
-                                  {/* Arming Gauge */}
-                                  <div className="relative w-64 h-12 border-2 border-cyan-800 flex items-center justify-center overflow-hidden bg-black/50">
-                                      <div 
-                                          className="absolute inset-0 bg-cyan-500/20 transition-all duration-75 ease-linear"
-                                          style={{ width: `${armingProgress * 100}%` }}
-                                      ></div>
-                                      <div 
-                                          className="absolute bottom-0 left-0 h-1 bg-cyan-400 transition-all duration-75 ease-linear shadow-[0_0_10px_cyan]"
-                                          style={{ width: `${armingProgress * 100}%` }}
-                                      ></div>
-                                      
-                                      <div className="relative z-10 text-cyan-200 font-bold tracking-[0.2em] text-sm animate-pulse">
-                                          HOLD INPUT TO ENGAGE
-                                      </div>
-                                  </div>
-                              </div>
-                          )}
-                      </div>
-                  )}
-
-                  {status === GameStatus.RESUMING && (
-                      <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none">
-                          <div className="text-center">
-                              <div 
-                                  className="text-6xl md:text-8xl font-display font-bold tracking-widest drop-shadow-[0_0_20px_rgba(0,255,255,0.8)] animate-pulse"
-                                  style={{ color: uiStyle.colors.primary }}
-                              >
-                                  {resumeCountdown > 0 ? resumeCountdown : 'GO!'}
-                              </div>
-                              <div className="text-lg text-cyan-200 font-mono mt-4 tracking-[0.3em]">
-                                  SYSTEM RESUMING...
-                              </div>
-                          </div>
-                      </div>
-                  )}
-              </div>
-          </GameHUD>
+          {/* ENGINE TOOLS */}
+          <DevTools game={game} />
           
-          {/* ... Rest of UI components (Controls, DevMenu, etc) ... */}
+          {/* GLOBAL CRT OVERLAY (Toggled via Settings) */}
+          {settings.crtEffect && (
+              <div className="absolute inset-0 pointer-events-none z-[100] opacity-10 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_4px,3px_100%] mix-blend-overlay"></div>
+          )}
+          
+          {/* GAME CONTAINER WITH RELATIVE POSITIONING FOR TOASTS */}
+          <div className="relative shadow-2xl" style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}>
+              
+              {/* UNLOCK TOAST (Now positioned relative to Game Frame) */}
+              <UnlockToast queue={toastQueue} onClear={clearToast} />
+
+              <GameHUD game={game} showUI={showHUD}>
+                  <div className="relative w-full h-full">
+                      <canvas
+                          ref={canvasRef}
+                          width={CANVAS_WIDTH}
+                          height={CANVAS_HEIGHT}
+                          className="w-full h-full block object-contain z-0"
+                          style={{
+                              filter: `contrast(${settings.highContrast ? 1.2 : 1.0}) brightness(${settings.highContrast ? 1.1 : 1.0})`
+                          }}
+                      />
+                      
+                      {/* DAMAGE OVERLAY */}
+                      <div 
+                        className="absolute inset-0 pointer-events-none z-20 transition-opacity duration-75"
+                        style={{ 
+                            opacity: damageOpacity * 0.4,
+                            backgroundColor: uiStyle.colors.danger,
+                            mixBlendMode: 'overlay'
+                        }}
+                      />
+                      <div 
+                        className="absolute inset-0 pointer-events-none z-20 transition-opacity duration-75"
+                        style={{ 
+                            opacity: damageOpacity,
+                            boxShadow: `inset 0 0 100px ${uiStyle.colors.danger}80` 
+                        }}
+                      />
+
+                      {status === GameStatus.STAGE_TRANSITION && (
+                          <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none">
+                              <div className="text-4xl md:text-6xl font-display text-cyan-400 tracking-[0.2em] animate-[pulse_0.5s_ease-in-out_infinite] drop-shadow-[0_0_30px_#0ff] text-center">
+                                  SECTOR DECRYPTION
+                              </div>
+                          </div>
+                      )}
+
+                      {status === GameStatus.READY && (
+                          <div 
+                              className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/40 backdrop-blur-[2px] pointer-events-auto cursor-pointer animate-in fade-in duration-300" 
+                              onClick={handleReadyStart}
+                          >
+                              <div className="text-cyan-500 font-mono text-xs tracking-[0.3em] mb-4 drop-shadow-[0_0_5px_rgba(0,255,255,0.5)]">UNIT INITIALIZED</div>
+                              <div className="text-white/50 font-mono text-[10px] tracking-widest mb-16">AWAITING INPUT</div>
+                              <div className="text-white font-bold tracking-[0.2em] text-sm animate-pulse">PRESS ANY KEY TO BEGIN</div>
+                          </div>
+                      )}
+
+                      {status === GameStatus.RESUMING && (
+                          <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none">
+                              <div className="text-center">
+                                  <div 
+                                      className="text-6xl md:text-8xl font-display font-bold tracking-widest drop-shadow-[0_0_20px_rgba(0,255,255,0.8)] animate-pulse"
+                                      style={{ color: uiStyle.colors.primary }}
+                                  >
+                                      {resumeCountdown > 0 ? resumeCountdown : 'GO!'}
+                                  </div>
+                                  <div className="text-lg text-cyan-200 font-mono mt-4 tracking-[0.3em]">
+                                      SYSTEM RESUMING...
+                                  </div>
+                              </div>
+                          </div>
+                      )}
+                  </div>
+              </GameHUD>
+          </div>
+          
           {isTouch && (
               <div className="absolute inset-0 pointer-events-none z-50">
                  {settings.mobileControlScheme === 'JOYSTICK' && (
@@ -795,14 +622,6 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
               </div>
           )}
           
-          {IS_DEV && showDevMenu && (
-              <DevBootstrap 
-                  onBoot={handleBootstrap} 
-                  onCancel={() => setShowDevMenu(false)}
-                  onToggleFreeRoam={handleToggleFreeRoam}
-              />
-          )}
-
           {/* VISUAL INDICATORS */}
           {status === GameStatus.PLAYING && cameraControlsEnabled && (
               <div className="absolute bottom-4 right-4 z-40 bg-black/60 border border-cyan-500/50 p-2 rounded text-[10px] font-mono text-cyan-400 pointer-events-none">
@@ -818,14 +637,8 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
                   <div className="font-bold">CAMERA LOCKED</div>
               </div>
           )}
-          
-          {devModeFlagsRef.current.godMode && (
-              <div className="absolute bottom-16 right-4 z-40 bg-red-900/80 border border-red-500 p-2 rounded text-[10px] font-mono text-white pointer-events-none animate-pulse">
-                  GOD MODE ACTIVE
-              </div>
-          )}
 
-          {status === GameStatus.IDLE && !showDevMenu && (
+          {status === GameStatus.IDLE && (
               <div 
                 className={`absolute inset-0 flex flex-col items-center justify-center bg-black/95 z-50 animate-in fade-in duration-500 pointer-events-auto transition-all duration-75 ${
                     initPhase === 'GLITCH' ? 'translate-x-1 skew-x-2' : ''
@@ -855,7 +668,7 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
                       </div>
                   </div>
                   
-                  <div className={`transition-opacity duration-0 ${initPhase === 'STALL' || initPhase === 'RECOVER' ? 'opacity-0' : 'opacity-100'}`}>
+                  <div className={`flex flex-col items-center gap-4 transition-opacity duration-0 ${initPhase === 'STALL' || initPhase === 'RECOVER' ? 'opacity-0' : 'opacity-100'}`}>
                       <button 
                           onClick={handleStartClick}
                           className="group relative px-12 py-4 bg-cyan-900/20 border-2 border-cyan-500 hover:bg-cyan-500/20 transition-all duration-200 overflow-hidden"
@@ -865,17 +678,24 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
                               INITIALIZE SYSTEM
                           </span>
                       </button>
+
+                      <button 
+                          onClick={() => { setStatus(GameStatus.COSMETICS); audio.play('MOVE'); }}
+                          className="px-8 py-2 text-xs font-bold tracking-[0.2em] text-cyan-700 hover:text-cyan-400 border border-transparent hover:border-cyan-900/50 transition-all relative"
+                      >
+                          [ PROTOCOL FORGE ]
+                          {hasNewCosmetics && (
+                              <div className="absolute top-0 right-0 -mt-1 -mr-1 flex h-3 w-3">
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                  <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500 border border-black"></span>
+                              </div>
+                          )}
+                      </button>
                   </div>
 
                   <div className="mt-8 text-xs text-gray-500 font-mono">
                       v1.0.0 // SECURE CONNECTION ESTABLISHED
                   </div>
-                  
-                  {IS_DEV && (
-                      <div className="absolute bottom-6 left-6 text-xs font-mono text-red-500">
-                          DEV BUILD :: SHIFT+D TO BOOTSTRAP :: [ ` ] FOR TOOLS
-                      </div>
-                  )}
                   
                   <div 
                       className={`absolute bottom-6 right-6 text-xs font-mono tracking-widest cursor-pointer transition-all duration-500 group ${
@@ -899,6 +719,16 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
 
           {status === GameStatus.DIFFICULTY_SELECT && (
               <div className="absolute inset-0 z-40 bg-black/95 flex flex-col pointer-events-auto animate-in fade-in duration-300">
+                  
+                  {/* BACK BUTTON */}
+                  <button 
+                      onClick={handleBack}
+                      className="absolute top-8 left-8 z-50 group flex items-center gap-2 px-4 py-2 border border-gray-700 bg-black/80 hover:border-cyan-500 hover:bg-cyan-900/20 transition-all rounded-sm"
+                  >
+                      <span className="text-cyan-600 font-mono text-xs group-hover:text-cyan-400">{'<<'}</span>
+                      <span className="text-gray-300 font-bold text-xs tracking-widest group-hover:text-white">RETURN</span>
+                  </button>
+
                   <div className="flex-none p-6 bg-black/95 border-b border-cyan-900/50 backdrop-blur-md z-50 flex flex-col items-center shadow-lg">
                       <h2 className="text-4xl text-white font-display tracking-[0.2em] text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 drop-shadow-[0_0_10px_rgba(0,255,255,0.3)] mb-2">
                           THREAT LEVEL
@@ -954,6 +784,16 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
 
           {status === GameStatus.CHARACTER_SELECT && (
               <div className="absolute inset-0 z-40 bg-black/95 flex flex-col pointer-events-auto animate-in fade-in duration-300">
+                  
+                  {/* BACK BUTTON */}
+                  <button 
+                      onClick={handleBack}
+                      className="absolute top-8 left-8 z-50 group flex items-center gap-2 px-4 py-2 border border-gray-700 bg-black/80 hover:border-cyan-500 hover:bg-cyan-900/20 transition-all rounded-sm"
+                  >
+                      <span className="text-cyan-600 font-mono text-xs group-hover:text-cyan-400">{'<<'}</span>
+                      <span className="text-gray-300 font-bold text-xs tracking-widest group-hover:text-white">RETURN</span>
+                  </button>
+
                   <div className="flex-none p-6 bg-black/95 border-b border-cyan-900/50 backdrop-blur-md z-50 flex flex-col items-center shadow-lg">
                       <h2 className="text-4xl text-white font-display tracking-[0.2em] text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 drop-shadow-[0_0_10px_rgba(0,255,255,0.3)] mb-2">
                           SELECT OPERATOR
@@ -967,6 +807,8 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
                               const stats = CHAR_STATS[char.id] || { off: 5, def: 5, spd: 5, util: 5 };
                               const isSelected = bindingState?.charId === char.id;
                               const isDimmed = bindingState && !isSelected;
+                              const loadoutIcons = getLoadoutIcons(char.initialStats.weapon);
+                              if (char.initialStats.shieldActive) loadoutIcons.push('🛡️'); // Or use descriptor icon
 
                               return (
                                   <button
@@ -976,7 +818,7 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
                                       onMouseLeave={handleMouseLeave}
                                       disabled={!!bindingState}
                                       className={`
-                                          relative group border rounded-xl p-1 transition-all duration-300 flex flex-col overflow-hidden text-left h-full min-h-[500px]
+                                          relative group border rounded-xl p-1 transition-all duration-300 flex flex-col overflow-hidden text-left h-full min-h-[480px]
                                           ${isSelected 
                                               ? 'border-cyan-400 bg-cyan-950/30 scale-105 z-10 shadow-[0_0_50px_rgba(0,255,255,0.2)]' 
                                               : isDimmed 
@@ -986,9 +828,10 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
                                       `}
                                   >
                                       <div className="flex-1 flex flex-col bg-black/40 rounded-lg p-5 relative z-10 h-full">
+                                          {/* HEADER */}
                                           <div className="flex justify-between items-start mb-4 border-b border-white/10 pb-2">
                                               <div>
-                                                  <div className="text-xs font-mono text-cyan-600 mb-1 tracking-widest">{char.tag} CLASS</div>
+                                                  <div className="text-xs font-mono text-cyan-600 mb-1 tracking-widest uppercase">{char.tag} CLASS</div>
                                                   <div className="text-2xl font-display font-bold text-white tracking-wider group-hover:text-cyan-200 transition-colors">{char.name}</div>
                                               </div>
                                               <div className="text-3xl opacity-50 group-hover:opacity-100 transition-opacity grayscale group-hover:grayscale-0">
@@ -997,9 +840,13 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
                                                   </div>
                                               </div>
                                           </div>
-                                          <div className="text-sm text-gray-400 leading-relaxed mb-6 h-12">
+                                          
+                                          {/* DESCRIPTION */}
+                                          <div className="text-sm text-gray-400 leading-relaxed mb-6 min-h-[40px]">
                                               {char.description}
                                           </div>
+                                          
+                                          {/* STATS */}
                                           <div className="space-y-2 mb-6 bg-black/20 p-3 rounded border border-white/5">
                                               <CompactStatBar label="OFFENSE" value={stats.off} max={10} color="#ef4444" />
                                               <CompactStatBar label="DEFENSE" value={stats.def} max={10} color="#3b82f6" />
@@ -1008,45 +855,39 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
                                           </div>
 
                                           {/* STARTING LOADOUT */}
-                                          <div className="mb-4">
-                                              <div className="flex items-center gap-2 mb-2 border-b border-gray-800 pb-1">
-                                                  <div className="w-1 h-3 bg-cyan-500"></div>
-                                                  <span className="text-[10px] text-gray-400 font-bold tracking-[0.2em] uppercase">STARTING LOADOUT</span>
-                                              </div>
-                                              <div className="flex gap-2 flex-wrap">
-                                                  {getStartingLoadout(char.initialStats).map(id => {
-                                                      const desc = DESCRIPTOR_REGISTRY[id];
-                                                      if (!desc) return null;
-                                                      return (
-                                                          <div key={id} className="relative group w-10 h-10 bg-black border border-gray-700 rounded flex items-center justify-center hover:border-cyan-400 transition-colors">
-                                                              <span className="text-lg">{desc.icon}</span>
-                                                              <HUDTooltip title={desc.name} description={desc.description} />
-                                                          </div>
-                                                      );
-                                                  })}
+                                          <div className="mb-4 pl-2 border-l-2 border-cyan-500/50">
+                                              <div className="text-[10px] text-gray-500 font-bold tracking-widest mb-2 uppercase">STARTING LOADOUT</div>
+                                              <div className="flex gap-2">
+                                                  {loadoutIcons.map((icon, i) => (
+                                                      <div key={i} className="w-8 h-8 bg-gray-800 border border-gray-600 rounded flex items-center justify-center text-sm shadow-md">
+                                                          {icon}
+                                                      </div>
+                                                  ))}
                                               </div>
                                           </div>
-                                          
-                                          {/* KERNEL ARCHITECTURE DISPLAY */}
+
+                                          {/* KERNEL ARCHITECTURE */}
                                           <div className="mt-auto">
-                                              <div className="flex items-center gap-2 mb-2 border-b border-gray-800 pb-1">
-                                                  <div className="w-1 h-3 bg-cyan-500"></div>
-                                                  <span className="text-[10px] text-gray-400 font-bold tracking-[0.2em] uppercase">KERNEL ARCHITECTURE</span>
-                                              </div>
+                                              <div className="text-[10px] text-gray-500 font-bold tracking-widest uppercase mb-2 pl-2 border-l-2 border-cyan-500/50">KERNEL ARCHITECTURE</div>
                                               <div className="space-y-2">
                                                   {char.traits.map((t, i) => (
-                                                      <div key={i} className="bg-gray-900/40 border border-gray-700/50 p-2 rounded relative group hover:bg-gray-800/60 transition-colors">
-                                                          <div className="flex justify-between items-center mb-0.5">
-                                                              <div className="text-cyan-400 font-bold text-[10px] uppercase tracking-wider">{t.name}</div>
-                                                              <div className={`text-[8px] px-1 rounded ${t.type === 'SCALABLE' ? 'bg-cyan-900/50 text-cyan-300' : 'bg-gray-800 text-gray-500'}`}>{t.type === 'SCALABLE' ? 'GROWTH' : 'STATIC'}</div>
+                                                      <div key={i} className="bg-gray-900/40 p-2 rounded border border-gray-700/50 relative overflow-hidden group/trait">
+                                                          <div className="flex justify-between items-start mb-1 relative z-10">
+                                                              <span className="text-xs font-bold text-gray-200">{t.name}</span>
+                                                              <span className={`text-[8px] px-1.5 py-0.5 rounded font-bold tracking-wider ${t.type === 'GROWTH' ? 'bg-cyan-900/80 text-cyan-300 border border-cyan-700/50' : 'bg-gray-700/80 text-gray-300 border border-gray-600'}`}>
+                                                                  {t.type}
+                                                              </span>
                                                           </div>
-                                                          <div className="text-gray-400 text-[10px] leading-tight font-mono">{t.description}</div>
-                                                          <div className="absolute top-2 right-2 w-1 h-1 bg-cyan-900 rounded-full group-hover:bg-cyan-400 transition-colors opacity-0 group-hover:opacity-100"></div>
+                                                          <div className="text-[10px] text-gray-500 leading-tight relative z-10">{t.description}</div>
+                                                          {/* Hover Effect */}
+                                                          <div className="absolute inset-0 bg-gradient-to-r from-white/5 to-transparent opacity-0 group-hover/trait:opacity-100 transition-opacity pointer-events-none" />
                                                       </div>
                                                   ))}
                                               </div>
                                           </div>
                                       </div>
+                                      
+                                      {/* SELECTION OVERLAY */}
                                       {isSelected && (
                                           <div className="absolute inset-0 bg-cyan-500/10 z-20 flex items-center justify-center backdrop-blur-[1px] animate-in fade-in duration-200">
                                               <div className="bg-black/90 border border-cyan-400 p-4 shadow-2xl text-center transform scale-110">
@@ -1088,7 +929,7 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
                               onClick={() => {
                                   setStatus(GameStatus.IDLE);
                                   setModalState('NONE');
-                                  audio.stopMusic();
+                                  // Maintain audio engine state for menu transition
                               }}
                               className="w-full py-3 bg-red-900/30 hover:bg-red-900/50 text-red-400 font-bold rounded tracking-widest transition-colors border border-red-900/50"
                           >
@@ -1124,7 +965,7 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
                           {upgradeOptions.map((option, index) => (
                               <button
                                   key={index}
-                                  onClick={() => progression.applyUpgrade(option)}
+                                  onClick={() => progression.applyUpgrade(option.id as UpgradeId, option.rarity)}
                                   className={`
                                       group relative p-1 transition-all duration-300 hover:-translate-y-2 hover:shadow-[0_0_30px_rgba(0,0,0,0.5)]
                                       ${RARITY_STYLES[option.rarity] || 'border-gray-700 bg-gray-900'}
@@ -1178,72 +1019,24 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
           )}
 
           {status === GameStatus.GAME_OVER && (
-              <div className="absolute inset-0 z-[60] bg-red-950/90 backdrop-blur-xl flex flex-col items-center justify-center text-center p-8 pointer-events-auto animate-in fade-in zoom-in-95 duration-500 overflow-hidden">
-                  
-                  {/* Background Noise / Hex Dump */}
-                  <div className="absolute inset-0 opacity-10 pointer-events-none font-mono text-[10px] text-red-500 overflow-hidden leading-none whitespace-pre-wrap break-all p-4 select-none z-0">
-                      {hexDump}
-                  </div>
-
-                  <div className="relative z-10 w-full max-w-2xl bg-black/90 border-2 border-red-600 shadow-[0_0_100px_rgba(220,38,38,0.4)] flex flex-col">
-                      
-                      {/* Header Bar */}
-                      <div className="bg-red-600 text-black font-bold px-4 py-1 flex justify-between items-center mb-1 text-xs tracking-widest font-mono">
-                          <span>SYSTEM_HALT // CRITICAL_FAILURE</span>
-                          <span>ERR: 0xDEADBEEF</span>
-                      </div>
-
-                      <div className="p-8 md:p-12 flex flex-col items-center">
-                          <div className="mb-6 relative">
-                              <h2 className="text-6xl md:text-8xl font-black text-red-500 tracking-tighter drop-shadow-[4px_4px_0_rgba(0,0,0,1)] animate-pulse glitch-intense">
-                                  FATAL ERROR
-                              </h2>
-                          </div>
-                          
-                          <div className="w-full text-center border-l-4 border-red-500 bg-red-900/20 py-3 mb-8">
-                              <div className="text-red-400 font-mono text-xs tracking-widest mb-1">EXCEPTION_MSG</div>
-                              <div className="text-xl md:text-2xl font-mono text-red-100 tracking-wider">
-                                  {failureMessageRef.current || 'UNKNOWN_SYSTEM_FAILURE'}
-                              </div>
-                          </div>
-
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full mb-10 border-t border-b border-red-900/50 py-6">
-                              <div className="flex flex-col items-center">
-                                  <div className="text-[10px] text-red-500 font-bold tracking-widest mb-1">SCORE_LOG</div>
-                                  <div className="text-2xl font-mono text-white">{Math.floor(scoreRef.current).toLocaleString()}</div>
-                              </div>
-                              <div className="flex flex-col items-center border-l border-red-900/30">
-                                  <div className="text-[10px] text-red-500 font-bold tracking-widest mb-1">SECTOR</div>
-                                  <div className="text-2xl font-mono text-white">{game.stageRef.current}</div>
-                              </div>
-                              <div className="flex flex-col items-center border-l border-red-900/30">
-                                  <div className="text-[10px] text-red-500 font-bold tracking-widest mb-1">KILLS</div>
-                                  <div className="text-2xl font-mono text-white">{enemiesKilledRef.current}</div>
-                              </div>
-                              <div className="flex flex-col items-center border-l border-red-900/30">
-                                  <div className="text-[10px] text-red-500 font-bold tracking-widest mb-1">LEVEL</div>
-                                  <div className="text-2xl font-mono text-white">{game.levelRef.current}</div>
-                              </div>
-                          </div>
-
-                          <button 
-                              onClick={handleStartClick}
-                              className="group relative w-full max-w-md px-8 py-4 bg-transparent border border-red-500 text-red-500 font-bold tracking-[0.3em] hover:bg-red-600 hover:text-black transition-all duration-200 overflow-hidden uppercase text-sm"
-                          >
-                              <div className="absolute inset-0 w-full h-full bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(0,0,0,0.2)_10px,rgba(0,0,0,0.2)_20px)] opacity-50"></div>
-                              <span className="relative z-10 flex items-center justify-center gap-2">
-                                  <span>[ INITIATE_REBOOT_SEQUENCE ]</span>
-                              </span>
-                          </button>
-                      </div>
-                      
-                      {/* Footer Decoration */}
-                      <div className="bg-[#0a0000] border-t border-red-900/50 p-2 flex justify-between text-[8px] font-mono text-red-700">
-                          <span>CORE_DUMP_SAVED</span>
-                          <span>MEMORY_ADDRESS: 0xFF0042A1</span>
-                      </div>
-                  </div>
-              </div>
+            <GameOverScreen 
+                score={Math.floor(scoreRef.current)}
+                highScore={highScore} // Pass high score
+                stage={game.stageRef.current}
+                level={game.levelRef.current}
+                kills={enemiesKilledRef.current}
+                failureReason={failureMessageRef.current || 'UNKNOWN_FAILURE'}
+                onRestart={handleStartClick}
+                onMenu={handleMenuClick} // Use new handler
+            />
+          )}
+          
+          {/* UNLOCK SUMMARY OVERLAY */}
+          {showUnlockSummary && (
+              <UnlockSummary 
+                newIds={sessionNewUnlocks} 
+                onClose={() => setShowUnlockSummary(false)} 
+              />
           )}
 
       </div>
@@ -1252,11 +1045,8 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
 
 export const SnakeGame: React.FC = () => {
   const game = useGameState();
-  const styleId = game.settings.hudConfig.theme === 'AMBER' ? 'amber' : 
-                  game.settings.highContrast ? 'high_contrast' : 'neon';
-
   return (
-    <UIStyleProvider styleId={styleId}>
+    <UIStyleProvider styleId="neon">
       <VisionProtocolProvider protocolId={game.settings.visionProtocolId}>
         <GameInner game={game} />
       </VisionProtocolProvider>

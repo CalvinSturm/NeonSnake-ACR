@@ -5,10 +5,9 @@ import { useCombat } from './useCombat';
 import { useSpawner } from './useSpawner';
 import { useFX } from './useFX';
 import { useProgression } from './useProgression';
-import { Point, GameStatus, FoodType, CameraMode, EnemyType } from '../types';
+import { Point, GameStatus, FoodType, CameraMode } from '../types';
 import { GRID_COLS, GRID_ROWS, COLORS, DEFAULT_SETTINGS } from '../constants';
 import { audio } from '../utils/audio';
-import { ROOT_FILESYSTEM } from '../archive/data';
 
 export function useCollisions(
   game: ReturnType<typeof useGameState>,
@@ -32,20 +31,16 @@ export function useCollisions(
     setUiShield,
     failureMessageRef,
     traitsRef,
-    devModeFlagsRef,
-    cameraRef,
-    hitboxesRef, // Added for Boss Hitboxes
-    scoreRef, // Used if needed
-    stageStatsRef // NEW: Mastery tracking
+    cameraRef
   } = game;
 
-  const { spawnFloatingText, triggerShake, triggerShockwave, createParticles, triggerCLISequence } = fx;
+  const { spawnFloatingText, triggerShake, triggerShockwave, createParticles } = fx;
   const { damageEnemy } = combat;
 
   // 1. Helpers for Damage/Death
   const handleDeath = useCallback((reason: string) => {
-      // GOD MODE CHECK
-      if (devModeFlagsRef.current.godMode) return;
+      // GOD MODE VIA INVULNERABILITY
+      if (invulnerabilityTimeRef.current > 1000000) return;
 
       if (invulnerabilityTimeRef.current > 0) return;
       if (statsRef.current.shieldActive) {
@@ -62,24 +57,16 @@ export function useCollisions(
       
       failureMessageRef.current = reason;
       setStatus(GameStatus.GAME_OVER);
-      // audio.play('GAME_OVER'); // Removed to maintain music continuity
+      audio.play('GAME_OVER');
       triggerShake(20, 20);
-  }, [invulnerabilityTimeRef, statsRef, setUiShield, triggerShake, spawnFloatingText, failureMessageRef, setStatus, snakeRef, devModeFlagsRef]);
+  }, [invulnerabilityTimeRef, statsRef, setUiShield, triggerShake, spawnFloatingText, failureMessageRef, setStatus, snakeRef]);
 
   const takeDamage = useCallback((amount: number, reason: string) => {
-      // GOD MODE CHECK
-      if (devModeFlagsRef.current.godMode) return;
+      // GOD MODE VIA INVULNERABILITY
+      if (invulnerabilityTimeRef.current > 1000000) return;
 
       if (invulnerabilityTimeRef.current > 0) return;
       
-      // Apply Damage Reduction (Intrinsic)
-      const resist = traitsRef.current.damageResistBonus;
-      const finalAmount = Math.max(0, amount * (1 - resist));
-      
-      // Track damage for Mastery (Original raw or final? Usually raw to encourage perfect play, but final reflects mitigation investment)
-      // Let's track final damage taken for fair assessment of "Tank" builds.
-      stageStatsRef.current.damageTaken += finalAmount;
-
       if (statsRef.current.shieldActive) {
           statsRef.current.shieldActive = false;
           setUiShield(false);
@@ -89,43 +76,28 @@ export function useCollisions(
           return;
       }
       handleDeath(reason);
-  }, [invulnerabilityTimeRef, statsRef, setUiShield, triggerShake, handleDeath, devModeFlagsRef, stageStatsRef, traitsRef]);
+  }, [invulnerabilityTimeRef, statsRef, setUiShield, triggerShake, handleDeath]);
 
   // 2. Static Collisions (Walls, Self)
   const checkMoveCollisions = useCallback((head: Point): boolean => {
-    const isFreeRoam = devModeFlagsRef.current.freeMovement;
     const isSideScroll = cameraRef.current.mode === CameraMode.SIDE_SCROLL;
-    const isGod = devModeFlagsRef.current.godMode;
 
     // Walls
     if (head.x < 0 || head.x >= GRID_COLS || head.y < 0 || head.y >= GRID_ROWS) {
-        if (isFreeRoam || isSideScroll || isGod) return false;
+        if (isSideScroll) return false;
+        
         handleDeath('GRID_BOUNDARY_EXCEEDED');
         return true;
     }
 
     if (wallsRef.current.some(w => w.x === head.x && w.y === head.y)) {
-        if (isFreeRoam || isSideScroll || isGod) return false;
+        if (isSideScroll) return false;
+
         handleDeath('STRUCTURAL_IMPACT');
         return true;
     }
 
-    // Barrier Check (Solid Object)
-    for (const enemy of enemiesRef.current) {
-        if (enemy.type === EnemyType.BARRIER && enemy.state === 'ACTIVE') {
-            if (Math.round(enemy.x) === head.x && Math.abs(head.y - enemy.y) < 10) { // Vertical wall approximation
-                // Player dies if hitting the barrier
-                if (!isGod) {
-                    handleDeath('CONTAINMENT_FIELD_IMPACT');
-                    return true;
-                }
-            }
-        }
-    }
-
     // Self (Body)
-    if (isFreeRoam || isGod) return false;
-
     for (let i = 0; i < snakeRef.current.length; i++) {
         const seg = snakeRef.current[i];
         if (head.x === seg.x && head.y === seg.y) {
@@ -137,7 +109,7 @@ export function useCollisions(
     }
 
     return false;
-  }, [wallsRef, snakeRef, handleDeath, devModeFlagsRef, cameraRef, enemiesRef]);
+  }, [wallsRef, snakeRef, handleDeath, cameraRef]);
 
   // 3. Eat Logic
   const handleEat = useCallback((head: Point): boolean => {
@@ -151,16 +123,27 @@ export function useCollisions(
         foodRef.current.splice(foodIndex, 1);
         
         progression.onFoodConsumed({ type: item.type, byMagnet: false, value: item.value });
+        
+        // XP Floating Text
+        const gridSize = DEFAULT_SETTINGS.gridSize;
+        const px = head.x * gridSize + gridSize / 2;
+        const py = head.y * gridSize;
 
         if (item.type === FoodType.NORMAL) {
             grew = true;
             createParticles(head.x, head.y, COLORS.foodNormal, 6);
+            const xp = 10 * statsRef.current.foodQualityMod;
+            spawnFloatingText(px, py - 10, `+${Math.floor(xp)} XP`, '#ffff00', 12);
         } else {
             createParticles(head.x, head.y, COLORS.xpOrb, 4);
+            const xp = item.value || 0;
+            if (xp > 0) {
+                 spawnFloatingText(px, py - 10, `+${xp} XP`, '#ffff00', 12);
+            }
         }
     }
     return grew;
-  }, [foodRef, progression, createParticles]);
+  }, [foodRef, progression, createParticles, spawnFloatingText, statsRef]);
 
   // 4. Dynamic Entities (Enemies, Projectiles)
   const checkDynamicCollisions = useCallback(() => {
@@ -173,9 +156,6 @@ export function useCollisions(
     const snakeBody = snakeRef.current;
     
     enemiesRef.current.forEach(e => {
-        // Skip Barrier collision here (handled in move)
-        if (e.type === EnemyType.BARRIER) return;
-        
         if (e.state !== 'ACTIVE') return;
 
         // Check against Head (Lethal)
@@ -209,22 +189,16 @@ export function useCollisions(
                      });
                  }
                  
-                 // Apply Bulwark mitigation (50%) AND generic Damage Resist
-                 const baseDmg = 5;
-                 const resist = traitsRef.current.damageResistBonus;
-                 const mitigated = baseDmg * traitsRef.current.tailIntegrityDamageMod * (1 - resist);
-
-                 stageStatsRef.current.damageTaken += mitigated; // Track damage
-                 
-                 if (!devModeFlagsRef.current.godMode) {
-                     tailIntegrityRef.current = Math.max(0, tailIntegrityRef.current - mitigated);
+                 const dmg = 5 * traitsRef.current.tailIntegrityDamageMod;
+                 if (invulnerabilityTimeRef.current <= 1000000) {
+                     tailIntegrityRef.current = Math.max(0, tailIntegrityRef.current - dmg);
                  }
                  
                  const ang = Math.atan2(e.y - seg.y, e.x - seg.x);
                  e.x += Math.cos(ang) * 0.5;
                  e.y += Math.sin(ang) * 0.5;
                  
-                 if (tailIntegrityRef.current <= 0 && !devModeFlagsRef.current.godMode) {
+                 if (tailIntegrityRef.current <= 0 && invulnerabilityTimeRef.current <= 1000000) {
                      handleDeath('HULL_BREACH');
                  }
                  break; 
@@ -232,83 +206,31 @@ export function useCollisions(
         }
     });
 
-    // B. Projectile Collisions
+    // B. Snake vs Projectiles
     projectilesRef.current.forEach(p => {
         if (p.shouldRemove) return;
+        if (p.owner !== 'ENEMY') return; 
+
+        // Convert projectile pixel pos to grid pos (float)
+        // Projectiles are spawned at center of tile (e.g. x.5)
+        const pGridX = p.x / DEFAULT_SETTINGS.gridSize;
+        const pGridY = p.y / DEFAULT_SETTINGS.gridSize;
         
-        // 1. Enemy Projectiles vs Snake
-        if (p.owner === 'ENEMY') {
-            const pGridX = p.x / DEFAULT_SETTINGS.gridSize;
-            const pGridY = p.y / DEFAULT_SETTINGS.gridSize;
-            const hCenterX = head.x + 0.5;
-            const hCenterY = head.y + 0.5;
-            const dist = Math.hypot(pGridX - hCenterX, pGridY - hCenterY);
-            
-            if (dist < 0.8) { 
-                takeDamage(p.damage, 'PROJECTILE_PENETRATION');
-                p.shouldRemove = true;
-                createParticles(head.x, head.y, '#ff0000', 5);
-            }
-        }
+        // Snake head is at integer grid coordinates (top-left of cell)
+        // Center of snake head is head.x + 0.5, head.y + 0.5
+        const hCenterX = head.x + 0.5;
+        const hCenterY = head.y + 0.5;
+
+        const dist = Math.hypot(pGridX - hCenterX, pGridY - hCenterY);
         
-        // 2. Player Projectiles vs Barrier (Immunity Check)
-        if (p.owner === 'PLAYER') {
-            for (const e of enemiesRef.current) {
-                 if (e.type === EnemyType.BARRIER) {
-                     const ex = e.x * DEFAULT_SETTINGS.gridSize;
-                     const ey = e.y * DEFAULT_SETTINGS.gridSize;
-                     
-                     // Simple Box check for Barrier
-                     // Barrier is tall (30 tiles) and thin (1 tile)
-                     if (Math.abs(p.x - ex) < 20 && Math.abs(p.y - ey) < 400) {
-                         // Player projectiles do NOT damage barrier
-                         p.shouldRemove = true;
-                         createParticles(e.x, e.y, '#00ffff', 2);
-                         spawnFloatingText(p.x, p.y, "IMMUNE", '#00ffff', 10);
-                         return; // Stop processing this projectile
-                     }
-                 }
-            }
+        if (dist < 0.8) { // Overlap threshold
+            takeDamage(p.damage, 'PROJECTILE_PENETRATION');
+            p.shouldRemove = true;
+            createParticles(head.x, head.y, '#ff0000', 5);
         }
     });
 
-    // C. Boss Hitboxes (e.g. Breach Beam) vs Barrier
-    hitboxesRef.current.forEach(hb => {
-        // Convert Grid Units to Pixel Box
-        const hbX = hb.x * DEFAULT_SETTINGS.gridSize;
-        const hbY = hb.y * DEFAULT_SETTINGS.gridSize;
-        const hbW = hb.width * DEFAULT_SETTINGS.gridSize;
-        const hbH = hb.height * DEFAULT_SETTINGS.gridSize;
-        
-        // Check vs Barrier
-        for (const e of enemiesRef.current) {
-            if (e.type === EnemyType.BARRIER && e.state === 'ACTIVE') {
-                 const ex = e.x * DEFAULT_SETTINGS.gridSize;
-                 const ey = e.y * DEFAULT_SETTINGS.gridSize;
-                 // Barrier Box (Approx)
-                 const bW = DEFAULT_SETTINGS.gridSize;
-                 const bH = 30 * DEFAULT_SETTINGS.gridSize;
-                 
-                 // AABB
-                 const overlap = 
-                    hbX < ex + bW/2 &&
-                    hbX + hbW > ex - bW/2 &&
-                    hbY < ey + bH/2 &&
-                    hbY + hbH > ey - bH/2;
-                 
-                 if (overlap) {
-                     // Damage Barrier
-                     damageEnemy(e, hb.damage, true);
-                     if (e.hp <= 0) {
-                         e.shouldRemove = true;
-                         // The stage controller will detect this removal
-                     }
-                 }
-            }
-        }
-    });
-
-  }, [status, snakeRef, enemiesRef, projectilesRef, traitsRef, tailIntegrityRef, fx, damageEnemy, takeDamage, createParticles, devModeFlagsRef, hitboxesRef, stageStatsRef]);
+  }, [status, snakeRef, enemiesRef, projectilesRef, traitsRef, tailIntegrityRef, fx, damageEnemy, takeDamage, createParticles]);
 
   // 5. Terminals
   const updateCollisionLogic = useCallback((dt: number) => {
@@ -323,32 +245,30 @@ export function useCollisions(
 
           if (dist < activeRadius) {
               t.isBeingHacked = true;
-              
-              const efficiency = traitsRef.current.terminalEfficiency;
-              const rateMultiplier = 1 / (1 - efficiency); 
-              
-              t.progress += dt * rateMultiplier;
+              t.progress += dt;
               
               if (t.progress >= t.totalTime && !t.justCompleted) {
                   t.justCompleted = true;
                   t.shouldRemove = true;
                   
-                  progression.onTerminalHacked(t.type, t.associatedFileId);
+                  // NEW: Pass the associatedFileId for MEMORY terminals
+                  // Capture returned XP for visual feedback
+                  const xp = progression.onTerminalHacked(t.type, t.associatedFileId);
                   
                   const tx = t.x * DEFAULT_SETTINGS.gridSize;
                   const ty = t.y * DEFAULT_SETTINGS.gridSize;
                   
-                  // Trigger New CLI Animation with payload
-                  let payload: any = {};
-                  if (t.type === 'RESOURCE') {
-                      const baseScore = 1000 * statsRef.current.scoreMultiplier;
-                      payload = { value: `${Math.floor(baseScore)} CR` }; // Assuming Score = Credits for flavor
-                  } else if (t.type === 'MEMORY') {
-                      const file = ROOT_FILESYSTEM.contents.find(f => f.id === t.associatedFileId);
-                      payload = { id: t.associatedFileId, title: file?.name || 'UNKNOWN' };
+                  // Specific feedback for Memory
+                  if (t.type === 'MEMORY') {
+                      spawnFloatingText(tx, ty, 'MEMORY DECRYPTED', t.color, 24);
+                  } else {
+                      spawnFloatingText(tx, ty, 'SYSTEM BREACH', t.color, 20);
                   }
                   
-                  triggerCLISequence(t.x, t.y, t.type, t.color, payload);
+                  // XP Feedback
+                  if (xp > 0) {
+                      spawnFloatingText(tx, ty - 25, `+${xp} XP`, '#ffff00', 16);
+                  }
                   
                   triggerShake(15, 15);
                   triggerShockwave({
@@ -360,6 +280,8 @@ export function useCollisions(
                       damage: 50, 
                       opacity: 0.6
                   });
+                  // Mitigated audio call with context data
+                  audio.play('HACK_COMPLETE', { terminalType: t.type });
               }
           } else {
               t.isBeingHacked = false;
@@ -373,7 +295,7 @@ export function useCollisions(
       });
       terminalsRef.current = terminalsRef.current.filter(t => !t.shouldRemove);
 
-  }, [snakeRef, terminalsRef, progression, triggerCLISequence, triggerShockwave, triggerShake, traitsRef, statsRef]);
+  }, [snakeRef, terminalsRef, progression, spawnFloatingText, triggerShockwave, triggerShake]);
 
   // 6. XP Collection (Vacuum)
   const checkXPCollection = useCallback(() => {
@@ -394,9 +316,18 @@ export function useCollisions(
               progression.onFoodConsumed({ type: f.type, byMagnet: false, value: f.value });
               createParticles(f.x, f.y, COLORS.xpOrb, 4);
               audio.play('XP_COLLECT');
+              
+              // XP POPUP
+              const gridSize = DEFAULT_SETTINGS.gridSize;
+              const px = f.x * gridSize + gridSize/2;
+              const py = f.y * gridSize + gridSize/2;
+              const xp = f.value || 0;
+              if (xp > 0) {
+                   spawnFloatingText(px, py, `+${xp} XP`, '#ffff00', 10);
+              }
           }
       }
-  }, [snakeRef, foodRef, progression, createParticles]);
+  }, [snakeRef, foodRef, progression, createParticles, spawnFloatingText]);
 
   return {
     checkMoveCollisions,

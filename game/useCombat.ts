@@ -68,7 +68,7 @@ export function useCombat(
     directionRef,
     setBossActive,
     bossActiveRef,
-    cameraRef
+    cameraRef // NEW
   } = game;
 
   const { spawnFloatingText, createParticles, triggerShake, triggerShockwave, triggerLightning } = fx;
@@ -131,9 +131,8 @@ export function useCombat(
     let damage = baseDamage * stats.globalDamageMod;
     let isCrit = forceCrit;
 
-    // Check for critical hit (Stats + Intrinsic)
-    const totalCritChance = stats.critChance + traitsRef.current.critChanceBonus;
-    if (!forceCrit && Math.random() < totalCritChance) {
+    // Check for critical hit
+    if (!forceCrit && Math.random() < stats.critChance) {
       damage *= stats.critMultiplier;
       isCrit = true;
     }
@@ -156,7 +155,7 @@ export function useCombat(
             y: head.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2,
             currentRadius: 0,
             maxRadius: (150 + (stats.weapon.echoCacheLevel * 25)) * stats.globalAreaMod,
-            damage: cap * 0.5, // Base damage for shockwave
+            damage: cap * 0.5, // Base damage for shockwave, will be scaled by damageEnemy recursion
             opacity: 0.8
           });
           audioEventsRef.current.push({ type: 'EMP' });
@@ -199,6 +198,13 @@ export function useCombat(
       }
 
       if (nearest) {
+        // Recursively call damage for chain lightning
+        // We pass the RAW proportional damage so the recursive call applies modifiers correctly?
+        // Wait, 'damage' here is already scaled. 
+        // If we pass 'damage * factor' as 'baseDamage' to recursive call, it gets scaled AGAIN.
+        // Correction: We must reverse scale or adjust logic.
+        // Simplest: Pass damage / globalDamageMod.
+        
         damageEnemy(
           nearest,
           (damage * stats.weapon.chainLightningDamage) / stats.globalDamageMod, 
@@ -227,7 +233,7 @@ export function useCombat(
     if (enemy.hp <= 0) {
       processDeath(enemy);
     }
-  }, [statsRef, enemiesRef, snakeRef, spawnFloatingText, triggerLightning, triggerShockwave, audioEventsRef, echoDamageStoredRef, applyDamage, processDeath, traitsRef]);
+  }, [statsRef, enemiesRef, snakeRef, spawnFloatingText, triggerLightning, triggerShockwave, audioEventsRef, echoDamageStoredRef, applyDamage, processDeath]);
 
   /* ─────────────────────────────
      Main Combat Loop
@@ -277,18 +283,16 @@ export function useCombat(
     // ─────────────────────────────────────────────
     // WEAPON SYSTEMS (Firing Logic)
     // ─────────────────────────────────────────────
-    
-    // Helper: Calculate effective Fire Rate with Intrinsic Bonus
-    const effectiveFireRateMod = stats.globalFireRateMod * (1 + traits.attackSpeedBonus);
 
     // 1. AUTO CANNON
     if (wStats.cannonLevel > 0) {
       weaponFireTimerRef.current += dt;
-      let fireRate = wStats.cannonFireRate / effectiveFireRateMod;
+      let fireRate = wStats.cannonFireRate / stats.globalFireRateMod;
       if (overclockActiveRef.current) fireRate *= 0.5;
 
       if (weaponFireTimerRef.current >= fireRate) {
         if (enemiesRef.current.length > 0) {
+          // Range check: 14 grid units (approx half screen width)
           const range = 14 * stats.globalAreaMod;
           const nearest = findNearestEnemy(enemiesRef.current, head, range);
 
@@ -302,6 +306,7 @@ export function useCombat(
             for (let i = 0; i < count; i++) {
               const offset = (i - (count - 1) / 2) * spread;
               const finalAngle = angle + offset;
+              // Striker Trait: projectileSpeedMod
               const speedMod = stats.globalProjectileSpeedMod * traits.projectileSpeedMod;
               const vx = Math.cos(finalAngle) * wStats.cannonProjectileSpeed * speedMod;
               const vy = Math.sin(finalAngle) * wStats.cannonProjectileSpeed * speedMod;
@@ -312,7 +317,7 @@ export function useCombat(
                 y: head.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2,
                 vx: vx * (DEFAULT_SETTINGS.gridSize / 20),
                 vy: vy * (DEFAULT_SETTINGS.gridSize / 20),
-                damage: wStats.cannonDamage, 
+                damage: wStats.cannonDamage, // Pass BASE damage
                 color: COLORS.projectile,
                 size: (3 + Math.min(wStats.cannonLevel, 4)) * stats.globalAreaMod,
                 type: 'STANDARD',
@@ -328,16 +333,17 @@ export function useCombat(
 
             weaponFireTimerRef.current = 0;
           } else {
+            // Keep timer ready if no target in range
             weaponFireTimerRef.current = fireRate;
           }
         }
       }
     }
 
-    // 2. PRISM LANCE
+    // 2. PRISM LANCE (ENHANCED)
     if (wStats.prismLanceLevel > 0) {
         prismLanceTimerRef.current += dt;
-        let fireRate = 2000 / effectiveFireRateMod;
+        let fireRate = 2000 / stats.globalFireRateMod;
         if (overclockActiveRef.current) fireRate *= 0.5;
 
         if (prismLanceTimerRef.current >= fireRate) {
@@ -346,8 +352,10 @@ export function useCombat(
 
             if (nearest) {
                 const angle = Math.atan2(nearest.y - head.y, nearest.x - head.x);
+
+                // SPEED CAP: Prevent physics tunneling
                 let rawSpeed = 30 * stats.globalProjectileSpeedMod * traits.projectileSpeedMod;
-                rawSpeed = Math.min(rawSpeed, 45); 
+                rawSpeed = Math.min(rawSpeed, 45); // Hard cap
 
                 const vx = Math.cos(angle) * rawSpeed;
                 const vy = Math.sin(angle) * rawSpeed;
@@ -366,7 +374,7 @@ export function useCombat(
                     hitIds: [],
                     owner: 'PLAYER',
                     age: 0,
-                    usesGravity: false
+                    usesGravity: false // Lance is a beam
                 });
 
                 audioEventsRef.current.push({ type: 'SHOOT' });
@@ -380,7 +388,7 @@ export function useCombat(
     // 3. NEON SCATTER
     if (wStats.neonScatterLevel > 0) {
         neonScatterTimerRef.current += dt;
-        let fireRate = 1200 / effectiveFireRateMod;
+        let fireRate = 1200 / stats.globalFireRateMod;
         if (overclockActiveRef.current) fireRate *= 0.5;
 
         if (neonScatterTimerRef.current >= fireRate) {
@@ -423,7 +431,7 @@ export function useCombat(
     // 4. VOLT SERPENT
     if (wStats.voltSerpentLevel > 0) {
         voltSerpentTimerRef.current += dt;
-        const fireRate = 3000 / effectiveFireRateMod;
+        const fireRate = 3000 / stats.globalFireRateMod;
 
         if (voltSerpentTimerRef.current >= fireRate) {
             const range = 18 * stats.globalAreaMod;
@@ -450,7 +458,7 @@ export function useCombat(
                     type: 'SERPENT',
                     homing: true,
                     owner: 'PLAYER',
-                    usesGravity: false
+                    usesGravity: false // Serpent flies
                 });
                 voltSerpentTimerRef.current = 0;
             } else {
@@ -462,7 +470,7 @@ export function useCombat(
     // 5. PHASE RAIL
     if (wStats.phaseRailLevel > 0) {
         phaseRailChargeRef.current += dt;
-        const chargeTime = 4000 / effectiveFireRateMod;
+        const chargeTime = 4000 / stats.globalFireRateMod;
 
         if (phaseRailChargeRef.current >= chargeTime) {
             const range = 25 * stats.globalAreaMod;
@@ -485,7 +493,7 @@ export function useCombat(
                     piercing: true,
                     hitIds: [],
                     owner: 'PLAYER',
-                    usesGravity: false
+                    usesGravity: false // Rail slug travels straight
                 });
 
                 audioEventsRef.current.push({ type: 'SHOOT' });
@@ -521,7 +529,7 @@ export function useCombat(
                 const d = Math.hypot(ex - sx, ey - sy);
                 
                 if (d < DEFAULT_SETTINGS.gridSize * stats.globalAreaMod) {
-                    damageEnemy(e, wStats.nanoSwarmDamage); 
+                    damageEnemy(e, wStats.nanoSwarmDamage); // Global Damage mod applied inside damageEnemy
                     createParticles(e.x, e.y, COLORS.nanoSwarm, 3);
                     if (!e.hitCooldowns) e.hitCooldowns = {};
                     e.hitCooldowns['NANO'] = 15; 
@@ -530,69 +538,76 @@ export function useCombat(
         }
     }
 
-    // 7. PLASMA MINES (Cooldown-based, edge-triggered)
-if (wStats.mineLevel > 0) {
-    mineDropTimerRef.current += dt;
+    // 7. PLASMA MINES
+    if (wStats.mineLevel > 0) {
+        mineDropTimerRef.current += dt;
+        if (mineDropTimerRef.current >= (wStats.mineDropRate / stats.globalFireRateMod)) {
+            const tail = snakeRef.current[snakeRef.current.length - 1];
+            if (tail) {
+                const radMult = traits.mineRadiusMod;
+                const blastMult = traits.mineBlastMod;
 
-    // Convert rate → cooldown (ms)
-    const mineCooldown =
-        1000 / (wStats.mineDropRate * effectiveFireRateMod);
-
-    if (mineDropTimerRef.current >= mineCooldown) {
-        const tail = snakeRef.current[snakeRef.current.length - 1];
-
-        if (tail) {
-            const radMult = traits.mineRadiusMod;
-            const blastMult = traits.mineBlastMod;
-
-            minesRef.current.push({
-                id: Math.random().toString(36),
-                x: tail.x,
-                y: tail.y,
-                damage: wStats.mineDamage,
-                radius: wStats.mineRadius * stats.globalAreaMod * blastMult,
-                triggerRadius: 1.5 * stats.globalAreaMod * radMult,
-                createdAt: gameTime
-            });
-
-            audioEventsRef.current.push({ type: 'COMPRESS' });
+                minesRef.current.push({
+                    id: Math.random().toString(36),
+                    x: tail.x,
+                    y: tail.y,
+                    damage: wStats.mineDamage, // Store BASE damage, applied later
+                    radius: wStats.mineRadius * stats.globalAreaMod * blastMult,
+                    triggerRadius: 1.5 * stats.globalAreaMod * radMult,
+                    createdAt: gameTime
+                });
+            }
+            mineDropTimerRef.current = 0;
         }
 
-        // IMPORTANT: subtract, don’t zero (prevents drift)
-        mineDropTimerRef.current -= mineCooldown;
-    }
+        for (let i = minesRef.current.length - 1; i >= 0; i--) {
+            const mine = minesRef.current[i];
+            if (mine.shouldRemove) continue;
 
-    // Trigger check (unchanged)
-    for (let i = minesRef.current.length - 1; i >= 0; i--) {
-        const mine = minesRef.current[i];
-        if (mine.shouldRemove) continue;
+            let triggered = false;
+            for (const e of enemiesRef.current) {
+                const dist = Math.hypot(e.x - mine.x, e.y - mine.y);
+                if (dist <= mine.triggerRadius) {
+                    triggered = true;
+                    break;
+                }
+            }
 
-        let triggered = false;
-        for (const e of enemiesRef.current) {
-            const dist = Math.hypot(e.x - mine.x, e.y - mine.y);
-            if (dist <= mine.triggerRadius) {
-                triggered = true;
-                break;
+            if (triggered) {
+                triggerShockwave({
+                    id: Math.random().toString(),
+                    x: mine.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
+                    y: mine.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize/2,
+                    currentRadius: 0,
+                    maxRadius: mine.radius * DEFAULT_SETTINGS.gridSize,
+                    damage: mine.damage,
+                    opacity: 1.0
+                });
+                createParticles(mine.x, mine.y, COLORS.mine, 20);
+                audioEventsRef.current.push({ type: 'COMPRESS' });
+                mine.shouldRemove = true;
             }
         }
+    }
 
-        if (triggered) {
-            triggerShockwave({
-                id: Math.random().toString(),
-                x: mine.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2,
-                y: mine.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2,
-                currentRadius: 0,
-                maxRadius: mine.radius * DEFAULT_SETTINGS.gridSize,
-                damage: mine.damage,
-                opacity: 1.0
+    // 8. AURA
+    if (wStats.auraLevel > 0) {
+        auraTickTimerRef.current += dt;
+        if (auraTickTimerRef.current >= (250 / stats.globalFireRateMod)) {
+            const r2 = (wStats.auraRadius * stats.globalAreaMod) ** 2;
+            enemiesRef.current.forEach(e => {
+                const hit = snakeRef.current.some(seg => {
+                    const d2 = Math.pow(e.x - seg.x, 2) + Math.pow(e.y - seg.y, 2);
+                    return d2 <= r2;
+                });
+                if (hit) {
+                    damageEnemy(e, wStats.auraDamage);
+                    createParticles(e.x, e.y, COLORS.aura, 1);
+                }
             });
-
-            createParticles(mine.x, mine.y, COLORS.mine, 20);
-            audioEventsRef.current.push({ type: 'COMPRESS' });
-            mine.shouldRemove = true;
+            auraTickTimerRef.current = 0;
         }
     }
-}
 
     // ─────────────────────────────────────────────
     // PROJECTILE UPDATE LOOP (Logic Only)
@@ -637,6 +652,9 @@ if (wStats.mineLevel > 0) {
             }
         }
 
+        // NOTE: Physics integration (p.x += ...) is handled by useProjectilePhysics now.
+        // NOTE: Bounds checking (Void/Screen) is handled by useProjectilePhysics now.
+
         // Life Span
         if (p.life !== undefined) {
             p.life -= frame;
@@ -680,6 +698,7 @@ if (wStats.mineLevel > 0) {
 
         if (s.damage > 0 || s.stunDuration) {
             const rSq = s.currentRadius ** 2;
+            // FIXED: Inner radius is clamped to 0 to prevent "safe zone" at exact center in early frames
             const innerRSq = Math.pow(Math.max(0, s.currentRadius - 20), 2);
             
             enemiesRef.current.forEach(e => {

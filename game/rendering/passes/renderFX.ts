@@ -1,7 +1,6 @@
 
 import { RenderContext } from '../types';
-import { Shockwave, LightningArc, Particle, FloatingText, DigitalRainDrop, CLIAnimation } from '../../../types';
-import { DEFAULT_SETTINGS } from '../../../constants';
+import { Shockwave, LightningArc, Particle, FloatingText, DigitalRainDrop } from '../../../types';
 
 export const renderFX = (
     rc: RenderContext, 
@@ -12,7 +11,21 @@ export const renderFX = (
     digitalRain: DigitalRainDrop[],
     chromaticAberration: number
 ) => {
-    const { ctx, gridSize } = rc;
+    const { ctx } = rc;
+
+    // Digital Rain (Draw first to be behind other FX)
+    if (digitalRain.length > 0) {
+        ctx.save();
+        // Note: Ideally this should be screen-space, but we are inside camera transform.
+        // For now, we render in world space which creates a "matrix in the world" effect.
+        ctx.font = '16px monospace';
+        ctx.textAlign = 'center';
+        digitalRain.forEach(d => {
+            ctx.fillStyle = `rgba(0, 255, 0, ${d.opacity})`;
+            ctx.fillText(d.chars, d.x, d.y);
+        });
+        ctx.restore();
+    }
 
     // Shockwaves
     shockwaves.forEach(s => {
@@ -78,6 +91,8 @@ export const renderFX = (
         if (t.shouldRemove) return;
         ctx.save();
         ctx.translate(t.x, t.y);
+        // Pop up scaling
+        const scale = t.life > 0.8 ? (1 - t.life) * 5 : 1.0; 
         
         ctx.font = `bold ${t.size}px monospace`;
         ctx.fillStyle = t.color;
@@ -87,79 +102,9 @@ export const renderFX = (
         ctx.fillText(t.text, 0, 0);
         ctx.restore();
     });
-    
-    // Digital Rain (Overlay)
-    digitalRain.forEach(d => {
-        ctx.fillStyle = `rgba(0, 255, 0, ${d.opacity})`;
-        ctx.font = `${d.size}px monospace`;
-        ctx.fillText(d.chars, d.x, d.y);
-    });
-};
 
-// Updated CLI Renderer
-export const renderCLIAnimations = (rc: RenderContext, animations: CLIAnimation[]) => {
-    const { ctx } = rc;
-    
-    animations.forEach(anim => {
-        if (anim.shouldRemove) return;
-        
-        const x = anim.x * DEFAULT_SETTINGS.gridSize;
-        const y = anim.y * DEFAULT_SETTINGS.gridSize;
-        
-        ctx.save();
-        ctx.translate(x, y - 60); // Float above terminal
-        
-        // Background Box (Semi-transparent black)
-        // Fixed width, auto height based on lines
-        const width = 180;
-        const halfW = width / 2;
-        const lineHeight = 12;
-        const padding = 10;
-        const boxH = padding * 2 + (anim.lines.length * lineHeight);
-        
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
-        ctx.strokeStyle = anim.color;
-        ctx.lineWidth = 1;
-        
-        // Scale Pulse on Payout (Phase 3 for Resource, Phase 3/4 for Memory)
-        // Only apply pulse if we are in the "Confirm" phase and just started it
-        let scale = 1.0;
-        if (anim.phase === 3 && anim.timer < 100) {
-             scale = 1.1; // Dopamine pop
-        }
-        ctx.scale(scale, scale);
-
-        ctx.fillRect(-halfW, -boxH, width, boxH);
-        ctx.strokeRect(-halfW, -boxH, width, boxH);
-        
-        // Text Rendering
-        ctx.font = '10px monospace';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'top';
-        ctx.fillStyle = anim.color;
-        
-        anim.lines.forEach((line: string, i: number) => {
-            const isLast = i === anim.lines.length - 1;
-            const alpha = isLast ? 1.0 : 0.7;
-            
-            // Highlight Success lines
-            if (line.includes('✔')) {
-                ctx.fillStyle = '#fff'; // White hot
-                ctx.shadowColor = anim.color;
-                ctx.shadowBlur = 5;
-            } else {
-                ctx.fillStyle = anim.color;
-                ctx.shadowBlur = 0;
-            }
-            
-            ctx.globalAlpha = alpha;
-            // Left padding inside the box
-            const tx = -halfW + 8;
-            const ty = -boxH + padding + (i * lineHeight);
-            
-            ctx.fillText(line, tx, ty);
-        });
-        
-        ctx.restore();
-    });
+    // Chromatic Aberration (Stub for now, as strict post-processing is expensive in canvas 2d without layers)
+    if (chromaticAberration > 0.05) {
+         // Logic reserved for future layer composition
+    }
 };

@@ -6,7 +6,7 @@ import { renderBackground } from './passes/renderBackground';
 import { renderEnvironment } from './passes/renderEnvironment';
 import { renderEntities } from './passes/renderEntities';
 import { renderProjectiles } from './passes/renderProjectiles';
-import { renderFX, renderCLIAnimations } from './passes/renderFX';
+import { renderFX } from './passes/renderFX';
 import { renderUI } from './passes/renderUI';
 import { renderFloor } from './floor/FloorRenderer';
 import { CameraMode } from '../../types';
@@ -36,7 +36,8 @@ export const renderFrame = (
         stageReady: game.stageReadyRef.current,
         uiStyle,
         snakeStyle: game.settings.snakeStyle,
-        camera // Pass camera state
+        camera,
+        isStopped: game.isStoppedRef.current
     };
 
     // 2. Global Clear & Background (Draws behind HUDs)
@@ -149,9 +150,6 @@ export const renderFrame = (
         game.digitalRainRef.current,
         game.chromaticAberrationRef.current
     );
-    
-    // PASS 5: CLI ANIMATIONS (New Layer)
-    renderCLIAnimations(rc, game.cliAnimationsRef.current);
 
     ctx.restore(); // End Play Area Isolation
 

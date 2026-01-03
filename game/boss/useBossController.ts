@@ -3,14 +3,12 @@ import { useCallback } from 'react';
 import { useGameState } from '../useGameState';
 import { SENTINEL_BOSS_CONFIG } from './definitions/SentinelBoss';
 import { WARDEN_BOSS_CONFIG } from './definitions/WardenBoss';
-import { SPACESHIP_BOSS_CONFIG } from './definitions/SpaceshipBoss';
 import { BossConfig, BossIntent } from './types';
 import { DEFAULT_SETTINGS } from '../../constants';
 
 const BOSS_REGISTRY: Record<string, BossConfig> = {
     'SENTINEL': SENTINEL_BOSS_CONFIG,
-    'WARDEN_07': WARDEN_BOSS_CONFIG,
-    'SPACESHIP_BOSS': SPACESHIP_BOSS_CONFIG
+    'WARDEN_07': WARDEN_BOSS_CONFIG
 };
 
 export function useBossController(game: ReturnType<typeof useGameState>) {

@@ -184,11 +184,10 @@ export const ArchiveTerminal: React.FC<ArchiveTerminalProps> = ({ onClose }) => 
                                   }}
                                   className={`
                                       group flex flex-col items-center justify-center p-6 border border-green-900/50 bg-black/40 rounded hover:bg-green-900/20 hover:border-green-500 transition-all
-                                      ${dir.isRestricted ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+                                      ${dir.isRestricted ? 'opacity-50 cursor-not-allowed grayscale' : 'cursor-pointer'}
                                   `}
                               >
-                                  {/* Icon with Green CLI Filter applied */}
-                                  <div className="text-4xl mb-3 filter drop-shadow-[0_0_5px_rgba(0,255,0,0.5)] group-hover:scale-110 transition-transform grayscale sepia hue-rotate-[80deg] saturate-[400%]">
+                                  <div className="text-4xl mb-3 filter drop-shadow-[0_0_5px_rgba(0,255,0,0.5)] group-hover:scale-110 transition-transform">
                                       {dir.icon}
                                   </div>
                                   <div className="text-sm font-bold tracking-widest mb-1">{dir.name}</div>
