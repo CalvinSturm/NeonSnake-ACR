@@ -129,6 +129,37 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const vision = useVisionProtocol();
 
+  // ─── AUTO-SCALE LOGIC ───
+  useEffect(() => {
+    const handleResize = () => {
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        
+        // Target ratio
+        const targetRatio = CANVAS_WIDTH / CANVAS_HEIGHT;
+        const screenRatio = w / h;
+        
+        let scale = 1;
+        if (screenRatio > targetRatio) {
+            // Screen is wider: Fit to Height
+            scale = h / CANVAS_HEIGHT;
+        } else {
+            // Screen is taller: Fit to Width
+            scale = w / CANVAS_WIDTH;
+        }
+        
+        // Update global settings for input mapping
+        game.setSettings(prev => {
+            if (Math.abs(prev.gameScale - scale) < 0.001) return prev;
+            return { ...prev, gameScale: scale };
+        });
+    };
+
+    window.addEventListener('resize', handleResize);
+    handleResize(); // Initial calc
+    return () => window.removeEventListener('resize', handleResize);
+  }, [game.setSettings]);
+
   useEffect(() => {
     const checkTouch = () => {
       const isCoarse = window.matchMedia('(pointer: coarse)').matches;
@@ -518,8 +549,15 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
               <div className="absolute inset-0 pointer-events-none z-[100] opacity-10 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_4px,3px_100%] mix-blend-overlay"></div>
           )}
           
-          {/* GAME CONTAINER WITH RELATIVE POSITIONING FOR TOASTS */}
-          <div className="relative shadow-2xl" style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}>
+          {/* GAME CONTAINER WITH DYNAMIC SCALING */}
+          <div 
+            className="relative shadow-2xl origin-center" 
+            style={{ 
+                width: CANVAS_WIDTH, 
+                height: CANVAS_HEIGHT,
+                transform: `scale(${settings.gameScale})`
+            }}
+          >
               
               {/* UNLOCK TOAST (Now positioned relative to Game Frame) */}
               <UnlockToast queue={toastQueue} onClear={clearToast} />

@@ -61,6 +61,7 @@ class AudioController {
 
   // Hack Synth Nodes
   private hackOsc: OscillatorNode | null = null;
+  private hackFilter: BiquadFilterNode | null = null;
   private hackLfo: OscillatorNode | null = null;
   private hackLfoGain: GainNode | null = null;
   private hackGain: GainNode | null = null;
@@ -502,24 +503,27 @@ class AudioController {
   
   public setHackProgress(progress: number) {
       if (!this.ctx || this.isMuted) return;
-      this.init(); // Ensure ctx exists
+      this.init(); 
 
       // Lazy Init
       if (!this.hackOsc) {
           this.hackOsc = this.ctx!.createOscillator();
-          this.hackOsc.type = 'square'; // Digital carrier
+          this.hackOsc.type = 'sawtooth'; // Grittier texture
+          
+          this.hackFilter = this.ctx!.createBiquadFilter();
+          this.hackFilter.type = 'lowpass';
           
           this.hackLfo = this.ctx!.createOscillator();
-          this.hackLfo.type = 'square'; // Digital modulator
+          this.hackLfo.type = 'square'; // Digital switching
           
           this.hackLfoGain = this.ctx!.createGain();
           
           this.hackGain = this.ctx!.createGain();
           this.hackGain.gain.value = 0;
           
-          // LFO -> Frequency Mod
+          // Audio Graph: LFO -> Osc Freq -> Filter -> Gain -> Master
           this.hackLfo.connect(this.hackLfoGain).connect(this.hackOsc.frequency);
-          this.hackOsc.connect(this.hackGain).connect(this.sfxGain!);
+          this.hackOsc.connect(this.hackFilter).connect(this.hackGain).connect(this.sfxGain!);
           
           this.hackOsc.start();
           this.hackLfo.start();
@@ -528,19 +532,22 @@ class AudioController {
       const t = this.ctx!.currentTime;
 
       if (progress > 0 && isFinite(progress)) {
-          // Pitch Rises: 80Hz -> 300Hz (Lower, rumble-like)
-          const freq = 80 + (progress * 220);
-          // FM Depth: Lower depth for less "screech"
-          const fmDepth = 50 + (progress * 100);
-          // LFO Speed: 15Hz (flutter) -> 40Hz (stream)
-          const lfoRate = 15 + (progress * 25);
+          // Pitch: 100Hz -> 600Hz
+          const freq = 100 + (progress * 500);
           
+          // LFO Rate: 10Hz (idle hum) -> 60Hz (data stream)
+          const lfoRate = 10 + (progress * 50);
+          
+          // Filter opens up: 200Hz -> 3000Hz (Brightness increases)
+          const filterFreq = 200 + (Math.pow(progress, 2) * 2800);
+
           this.hackOsc.frequency.setTargetAtTime(freq, t, 0.1);
           this.hackLfo!.frequency.setTargetAtTime(lfoRate, t, 0.1);
-          this.hackLfoGain!.gain.setTargetAtTime(fmDepth, t, 0.1);
+          this.hackLfoGain!.gain.setTargetAtTime(20, t, 0.1); // Constant modulation depth
+          this.hackFilter!.frequency.setTargetAtTime(filterFreq, t, 0.1);
           
-          // Fade In - Slightly lower volume
-          this.hackGain!.gain.setTargetAtTime(0.12, t, 0.05);
+          // Fade In
+          this.hackGain!.gain.setTargetAtTime(0.15, t, 0.05);
       } else {
           // Fade Out
           this.hackGain!.gain.setTargetAtTime(0, t, 0.1);
@@ -605,7 +612,7 @@ class AudioController {
 
       // Attenuate volume based on rapid repetition
       const attenuation = Math.pow(0.8, this.hackRepetitionCount);
-      const baseVol = 0.25; 
+      const baseVol = 0.3; 
       const finalVol = baseVol * attenuation;
       
       // 2. Deterministic Variance (Cycle through 4 variations)
@@ -614,44 +621,43 @@ class AudioController {
 
       // 3. Audio Graph Construction
       const isMemory = type === 'MEMORY';
+      const isOverride = type === 'OVERRIDE';
       
-      // Create Filter (Softening)
-      // Lowpass to cut piercing highs - MUCH LOWER CUTOFF
-      const filter = this.ctx.createBiquadFilter();
-      filter.type = 'lowpass';
-      filter.frequency.value = isMemory ? 2000 : 800; // Was 3500 : 1800
-      filter.connect(this.sfxGain!);
-
-      // Layer A: Tonal Body (Sine)
-      // Deep confirmation tone
+      // A. Heavy Bass confirmation (Impact)
       const oscA = this.ctx.createOscillator();
       const gainA = this.ctx.createGain();
-      oscA.type = 'sine'; // Was triangle
-      oscA.frequency.value = isMemory ? 440 : 220; // Was 660 : 440
-      oscA.detune.value = detune;
+      oscA.type = isOverride ? 'sawtooth' : 'sine';
+      oscA.frequency.value = isMemory ? 110 : (isOverride ? 55 : 220); 
+      oscA.frequency.exponentialRampToValueAtTime(oscA.frequency.value * 0.5, t + 0.3);
       
-      gainA.gain.setValueAtTime(0, t);
-      gainA.gain.linearRampToValueAtTime(finalVol, t + 0.02); // Slower attack
-      gainA.gain.exponentialRampToValueAtTime(0.001, t + 0.25); // Longer decay for "hum"
-      
-      oscA.connect(gainA).connect(filter);
+      gainA.gain.setValueAtTime(0.5 * finalVol, t);
+      gainA.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+      oscA.connect(gainA).connect(this.sfxGain!);
       oscA.start(t);
-      oscA.stop(t + 0.3);
+      oscA.stop(t + 0.4);
 
-      // Layer B: Transient "Click" (Triangle)
-      // Soft digital blip
+      // B. High Pitch Data Burst (The "Chirp")
       const oscB = this.ctx.createOscillator();
       const gainB = this.ctx.createGain();
-      oscB.type = 'triangle'; // Was sine
-      oscB.frequency.value = isMemory ? 880 : 440; // Was 1600 : 1200
+      oscB.type = 'square';
+      oscB.frequency.value = isMemory ? 880 : (isOverride ? 440 : 1760);
+      oscB.detune.value = detune;
+
+      // Quick arpeggio feel by frequency ramp
+      oscB.frequency.setValueAtTime(800, t);
+      oscB.frequency.linearRampToValueAtTime(2000, t + 0.1);
       
-      gainB.gain.setValueAtTime(0, t);
-      gainB.gain.linearRampToValueAtTime(finalVol * 0.4, t + 0.005);
-      gainB.gain.exponentialRampToValueAtTime(0.001, t + 0.1); 
+      gainB.gain.setValueAtTime(0.1 * finalVol, t);
+      gainB.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
       
-      oscB.connect(gainB).connect(filter);
+      // Lowpass to tame the square wave
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.value = 3000;
+
+      oscB.connect(filter).connect(gainB).connect(this.sfxGain!);
       oscB.start(t);
-      oscB.stop(t + 0.15);
+      oscB.stop(t + 0.2);
   }
 
   // ─────────────────────────────────────────────

@@ -8,7 +8,7 @@ export const renderEnvironment = (rc: RenderContext, walls: Point[], terminals: 
     const { ctx, gridSize, halfGrid, now } = rc;
     const PI2 = Math.PI * 2;
 
-    // WALLS
+    // ─── WALLS ───
     for (const w of walls) {
         const wx = w.x * gridSize;
         const wy = w.y * gridSize;
@@ -22,18 +22,22 @@ export const renderEnvironment = (rc: RenderContext, walls: Point[], terminals: 
         // Inner "Circuit" detail
         ctx.fillStyle = 'rgba(0,0,0,0.3)';
         ctx.fillRect(wx + gridSize*0.3, wy + gridSize*0.3, gridSize*0.4, gridSize*0.4);
+        
+        // Tech detail lines
+        ctx.fillStyle = 'rgba(255,255,255,0.1)';
+        ctx.fillRect(wx + 2, wy + gridSize/2 - 1, 4, 2);
+        ctx.fillRect(wx + gridSize - 6, wy + gridSize/2 - 1, 4, 2);
     }
 
-    // TERMINALS
+    // ─── TERMINALS ───
     terminals.forEach(t => {
         const cx = t.x * gridSize + halfGrid;
         const cy = t.y * gridSize + halfGrid;
         const rangePx = t.radius * gridSize;
         
-        // Interaction Math
+        // Interaction Logic
         let isInside = false;
         let distToHead = 9999;
-        let angleToHead = 0;
         let headPx = { x: 0, y: 0 };
 
         if (snakeHead) {
@@ -42,244 +46,193 @@ export const renderEnvironment = (rc: RenderContext, walls: Point[], terminals: 
             const dx = headPx.x - cx;
             const dy = headPx.y - cy;
             distToHead = Math.sqrt(dx*dx + dy*dy);
-            angleToHead = Math.atan2(dy, dx);
             isInside = distToHead < rangePx;
         }
 
         const isActive = t.isBeingHacked && !t.isLocked;
         const baseColor = t.color;
-        
-        // ─────────────────────────────────────────────
-        // 1. TERMINAL BASE (Physical Unit)
-        // ─────────────────────────────────────────────
-        
-        // Floating Sine Wave
-        const hoverY = isActive ? Math.sin(now * 0.02) * 2 : Math.sin(now * 0.002) * 4;
-        
-        // Base Shadow
-        drawShadow(ctx, cx, cy + 20, 12, 8);
+        const progress = t.progress / t.totalTime;
 
+        // 1. FLOOR PROJECTION (Range & Progress)
         ctx.save();
-        ctx.translate(cx, cy + hoverY);
-
-        // -- Thruster (Keeps it floating) --
-        ctx.save();
-        ctx.rotate(Math.PI / 2);
-        drawVolumetricThruster(ctx, 0, -8, 5, 12, baseColor, now);
-        ctx.restore();
-
-        // -- Main Crystal/Core --
-        ctx.shadowColor = baseColor;
-        ctx.shadowBlur = isActive ? 20 : 10;
-        ctx.lineWidth = 2;
+        ctx.translate(cx, cy);
         
-        if (t.type === 'OVERRIDE') {
-            // Diamond
-            ctx.fillStyle = '#220000';
-            ctx.strokeStyle = '#ff4400';
-            ctx.beginPath();
-            ctx.moveTo(0, -15);
-            ctx.lineTo(10, 0);
-            ctx.lineTo(0, 15);
-            ctx.lineTo(-10, 0);
-            ctx.closePath();
-            ctx.fill();
-            ctx.stroke();
-        } else {
-            // Cube (2.5D)
-            const s = 9;
-            ctx.fillStyle = '#0a0a0a';
-            ctx.strokeStyle = baseColor;
-            
-            // Back/Left faces
-            ctx.beginPath();
-            ctx.moveTo(-s, -s); ctx.lineTo(s, -s); ctx.lineTo(s, s); ctx.lineTo(-s, s); ctx.closePath();
-            ctx.fill();
-            ctx.stroke();
-            
-            // Internal Data line
+        // 1a. Range Ring (Static/Pulse)
+        ctx.scale(1, 0.6); // Perspective squash
+        
+        const ringPulse = isActive ? 1 + Math.sin(now * 0.02) * 0.05 : 1;
+        
+        // Outer boundary
+        ctx.strokeStyle = isInside ? '#ffffff' : baseColor;
+        ctx.lineWidth = isInside ? 2 : 1;
+        ctx.globalAlpha = isInside ? 0.6 : 0.2;
+        ctx.setLineDash([10, 10]);
+        ctx.beginPath();
+        ctx.arc(0, 0, rangePx * ringPulse, 0, PI2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        
+        // 1b. Progress Fill (The "Download" Circle)
+        if (progress > 0) {
+            ctx.globalAlpha = 0.4;
             ctx.fillStyle = baseColor;
-            const scanH = (Math.sin(now * 0.005) * 0.5 + 0.5) * (s*2);
-            ctx.fillRect(-s, -s + scanH, s*2, 2);
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.arc(0, 0, rangePx, -Math.PI/2, -Math.PI/2 + (PI2 * progress));
+            ctx.lineTo(0, 0);
+            ctx.fill();
+            
+            // Bright leading edge
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            ctx.globalAlpha = 0.8;
+            ctx.beginPath();
+            ctx.arc(0, 0, rangePx, -Math.PI/2, -Math.PI/2 + (PI2 * progress));
+            ctx.stroke();
         }
+
         ctx.restore();
 
-        // ─────────────────────────────────────────────
-        // 2. 2.3D FORCEFIELD DOME
-        // ─────────────────────────────────────────────
+        // 2. DATA PYLON (Physical Object)
+        // Float animation
+        const floatY = Math.sin(now * 0.003 + cx) * 5;
+        const zHeight = -25 + floatY; // Negative Y is up
+        
         ctx.save();
         ctx.translate(cx, cy);
 
-        // Perspective ratio (Squash Y to look 3D)
-        const perspective = 0.6;
-        
-        // Breach Interaction
-        // If snake is crossing boundary (approx), intensify
-        const isBreaching = distToHead < rangePx + 20 && distToHead > rangePx - 20;
-        
-        // Field Parameters
-        const opacity = isInside ? 0.3 : (isBreaching ? 0.25 : 0.08);
-        const strokeColor = isInside ? '#ffffff' : baseColor;
-        const glowBlur = isInside ? 15 : 0;
+        // Shadow on floor
+        drawShadow(ctx, 0, 0, 15 - (floatY * 0.5), 10);
 
-        ctx.globalCompositeOperation = 'screen';
+        // Floating Base
+        ctx.translate(0, zHeight);
         
-        // -- A. Volumetric Fill (Fresnel Effect) --
-        // Dark center, bright edges
-        const grad = ctx.createRadialGradient(0, 0, rangePx * 0.5, 0, 0, rangePx);
-        grad.addColorStop(0, 'rgba(0,0,0,0)');
-        grad.addColorStop(0.85, `${baseColor}${Math.floor(opacity * 255).toString(16).padStart(2,'0')}`);
-        grad.addColorStop(1, 'rgba(0,0,0,0)');
-        
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.ellipse(0, 0, rangePx, rangePx * perspective, 0, 0, PI2);
-        ctx.fill();
-
-        // -- B. Rotating Wireframe --
-        ctx.lineWidth = isInside ? 2 : 1;
-        ctx.strokeStyle = strokeColor;
+        // Draw Core Geometry based on Type
+        ctx.fillStyle = baseColor;
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1;
         ctx.shadowColor = baseColor;
-        ctx.shadowBlur = glowBlur;
+        ctx.shadowBlur = isActive ? 20 : 10;
         
-        // Longitudinal Rings (Rotating)
-        const rotSpeed = isInside ? 0.002 : 0.0005;
-        const rOffset = now * rotSpeed;
-        
-        // Draw 3 vertical rings at different rotations
-        for(let i=0; i<3; i++) {
-            ctx.save();
-            ctx.rotate(rOffset + (i * (Math.PI / 3)));
+        if (t.type === 'MEMORY') {
+            // GOLDEN PYRAMID
+            ctx.rotate(now * 0.001);
             ctx.beginPath();
-            // To render a vertical ring in perspective, we just squeeze width
-            ctx.ellipse(0, 0, rangePx * 0.3, rangePx * perspective, 0, 0, PI2);
-            ctx.globalAlpha = opacity * 2;
+            ctx.moveTo(0, -15);
+            ctx.lineTo(12, 5);
+            ctx.lineTo(-12, 5);
+            ctx.closePath();
+            ctx.fill();
             ctx.stroke();
+            
+            // Inverted bottom half
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.beginPath();
+            ctx.moveTo(0, 20);
+            ctx.lineTo(12, 5);
+            ctx.lineTo(-12, 5);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+        } else if (t.type === 'OVERRIDE') {
+            // JAGGED CRYSTAL
+            ctx.rotate(now * -0.002);
+            ctx.beginPath();
+            ctx.moveTo(0, -20);
+            ctx.lineTo(8, -5);
+            ctx.lineTo(12, 10);
+            ctx.lineTo(0, 20);
+            ctx.lineTo(-12, 10);
+            ctx.lineTo(-8, -5);
+            ctx.closePath();
+            
+            ctx.fillStyle = '#330000';
+            ctx.fill();
+            ctx.stroke();
+            
+            // Inner glowing crack
+            ctx.strokeStyle = baseColor;
+            ctx.beginPath();
+            ctx.moveTo(0, -15);
+            ctx.lineTo(-4, 0);
+            ctx.lineTo(4, 10);
+            ctx.stroke();
+
+        } else {
+            // STANDARD CUBE (Rotating)
+            const size = 12;
+            ctx.rotate(now * 0.001);
+            // 2.5D Cube
+            ctx.fillStyle = '#111';
+            ctx.fillRect(-size, -size, size*2, size*2);
+            ctx.strokeRect(-size, -size, size*2, size*2);
+            
+            // Data Face
+            ctx.fillStyle = baseColor;
+            const scan = (Math.sin(now * 0.01) + 1) / 2;
+            ctx.fillRect(-size + 4, -size + 4 + (scan * (size*2 - 8)), size*2 - 8, 2);
+        }
+
+        ctx.shadowBlur = 0;
+        ctx.restore(); // Undo Pylon Transform
+
+        // 3. HOLOGRAPHIC DATA STREAM (When Hacking)
+        if (isActive && snakeHead) {
+            ctx.save();
+            ctx.translate(cx, cy + zHeight); // Start at floating core
+
+            // Draw stream to snake head
+            const relHeadX = headPx.x - cx;
+            const relHeadY = headPx.y - (cy + zHeight);
+            
+            const dist = Math.hypot(relHeadX, relHeadY);
+            const angle = Math.atan2(relHeadY, relHeadX);
+            
+            // Rotate to face head
+            ctx.rotate(angle);
+            
+            // Stream particles
+            const particles = 5;
+            ctx.fillStyle = '#fff';
+            ctx.shadowColor = baseColor;
+            ctx.shadowBlur = 10;
+            
+            for(let i=0; i<particles; i++) {
+                const t = ((now * 0.002) + (i / particles)) % 1;
+                const px = t * dist;
+                const py = Math.sin(t * Math.PI * 4) * 5; // Wiggle
+                
+                ctx.globalAlpha = Math.sin(t * Math.PI); // Fade in/out
+                ctx.fillRect(px, py, 4, 4);
+            }
+            
             ctx.restore();
         }
 
-        // Latitudinal Ring (Scanning Up/Down)
-        // Z-height mapped to Y-offset with perspective
-        const scanZ = Math.sin(now * 0.002) * rangePx;
-        const scanY = scanZ * perspective * -1; // Invert Y
-        const scanR = Math.sqrt(Math.max(0, (rangePx * rangePx) - (scanZ * scanZ))); // Circle cross-section at height Z
-        
-        ctx.beginPath();
-        ctx.ellipse(0, scanY, scanR, scanR * perspective, 0, 0, PI2);
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-        ctx.stroke();
-
-        // -- C. Perimeter Ring (Ground Contact) --
-        ctx.beginPath();
-        ctx.ellipse(0, 0, rangePx, rangePx * perspective, 0, 0, PI2);
-        ctx.strokeStyle = strokeColor;
-        ctx.globalAlpha = opacity * 3;
-        ctx.stroke();
-
-
-        // ─────────────────────────────────────────────
-        // 3. SNAKE INTERACTION EFFECTS
-        // ─────────────────────────────────────────────
-        
-        if (snakeHead) {
-            // Calculate intersection point on the Ellipse
-            // P = (r*cos(a), r*perspective*sin(a))
-            const intersectX = Math.cos(angleToHead) * rangePx;
-            const intersectY = Math.sin(angleToHead) * rangePx * perspective;
-
-            // -- INTERSECTION RIPPLES --
-            // If snake is close to the edge (inside or outside), show ripples on the field
-            if (Math.abs(distToHead - rangePx) < 40) {
-                const rippleAlpha = 1 - (Math.abs(distToHead - rangePx) / 40);
-                
-                ctx.save();
-                ctx.translate(intersectX, intersectY);
-                
-                // Draw ripple rings
-                ctx.strokeStyle = '#ffffff';
-                ctx.lineWidth = 2;
-                ctx.shadowColor = '#ffffff';
-                ctx.shadowBlur = 10;
-                
-                for(let i=0; i<3; i++) {
-                    const rSize = ((now / 100) + i * 5) % 15;
-                    const rOp = (15 - rSize) / 15;
-                    ctx.globalAlpha = rippleAlpha * rOp;
-                    ctx.beginPath();
-                    ctx.ellipse(0, 0, rSize, rSize * perspective, 0, 0, PI2);
-                    ctx.stroke();
-                }
-                ctx.restore();
-            }
-
-            // -- ACTIVE CONNECTION TETHER --
-            if (isInside) {
-                // Determine source point on the terminal (center, floating)
-                // Determine target point (snake head relative to center)
-                const relHeadX = headPx.x - cx;
-                const relHeadY = headPx.y - cy;
-                
-                ctx.globalAlpha = 1.0;
-                ctx.shadowBlur = 10;
-                ctx.shadowColor = baseColor;
-                
-                // Draw Beam
-                const beamGrad = ctx.createLinearGradient(0, hoverY, relHeadX, relHeadY);
-                beamGrad.addColorStop(0, baseColor);
-                beamGrad.addColorStop(1, '#ffffff');
-                
-                ctx.strokeStyle = beamGrad as any;
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.moveTo(0, hoverY); // From floating core
-                
-                // Jittery line
-                const midX = relHeadX / 2;
-                const midY = (relHeadY + hoverY) / 2;
-                const jitter = Math.sin(now * 0.1) * 5;
-                
-                ctx.quadraticCurveTo(midX + jitter, midY - jitter, relHeadX, relHeadY);
-                ctx.stroke();
-
-                // Data particles moving along the beam
-                // (Simplified: Just draw dots at lerped positions)
-                ctx.fillStyle = '#fff';
-                for(let i=0; i<3; i++) {
-                    const t = ((now * 0.003) + (i * 0.33)) % 1;
-                    const lx = 0 + (relHeadX - 0) * t;
-                    const ly = hoverY + (relHeadY - hoverY) * t;
-                    ctx.fillRect(lx - 1, ly - 1, 3, 3);
-                }
-            }
-        }
-
-        ctx.restore();
-
-        // 4. PROGRESS BAR (Billboard)
-        if (t.progress > 0) {
-            const pct = t.progress / t.totalTime;
-            const barW = 4;
-            const barH = 24;
-            
+        // 4. STATUS TEXT
+        if (progress > 0 || isInside) {
             ctx.save();
-            ctx.translate(cx + 25, cy); 
+            ctx.translate(cx, cy - 40);
             
-            // Container
-            ctx.fillStyle = 'rgba(0,0,0,0.5)';
-            ctx.fillRect(0, -barH/2, barW, barH);
+            // Billboard text (No rotation)
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 10px monospace';
+            ctx.textAlign = 'center';
+            ctx.shadowColor = '#000';
+            ctx.shadowBlur = 4;
             
-            // Fill
-            ctx.fillStyle = pct > 0.9 ? '#fff' : t.color;
-            ctx.shadowColor = ctx.fillStyle;
-            ctx.shadowBlur = 5;
-            const fillH = barH * pct;
-            ctx.fillRect(0, (barH/2) - fillH, barW, fillH);
+            let label: string = t.type;
+            if (t.type === 'RESOURCE') label = 'DATA';
             
-            // Label
-            if (isActive) {
-                ctx.fillStyle = '#fff';
-                ctx.font = '8px monospace';
-                ctx.fillText(`${Math.floor(pct*100)}%`, 6, 3);
+            ctx.fillText(isActive ? `${Math.floor(progress * 100)}%` : (isInside ? 'CONNECTING...' : label), 0, 0);
+            
+            // Progress Bar (Mini)
+            if (progress > 0) {
+                ctx.fillStyle = '#333';
+                ctx.fillRect(-15, 4, 30, 4);
+                ctx.fillStyle = baseColor;
+                ctx.fillRect(-15, 4, 30 * progress, 4);
             }
             
             ctx.restore();

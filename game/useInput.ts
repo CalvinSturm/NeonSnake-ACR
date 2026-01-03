@@ -252,8 +252,11 @@ export function useInput(
     const handleMouseMove = (e: MouseEvent) => {
         if (status !== GameStatus.PLAYING || !cameraControlsEnabled) return;
 
-        const dx = e.clientX - lastMousePosRef.current.x;
-        const dy = e.clientY - lastMousePosRef.current.y;
+        // Correct delta based on current viewport scale
+        const scale = settings.gameScale || 1.0;
+        const dx = (e.clientX - lastMousePosRef.current.x) / scale;
+        const dy = (e.clientY - lastMousePosRef.current.y) / scale;
+        
         const cam = cameraRef.current;
 
         if (isDraggingRef.current) {
@@ -311,7 +314,7 @@ export function useInput(
         window.removeEventListener('mouseup', handleMouseUp);
         window.removeEventListener('contextmenu', handleContextMenu);
     };
-  }, [handleKeyDown, handleKeyUp, status, cameraRef, queueCameraIntent, cameraControlsEnabled, settings.invertRotation]);
+  }, [handleKeyDown, handleKeyUp, status, cameraRef, queueCameraIntent, cameraControlsEnabled, settings.invertRotation, settings.gameScale]);
 
   return { handleInput };
 }
