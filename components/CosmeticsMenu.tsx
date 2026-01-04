@@ -112,62 +112,65 @@ export const CosmeticsMenu: React.FC<CosmeticsMenuProps> = ({ onClose }) => {
         <div className="absolute inset-0 bg-[#050505] z-50 flex flex-col font-mono text-cyan-500 overflow-hidden animate-in fade-in duration-300">
             
             {/* ── HEADER ── */}
-            <div className="flex justify-between items-end border-b border-cyan-900/50 p-6 bg-black/80 backdrop-blur-md z-10">
+            <div className="flex flex-col md:flex-row justify-between md:items-end border-b border-cyan-900/50 p-4 md:p-6 bg-black/80 backdrop-blur-md z-10 gap-4 shrink-0">
                 <div>
-                    <div className="text-xs text-cyan-700 tracking-[0.3em] font-bold mb-1">SYSTEM_CONFIGURATION</div>
-                    <h1 className="text-3xl font-display font-bold text-white tracking-wider flex items-center gap-3">
+                    <div className="text-[10px] md:text-xs text-cyan-700 tracking-[0.3em] font-bold mb-1">SYSTEM_CONFIGURATION</div>
+                    <h1 className="text-2xl md:text-3xl font-display font-bold text-white tracking-wider flex items-center gap-3">
                         PROTOCOL FORGE
                         <span className="text-xs bg-cyan-900/30 border border-cyan-700 px-2 py-0.5 rounded text-cyan-400 font-mono">v2.1</span>
                     </h1>
                 </div>
                 
-                <div className="flex gap-6 items-center">
-                     <div className="bg-black/40 border border-cyan-500/30 px-4 py-2 flex items-center gap-3 rounded">
-                         <span className="text-xs text-cyan-500 tracking-widest font-bold">NEON FRAGMENTS</span>
-                         <span className="text-xl text-white font-display text-shadow-cyan">{neonFragments}</span>
+                <div className="flex gap-4 md:gap-6 items-center justify-between md:justify-end w-full md:w-auto">
+                     <div className="bg-black/40 border border-cyan-500/30 px-3 py-1.5 md:px-4 md:py-2 flex items-center gap-3 rounded">
+                         <span className="text-[10px] md:text-xs text-cyan-500 tracking-widest font-bold">FRAGMENTS</span>
+                         <span className="text-lg md:text-xl text-white font-display text-shadow-cyan">{neonFragments}</span>
                      </div>
 
                     <button 
                         onClick={onClose}
-                        className="flex items-center gap-2 px-6 py-2 border border-cyan-800 hover:bg-cyan-900/40 hover:border-cyan-500 text-cyan-400 transition-all uppercase tracking-widest text-xs font-bold"
+                        className="flex items-center gap-2 px-4 py-2 md:px-6 border border-cyan-800 hover:bg-cyan-900/40 hover:border-cyan-500 text-cyan-400 transition-all uppercase tracking-widest text-[10px] md:text-xs font-bold"
                     >
-                        [ RETURN TO ROOT ]
+                        [ EXIT ]
                     </button>
                 </div>
             </div>
 
             {/* ── MAIN CONTENT ── */}
-            <div className="flex-1 flex overflow-hidden">
+            <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
                 
-                {/* 1. LEFT: CATEGORY NAV */}
-                <div className="w-64 bg-black/40 border-r border-cyan-900/30 flex flex-col p-4 gap-2">
-                    <div className="text-[10px] text-gray-500 font-bold mb-2 uppercase tracking-widest">Modules</div>
+                {/* 1. NAV (Bottom on Mobile, Left on Desktop) */}
+                {/* We place it first in DOM for desktop, but visually maybe adjust order on mobile if needed. 
+                    Actually, let's keep it top/left.
+                */}
+                <div className="w-full md:w-64 bg-black/40 border-b md:border-b-0 md:border-r border-cyan-900/30 flex flex-row md:flex-col p-2 md:p-4 gap-2 shrink-0 overflow-x-auto">
+                    <div className="hidden md:block text-[10px] text-gray-500 font-bold mb-2 uppercase tracking-widest">Modules</div>
                     
                     <button 
                         onClick={() => { setActiveTab('SKIN'); setSelectedId(null); audio.play('MOVE'); }}
-                        className={`flex justify-between items-center p-4 border transition-all duration-200 group ${activeTab === 'SKIN' ? 'bg-cyan-950/50 border-cyan-500 text-white shadow-[0_0_15px_rgba(0,255,255,0.1)]' : 'border-transparent hover:bg-white/5 hover:border-gray-700 text-gray-400'}`}
+                        className={`flex-1 md:flex-none flex justify-between items-center p-3 md:p-4 border transition-all duration-200 group whitespace-nowrap ${activeTab === 'SKIN' ? 'bg-cyan-950/50 border-cyan-500 text-white shadow-[0_0_15px_rgba(0,255,255,0.1)]' : 'border-transparent hover:bg-white/5 hover:border-gray-700 text-gray-400'}`}
                     >
                         <div className="flex items-center gap-2">
-                            <span className="font-bold tracking-wide">CHASSIS</span>
+                            <span className="font-bold tracking-wide text-xs md:text-sm">CHASSIS</span>
                             {hasNewSkin && <span className="text-[8px] bg-red-600 text-white px-1.5 py-0.5 rounded animate-pulse font-bold">NEW</span>}
                         </div>
-                        <div className={`w-2 h-2 rounded-full ${activeTab === 'SKIN' ? 'bg-cyan-400 shadow-[0_0_5px_cyan]' : 'bg-gray-800'}`} />
+                        <div className={`hidden md:block w-2 h-2 rounded-full ${activeTab === 'SKIN' ? 'bg-cyan-400 shadow-[0_0_5px_cyan]' : 'bg-gray-800'}`} />
                     </button>
 
                     <button 
                         onClick={() => { setActiveTab('HUD'); setSelectedId(null); audio.play('MOVE'); }}
-                        className={`flex justify-between items-center p-4 border transition-all duration-200 group ${activeTab === 'HUD' ? 'bg-cyan-950/50 border-cyan-500 text-white shadow-[0_0_15px_rgba(0,255,255,0.1)]' : 'border-transparent hover:bg-white/5 hover:border-gray-700 text-gray-400'}`}
+                        className={`flex-1 md:flex-none flex justify-between items-center p-3 md:p-4 border transition-all duration-200 group whitespace-nowrap ${activeTab === 'HUD' ? 'bg-cyan-950/50 border-cyan-500 text-white shadow-[0_0_15px_rgba(0,255,255,0.1)]' : 'border-transparent hover:bg-white/5 hover:border-gray-700 text-gray-400'}`}
                     >
                         <div className="flex items-center gap-2">
-                            <span className="font-bold tracking-wide">NEURAL LINK</span>
+                            <span className="font-bold tracking-wide text-xs md:text-sm">NEURAL LINK</span>
                             {hasNewHUD && <span className="text-[8px] bg-red-600 text-white px-1.5 py-0.5 rounded animate-pulse font-bold">NEW</span>}
                         </div>
-                        <div className={`w-2 h-2 rounded-full ${activeTab === 'HUD' ? 'bg-cyan-400 shadow-[0_0_5px_cyan]' : 'bg-gray-800'}`} />
+                        <div className={`hidden md:block w-2 h-2 rounded-full ${activeTab === 'HUD' ? 'bg-cyan-400 shadow-[0_0_5px_cyan]' : 'bg-gray-800'}`} />
                     </button>
                 </div>
 
-                {/* 2. CENTER: BROWSER GRID (TIERED) */}
-                <div className="flex-1 bg-gradient-to-b from-[#080808] to-[#020202] overflow-y-auto p-8 custom-scrollbar">
+                {/* 2. BROWSER GRID (Center) */}
+                <div className="flex-1 bg-gradient-to-b from-[#080808] to-[#020202] overflow-y-auto p-4 md:p-8 custom-scrollbar order-2 md:order-1">
                     
                     {[1, 2, 3, 4].map((tier) => {
                         const items = tieredItems[tier];
@@ -176,12 +179,12 @@ export const CosmeticsMenu: React.FC<CosmeticsMenuProps> = ({ onClose }) => {
                         const tierColor = TIER_COLORS[tier as 1|2|3|4];
 
                         return (
-                            <div key={tier} className="mb-8">
+                            <div key={tier} className="mb-6 md:mb-8">
                                 <div className={`flex items-center gap-4 mb-4 pb-2 border-b border-gray-800 ${tierColor}`}>
-                                    <span className="font-display font-bold tracking-[0.2em] text-lg">TIER {tier} // {TIER_NAMES[tier as 1|2|3|4]}</span>
+                                    <span className="font-display font-bold tracking-[0.2em] text-sm md:text-lg">TIER {tier} // {TIER_NAMES[tier as 1|2|3|4]}</span>
                                 </div>
                                 
-                                <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                                <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
                                     {items.map((item) => {
                                         const visible = unlockedCosmetics.has(item.id);
                                         const owned = purchasedCosmetics.has(item.id);
@@ -238,10 +241,10 @@ export const CosmeticsMenu: React.FC<CosmeticsMenuProps> = ({ onClose }) => {
 
                                                 {/* Footer */}
                                                 <div className={`
-                                                    px-3 py-2 border-t text-left flex justify-between items-center
+                                                    px-2 md:px-3 py-2 border-t text-left flex justify-between items-center
                                                     ${selected ? 'bg-cyan-950/80 border-cyan-500/50' : 'bg-black border-gray-800'}
                                                 `}>
-                                                    <div className={`text-xs font-bold truncate ${selected ? 'text-white' : 'text-gray-400'}`}>
+                                                    <div className={`text-[10px] md:text-xs font-bold truncate ${selected ? 'text-white' : 'text-gray-400'}`}>
                                                         {item.displayName}
                                                     </div>
                                                     {equipped && <div className="w-2 h-2 bg-green-500 rounded-full shadow-[0_0_5px_#0f0]" />}
@@ -255,11 +258,12 @@ export const CosmeticsMenu: React.FC<CosmeticsMenuProps> = ({ onClose }) => {
                     })}
                 </div>
 
-                {/* 3. RIGHT: PREVIEW & DETAILS */}
-                <div className="w-96 bg-black border-l border-cyan-900/30 flex flex-col">
+                {/* 3. RIGHT: PREVIEW & DETAILS (Bottom on Mobile) */}
+                {/* Only show on mobile if something is selected to save space, or show always but compact */}
+                <div className={`w-full md:w-96 bg-black border-t md:border-t-0 md:border-l border-cyan-900/30 flex flex-col shrink-0 order-3 md:order-2 transition-all ${!selectedId && 'hidden md:flex'}`}>
                     
-                    {/* Live Preview Window (Always Snake Sim) */}
-                    <div className="h-48 border-b border-cyan-900/30 bg-[#050505] relative flex flex-col overflow-hidden">
+                    {/* Live Preview Window */}
+                    <div className="h-32 md:h-48 border-b border-cyan-900/30 bg-[#050505] relative flex flex-col overflow-hidden shrink-0">
                         <div className="absolute top-2 left-2 text-[10px] text-cyan-700 font-bold tracking-widest z-10 bg-black/50 px-2 py-1">VISUAL_SIMULATION</div>
                         <div className="flex-1 relative overflow-hidden">
                             <SnakePreview snakeStyle={previewSkinId} charColor="#00ffff" />
@@ -267,23 +271,23 @@ export const CosmeticsMenu: React.FC<CosmeticsMenuProps> = ({ onClose }) => {
                     </div>
 
                     {/* Details Panel */}
-                    <div className="flex-1 p-6 flex flex-col overflow-y-auto">
+                    <div className="flex-1 p-4 md:p-6 flex flex-col overflow-y-auto">
                         {detailsItem ? (
                             <>
-                                <div className="mb-6">
+                                <div className="mb-4 md:mb-6">
                                     <div className="flex justify-between items-start mb-2">
                                         <div className="text-xs text-gray-500 font-bold tracking-widest uppercase">{detailsItem.type} MODULE</div>
                                         <div className={`text-[10px] border px-2 py-0.5 rounded ${TIER_COLORS[detailsItem.tier]}`}>TIER {detailsItem.tier}</div>
                                     </div>
                                     
-                                    <h2 className="text-2xl font-display font-bold text-white mb-2">
+                                    <h2 className="text-xl md:text-2xl font-display font-bold text-white mb-2">
                                         {isVisible ? detailsItem.displayName : 'ENCRYPTED DATA'}
                                     </h2>
-                                    <p className="text-sm text-gray-400 leading-relaxed border-l-2 border-cyan-900/50 pl-4 py-1 mb-4">
+                                    <p className="text-xs md:text-sm text-gray-400 leading-relaxed border-l-2 border-cyan-900/50 pl-4 py-1 mb-4">
                                         {detailsItem.description}
                                     </p>
 
-                                    {/* MINI HUD PREVIEW (Only for HUDs) */}
+                                    {/* MINI HUD PREVIEW */}
                                     {detailsItem.type === 'HUD' && (
                                         <div className="mb-4 flex justify-center border border-gray-800 bg-black p-2 rounded">
                                             <HUDPreview layoutId={detailsItem.id} width={240} height={180} />
@@ -295,20 +299,20 @@ export const CosmeticsMenu: React.FC<CosmeticsMenuProps> = ({ onClose }) => {
                                     {!isVisible ? (
                                         <div className="bg-red-950/20 border border-red-900/50 p-4 rounded text-center">
                                             <div className="text-red-500 font-bold text-xs tracking-widest mb-1">UNLOCK REQUIREMENT</div>
-                                            <div className="text-red-300 text-sm">{detailsItem.unlockHint}</div>
+                                            <div className="text-red-300 text-xs md:text-sm">{detailsItem.unlockHint}</div>
                                         </div>
                                     ) : !isOwned ? (
                                         <>
-                                            <div className="bg-black/60 border border-cyan-900/50 p-4 mb-2 flex justify-between items-center">
+                                            <div className="bg-black/60 border border-cyan-900/50 p-3 md:p-4 mb-2 flex justify-between items-center">
                                                 <span className="text-gray-400 text-xs font-bold">COST</span>
-                                                <span className={`text-lg font-bold ${neonFragments >= detailsItem.cost ? 'text-white' : 'text-red-500'}`}>
+                                                <span className={`text-base md:text-lg font-bold ${neonFragments >= detailsItem.cost ? 'text-white' : 'text-red-500'}`}>
                                                     {detailsItem.cost} NF
                                                 </span>
                                             </div>
                                             <button 
                                                 onClick={() => handlePurchase(detailsItem.id)}
                                                 className={`
-                                                    w-full py-4 font-bold tracking-[0.2em] text-sm uppercase transition-all
+                                                    w-full py-3 md:py-4 font-bold tracking-[0.2em] text-xs md:text-sm uppercase transition-all
                                                     ${neonFragments >= detailsItem.cost 
                                                         ? 'bg-yellow-600 hover:bg-yellow-500 text-black shadow-[0_0_20px_rgba(250,204,21,0.3)]'
                                                         : 'bg-gray-800 text-gray-500 cursor-not-allowed border border-gray-700'
@@ -323,7 +327,7 @@ export const CosmeticsMenu: React.FC<CosmeticsMenuProps> = ({ onClose }) => {
                                             onClick={() => handleApply(detailsItem.id)}
                                             disabled={isCurrentlyEquipped}
                                             className={`
-                                                w-full py-4 font-bold tracking-[0.2em] text-sm uppercase transition-all
+                                                w-full py-3 md:py-4 font-bold tracking-[0.2em] text-xs md:text-sm uppercase transition-all
                                                 ${isCurrentlyEquipped 
                                                     ? 'bg-green-900/20 border border-green-700 text-green-500 cursor-default' 
                                                     : 'bg-cyan-600 hover:bg-cyan-500 text-white shadow-[0_0_20px_rgba(0,255,255,0.3)]'}
@@ -336,7 +340,7 @@ export const CosmeticsMenu: React.FC<CosmeticsMenuProps> = ({ onClose }) => {
                             </>
                         ) : (
                             <div className="flex-1 flex items-center justify-center text-gray-700 font-mono text-sm">
-                                SELECT MODULE FOR ANALYSIS
+                                SELECT MODULE
                             </div>
                         )}
                     </div>

@@ -25,16 +25,20 @@ export interface UserSettings {
   fxIntensity: number;
   screenShake: boolean;
   highContrast: boolean;
-  crtEffect: boolean; // New
-  reduceFlashing: boolean; // New
-  invertRotation: boolean; // New
+  crtEffect: boolean; 
+  reduceFlashing: boolean; 
+  invertRotation: boolean; 
   musicVolume: number;
   sfxVolume: number;
   mobileControlScheme: MobileControlScheme;
+  swipeBrakeBehavior: 'BUTTON' | 'HOLD'; // NEW: Interaction mode for swipe braking
   controlOpacity: number;
-  controlPos: Point | null;
+  controlPos: Point | null; // Deprecated in favor of customControlPositions
   isControlEditMode: boolean;
   visionProtocolId: VisionProtocolId;
+  forceTouchControls: boolean;
+  swapControls: boolean; // Flip left/right
+  customControlPositions: { joystick: Point; action: Point } | null; // Exact coordinates
   hudConfig: HUDConfig;
   snakeStyle: string; 
 }
@@ -52,11 +56,15 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   invertRotation: false,
   musicVolume: 0.3,
   sfxVolume: 0.4,
-  mobileControlScheme: 'JOYSTICK',
+  mobileControlScheme: 'SWIPE',
+  swipeBrakeBehavior: 'HOLD',
   controlOpacity: 0.8,
   controlPos: null,
   isControlEditMode: false,
   visionProtocolId: 'combat',
+  forceTouchControls: true,
+  swapControls: false,
+  customControlPositions: null,
   hudConfig: {
     layout: 'CYBER',
     numberStyle: 'DIGITAL',
@@ -123,15 +131,36 @@ export function useGameState() {
   // Lazy init settings from persistent profile
   const [settings, setSettings] = useState<UserSettings>(() => {
       const profile = loadCosmeticProfile();
+      // Also check for saved control settings in localStorage
+      let savedControls = null;
+      try {
+          const saved = localStorage.getItem('neon_snake_controls_v1');
+          if (saved) savedControls = JSON.parse(saved);
+      } catch (e) {}
+
       return {
           ...DEFAULT_USER_SETTINGS,
           snakeStyle: profile.equippedSkin || 'AUTO',
           hudConfig: {
               ...DEFAULT_USER_SETTINGS.hudConfig,
               layout: (profile.equippedHud as HUDLayoutMode) || 'CYBER'
-          }
+          },
+          ...savedControls // Merge saved control settings
       };
   });
+
+  // Save control settings whenever they change
+  useEffect(() => {
+      const controlSettings = {
+          mobileControlScheme: settings.mobileControlScheme,
+          swipeBrakeBehavior: settings.swipeBrakeBehavior,
+          forceTouchControls: settings.forceTouchControls,
+          swapControls: settings.swapControls,
+          customControlPositions: settings.customControlPositions,
+          controlOpacity: settings.controlOpacity
+      };
+      localStorage.setItem('neon_snake_controls_v1', JSON.stringify(controlSettings));
+  }, [settings.mobileControlScheme, settings.swipeBrakeBehavior, settings.forceTouchControls, settings.swapControls, settings.customControlPositions, settings.controlOpacity]);
 
   // Camera Control Switch
   const [cameraControlsEnabled, setCameraControlsEnabled] = useState(false);

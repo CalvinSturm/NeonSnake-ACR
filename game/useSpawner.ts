@@ -12,6 +12,7 @@ import { ROOT_FILESYSTEM } from '../archive/data';
 import { getUnlockedMemoryIds } from './memory/MemorySystem';
 import { SENTINEL_BOSS_CONFIG } from './boss/definitions/SentinelBoss';
 import { WARDEN_BOSS_CONFIG } from './boss/definitions/WardenBoss';
+import { SPACESHIP_BOSS_CONFIG } from './boss/definitions/SpaceshipBoss';
 
 export function useSpawner(
   game: ReturnType<typeof useGameState>,
@@ -218,7 +219,7 @@ export function useSpawner(
   // ─────────────────────────────
   const spawnEnemy = useCallback((forcedType?: EnemyType, forcedPos?: Point) => {
     const diffConfig = DIFFICULTY_CONFIGS[difficulty];
-    const isBossStage = stageRef.current % 5 === 0; // Trigger every 5 stages now (includes WARDEN at 5)
+    const isBossStage = stageRef.current % 5 === 0; // Trigger every 5 stages
 
     // Use REF for sync logic
     // Prevent double spawn if boss already active OR defeated
@@ -234,11 +235,17 @@ export function useSpawner(
       let spawnY = -5;
       let physics = ENEMY_PHYSICS_DEFAULTS[EnemyType.BOSS];
       
-      // Stage 10 Specific: Warden (Moved from Stage 5)
+      // Stage 10: Spaceship Boss
       if (stageRef.current === 10) {
+          bossConfig = SPACESHIP_BOSS_CONFIG;
+          startState = 'IDLE';
+          spawnY = -5;
+      }
+      // Stage 15: Warden
+      else if (stageRef.current === 15) {
           bossConfig = WARDEN_BOSS_CONFIG;
           startState = 'IDLE_1';
-          spawnY = -5; // Spawn from top, same as Sentinel
+          spawnY = -5; 
           // Disable vertical physics so it floats in Top Down
           physics = { usesVerticalPhysics: false, canJump: false, jumpCooldown: 0 };
       }

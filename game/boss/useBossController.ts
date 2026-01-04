@@ -3,12 +3,14 @@ import { useCallback } from 'react';
 import { useGameState } from '../useGameState';
 import { SENTINEL_BOSS_CONFIG } from './definitions/SentinelBoss';
 import { WARDEN_BOSS_CONFIG } from './definitions/WardenBoss';
+import { SPACESHIP_BOSS_CONFIG } from './definitions/SpaceshipBoss';
 import { BossConfig, BossIntent } from './types';
 import { DEFAULT_SETTINGS } from '../../constants';
 
 const BOSS_REGISTRY: Record<string, BossConfig> = {
     'SENTINEL': SENTINEL_BOSS_CONFIG,
-    'WARDEN_07': WARDEN_BOSS_CONFIG
+    'WARDEN_07': WARDEN_BOSS_CONFIG,
+    'SPACESHIP_BOSS': SPACESHIP_BOSS_CONFIG
 };
 
 export function useBossController(game: ReturnType<typeof useGameState>) {
@@ -73,17 +75,43 @@ export function useBossController(game: ReturnType<typeof useGameState>) {
                 continue;
             }
 
-            // 2. Facing Logic (Souls-style)
-            // Only update facing during IDLE states
-            const isIdle = stateRuntime.stateId.startsWith('IDLE');
-            // Default facing 1 (Right) if undefined
-            if (enemy.facing === undefined) enemy.facing = 1;
+            // 2. Facing / Aiming Logic
+            
+            // Standard Platformer Bosses (Sentinel, Warden)
+            if (enemy.bossConfigId !== 'SPACESHIP_BOSS') {
+                const isIdle = stateRuntime.stateId.startsWith('IDLE');
+                if (enemy.facing === undefined) enemy.facing = 1;
 
-            if (isIdle && playerHead) {
-                const dx = playerHead.x - enemy.x;
-                if (Math.abs(dx) > 1) { // Hysteresis
-                    enemy.facing = Math.sign(dx);
+                if (isIdle && playerHead) {
+                    const dx = playerHead.x - enemy.x;
+                    if (Math.abs(dx) > 1) { // Hysteresis
+                        enemy.facing = Math.sign(dx);
+                    }
                 }
+            } 
+            // Spaceship Boss (Top Down Rotation)
+            else if (enemy.bossConfigId === 'SPACESHIP_BOSS') {
+                // Tracking States: IDLE, CHARGE
+                // Locked States: FIRE, COOLDOWN
+                const isTracking = ['IDLE', 'CHARGE_CANNON'].includes(stateRuntime.stateId);
+                
+                if (playerHead && isTracking) {
+                    const targetAngle = Math.atan2(playerHead.y - enemy.y, playerHead.x - enemy.x);
+                    
+                    if (enemy.angle === undefined) enemy.angle = targetAngle;
+                    
+                    // Smooth turn
+                    const diff = targetAngle - enemy.angle;
+                    // Normalize -PI to PI
+                    const dNorm = Math.atan2(Math.sin(diff), Math.cos(diff));
+                    
+                    // Turn speed (slower when charging to give player chance to dodge)
+                    const turnSpeed = stateRuntime.stateId === 'CHARGE_CANNON' ? 2.0 : 4.0;
+                    
+                    enemy.angle += dNorm * turnSpeed * (dt / 1000);
+                }
+                
+                if (enemy.angle === undefined) enemy.angle = Math.PI; // Default left
             }
 
             // 3. Advance Timer
@@ -93,7 +121,7 @@ export function useBossController(game: ReturnType<typeof useGameState>) {
             if (stateRuntime.timer >= currentStateDef.duration) {
                 // State Complete. Resolve Exit.
                 if (currentStateDef.onExit) {
-                    processIntents(currentStateDef.onExit, enemy.id, enemy.x, enemy.y, enemy.facing);
+                    processIntents(currentStateDef.onExit, enemy.id, enemy.x, enemy.y, enemy.facing || 1);
                 }
 
                 // Check for Phase Transition
@@ -118,7 +146,7 @@ export function useBossController(game: ReturnType<typeof useGameState>) {
                     // Enter new state (from new phase)
                     const newState = newPhase.table[newPhase.entryState];
                     if (newState && newState.onEnter) {
-                        processIntents(newState.onEnter, enemy.id, enemy.x, enemy.y, enemy.facing);
+                        processIntents(newState.onEnter, enemy.id, enemy.x, enemy.y, enemy.facing || 1);
                     }
                 } else {
                     // STANDARD TRANSITION
@@ -129,7 +157,7 @@ export function useBossController(game: ReturnType<typeof useGameState>) {
                         
                         const nextState = stateTable[nextId];
                         if (nextState && nextState.onEnter) {
-                            processIntents(nextState.onEnter, enemy.id, enemy.x, enemy.y, enemy.facing);
+                            processIntents(nextState.onEnter, enemy.id, enemy.x, enemy.y, enemy.facing || 1);
                         }
                     } else {
                         // Loop fallback

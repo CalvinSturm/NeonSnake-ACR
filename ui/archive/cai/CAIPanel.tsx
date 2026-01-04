@@ -52,12 +52,6 @@ export const CAIPanel: React.FC<CAIPanelProps> = ({ capabilities }) => {
         
         let finalCommand = inputVal;
         
-        // If specific suggestion is active and user hits Enter, use it?
-        // Standard terminal behavior: Enter executes Input. Tab completes Input.
-        // If we want Enter to execute the *selected suggestion*, we can do that.
-        // But usually explicit selection via Tab is safer.
-        // However, if the input exactly matches a command, we are good.
-        
         processQuery(finalCommand);
         setInputVal('');
         setSuggestions([]);
@@ -130,7 +124,7 @@ export const CAIPanel: React.FC<CAIPanelProps> = ({ capabilities }) => {
     }, [status]);
 
     return (
-        <div className="flex flex-col h-full border-l border-green-900/50 bg-black/40 w-80 shrink-0 relative">
+        <div className="flex flex-col h-full bg-black/40 w-full shrink-0 relative">
             {/* Header */}
             <div className="p-2 border-b border-green-900/50 text-[10px] text-green-700 font-bold tracking-widest flex justify-between items-center">
                 <span>CAI-OS INTERFACE</span>

@@ -1,6 +1,6 @@
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { useGameState } from '../game/useGameState';
+import { useGameState, UserSettings } from '../game/useGameState';
 import { useGameLoop } from '../game/useGameLoop';
 import { useRendering } from '../game/useRendering';
 import { useInput } from '../game/useInput';
@@ -13,12 +13,13 @@ import { useProgression } from '../game/useProgression';
 import { useFX } from '../game/useFX';
 import { useMusic } from '../game/useMusic';
 import { useAnalytics } from '../game/useAnalytics';
-import { GameStatus, Difficulty, CharacterProfile, WeaponStats } from '../types';
+import { GameStatus, Difficulty, CharacterProfile, WeaponStats, Point } from '../types';
 import { DIFFICULTY_CONFIGS, CHARACTERS, CANVAS_WIDTH, CANVAS_HEIGHT } from '../constants';
 import { audio } from '../utils/audio';
 import { ArrowControls } from './ArrowControls';
 import { VirtualJoystick } from './VirtualJoystick';
 import { SwipeControls } from './SwipeControls';
+import { BrakeButton } from './BrakeButton';
 import { ArchiveTerminal } from './ArchiveTerminal';
 import { SettingsMenu } from './SettingsMenu';
 import { UpgradeId } from '../upgrades/types';
@@ -39,7 +40,7 @@ import { CameraBehavior } from '../game/camera/types';
 import { DevTools } from '../ui/devtools/DevTools';
 import { DESCRIPTOR_REGISTRY } from '../game/descriptors';
 import { CosmeticsMenu } from './CosmeticsMenu';
-import { GameOverScreen } from '../ui/screens/GameOverScreen'; // NEW IMPORT
+import { GameOverScreen } from '../ui/screens/GameOverScreen';
 
 // UI Constants & Styles
 const RARITY_STYLES: Record<string, string> = {
@@ -99,7 +100,71 @@ const CHAR_STATS: Record<string, { off: number, def: number, spd: number, util: 
     overdrive: { off: 10, def: 1, spd: 10, util: 2 }
 };
 
-// Map weapon stats to descriptor IDs for loadout icons
+// Helper for Draggable Logic in Edit Mode
+interface DraggableControlProps {
+    id: 'joystick' | 'action';
+    x: number;
+    y: number;
+    children: React.ReactNode;
+    isEditing: boolean;
+    onUpdate: (id: 'joystick' | 'action', x: number, y: number) => void;
+    opacity: number;
+}
+
+const DraggableControl: React.FC<DraggableControlProps> = ({ id, x, y, children, isEditing, onUpdate, opacity }) => {
+    const [isDragging, setIsDragging] = useState(false);
+    const offset = useRef({ x: 0, y: 0 });
+
+    const handleDown = (e: React.PointerEvent) => {
+        if (!isEditing) return;
+        e.stopPropagation();
+        e.preventDefault();
+        const rect = e.currentTarget.getBoundingClientRect();
+        offset.current = {
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top
+        };
+        setIsDragging(true);
+        // Important: Capture pointer to track movement outside element bounds
+        (e.target as Element).setPointerCapture(e.pointerId);
+    };
+
+    const handleMove = (e: React.PointerEvent) => {
+        if (!isDragging) return;
+        const newX = e.clientX - offset.current.x;
+        const newY = e.clientY - offset.current.y;
+        onUpdate(id, newX, newY);
+    };
+
+    const handleUp = (e: React.PointerEvent) => {
+        setIsDragging(false);
+        (e.target as Element).releasePointerCapture(e.pointerId);
+    };
+
+    return (
+        <div 
+            className={`absolute ${isEditing ? 'cursor-move ring-2 ring-yellow-400 z-[100] bg-black/50 rounded-full' : ''}`}
+            style={{ 
+                left: x, 
+                top: y, 
+                opacity: isEditing ? 1 : opacity,
+                touchAction: 'none'
+            }}
+            onPointerDown={handleDown}
+            onPointerMove={handleMove}
+            onPointerUp={handleUp}
+        >
+            {isEditing && (
+                <div className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] bg-yellow-500 text-black font-bold px-2 rounded whitespace-nowrap pointer-events-none">
+                    DRAG ME
+                </div>
+            )}
+            {children}
+        </div>
+    );
+};
+
+
 const getLoadoutIcons = (weaponStats: Partial<WeaponStats> = {}) => {
     const icons: string[] = [];
     if (weaponStats.cannonLevel && weaponStats.cannonLevel > 0) icons.push(DESCRIPTOR_REGISTRY.CANNON?.icon || '🔫');
@@ -107,8 +172,6 @@ const getLoadoutIcons = (weaponStats: Partial<WeaponStats> = {}) => {
     if (weaponStats.mineLevel && weaponStats.mineLevel > 0) icons.push(DESCRIPTOR_REGISTRY.MINES?.icon || '💣');
     if (weaponStats.chainLightningLevel && weaponStats.chainLightningLevel > 0) icons.push(DESCRIPTOR_REGISTRY.LIGHTNING?.icon || '⚡');
     if (weaponStats.nanoSwarmLevel && weaponStats.nanoSwarmLevel > 0) icons.push(DESCRIPTOR_REGISTRY.NANO_SWARM?.icon || '🛰️');
-    // Add shield explicitly if in stats or just use Shield icon
-    // Bulwark has shieldActive, logic below
     return icons;
 };
 
@@ -124,6 +187,9 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
   const [bindingState, setBindingState] = useState<{ charId: string; phase: 'LOCK' | 'SYNC' } | null>(null);
   const [bindText, setBindText] = useState('BINDING OPERATOR PROFILE');
   const [hudBooted, setHudBooted] = useState(true);
+  
+  // Local state for editing controls (temporary until save)
+  const [tempControlPos, setTempControlPos] = useState<{ joystick: Point, action: Point } | null>(null);
 
   const uiStyle = useUIStyle();
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -162,8 +228,10 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
 
   useEffect(() => {
     const checkTouch = () => {
-      const isCoarse = window.matchMedia('(pointer: coarse)').matches;
-      setIsTouch(isCoarse);
+      // Improved Detection: Check both pointer capability and touch support
+      const hasCoarsePointer = window.matchMedia('(pointer: coarse)').matches;
+      const hasTouchSupport = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      setIsTouch(hasCoarsePointer || hasTouchSupport);
     };
     checkTouch();
     window.addEventListener('resize', checkTouch);
@@ -191,6 +259,70 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
     cameraControlsEnabled, setCameraControlsEnabled,
     highScore // Add high score for passing to game over
   } = game;
+
+  // Show controls only during active gameplay states to avoid blocking UI interactions (like READY screen)
+  const showMobileControls = (
+      (isTouch || settings.forceTouchControls) && 
+      modalState === 'NONE' && 
+      (
+          status === GameStatus.PLAYING || 
+          status === GameStatus.RESUMING || 
+          status === GameStatus.STAGE_TRANSITION
+      )
+  ) || settings.isControlEditMode;
+
+  // Brake Logic Hook for Swipe
+  const handleBrake = useCallback((active: boolean) => {
+      game.stopIntentRef.current = active;
+  }, [game.stopIntentRef]);
+
+  // Determine if dedicated brake button should be shown
+  // Hidden if using SWIPE scheme AND HOLD mode is active
+  // BUT always show in edit mode so user can position it if they switch back
+  const showBrakeButton = showMobileControls && (settings.isControlEditMode || !(settings.mobileControlScheme === 'SWIPE' && settings.swipeBrakeBehavior === 'HOLD'));
+
+  // Initialize temp positions when entering edit mode
+  useEffect(() => {
+      if (settings.isControlEditMode) {
+          const w = window.innerWidth;
+          const h = window.innerHeight;
+          // Use existing custom, or defaults
+          const current = settings.customControlPositions || (settings.swapControls 
+              ? { joystick: { x: w - 150, y: h - 180 }, action: { x: 50, y: h - 180 } }
+              : { joystick: { x: 50, y: h - 180 }, action: { x: w - 150, y: h - 180 } }
+          );
+          setTempControlPos(current);
+      }
+  }, [settings.isControlEditMode, settings.swapControls, settings.customControlPositions]);
+
+  const handleControlUpdate = (id: 'joystick' | 'action', x: number, y: number) => {
+      setTempControlPos(prev => {
+          if (!prev) return null;
+          return { ...prev, [id]: { x, y } };
+      });
+  };
+
+  const saveControlLayout = () => {
+      if (tempControlPos) {
+          setSettings(s => ({ ...s, customControlPositions: tempControlPos, isControlEditMode: false }));
+      } else {
+          setSettings(s => ({ ...s, isControlEditMode: false }));
+      }
+  };
+
+  const resetControlLayout = () => {
+      setSettings(s => ({ ...s, customControlPositions: null })); // Revert to auto calc
+      setTempControlPos(null); // Clear temp
+      
+      // We need to re-init temp positions based on defaults for the editor to show them jumping back
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const def = settings.swapControls 
+            ? { joystick: { x: w - 150, y: h - 180 }, action: { x: 50, y: h - 180 } }
+            : { joystick: { x: 50, y: h - 180 }, action: { x: w - 150, y: h - 180 } };
+            
+      setTempControlPos(def);
+  };
 
   const fx = useFX(game);
   const progression = useProgression(game);
@@ -459,7 +591,7 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
     }
   }, [status, resumeCountdown, setStatus, game]);
 
-  const showHUD = hudBooted && (
+  const showHUD = hudBooted && !settings.isControlEditMode && (
     status === GameStatus.PLAYING ||
     status === GameStatus.READY || 
     status === GameStatus.PAUSED ||
@@ -536,6 +668,42 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
       return <ModelConfigurationPass difficultyId={difficulty} onComplete={handleConfigurationComplete} />;
   }
 
+  // ─── CONTROL POSITION LOGIC ───
+  // Determine final coordinates for controls
+  const getControlPositions = () => {
+    // 1. Editor Mode: Use temp state
+    if (settings.isControlEditMode && tempControlPos) {
+        return tempControlPos;
+    }
+    
+    // 2. Custom Saved: Use saved exact positions
+    if (settings.customControlPositions) {
+        return settings.customControlPositions;
+    }
+
+    // 3. Fallback: Computed Defaults based on screen size + Swap Preference
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const marginX = 50;
+    const marginY = 180; // Enough space for bottom UI
+    
+    if (settings.swapControls) {
+        // Swap: Joystick Right, Action Left
+        return {
+            joystick: { x: w - marginX - 100, y: h - marginY },
+            action: { x: marginX, y: h - marginY }
+        };
+    } else {
+        // Default: Joystick Left, Action Right
+        return {
+            joystick: { x: marginX, y: h - marginY },
+            action: { x: w - marginX - 100, y: h - marginY }
+        };
+    }
+  };
+
+  const controlPos = getControlPositions();
+
   return (
       <div 
         className="w-full h-full flex items-center justify-center bg-black overflow-hidden select-none relative"
@@ -555,7 +723,8 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
             style={{ 
                 width: CANVAS_WIDTH, 
                 height: CANVAS_HEIGHT,
-                transform: `scale(${settings.gameScale})`
+                transform: `scale(${settings.gameScale})`,
+                opacity: settings.isControlEditMode ? 0.3 : 1
             }}
           >
               
@@ -602,11 +771,17 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
                       {status === GameStatus.READY && (
                           <div 
                               className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/40 backdrop-blur-[2px] pointer-events-auto cursor-pointer animate-in fade-in duration-300" 
-                              onClick={handleReadyStart}
+                              onPointerDown={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleReadyStart();
+                              }}
                           >
                               <div className="text-cyan-500 font-mono text-xs tracking-[0.3em] mb-4 drop-shadow-[0_0_5px_rgba(0,255,255,0.5)]">UNIT INITIALIZED</div>
                               <div className="text-white/50 font-mono text-[10px] tracking-widest mb-16">AWAITING INPUT</div>
-                              <div className="text-white font-bold tracking-[0.2em] text-sm animate-pulse">PRESS ANY KEY TO BEGIN</div>
+                              <div className="text-white font-bold tracking-[0.2em] text-sm animate-pulse">
+                                  {isTouch ? 'TAP TO BEGIN' : 'PRESS ANY KEY OR TAP TO BEGIN'}
+                              </div>
                           </div>
                       )}
 
@@ -629,20 +804,83 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
               </GameHUD>
           </div>
           
-          {isTouch && (
-              <div className="absolute inset-0 pointer-events-none z-50">
+          {/* TOUCH CONTROLS (Draggable) */}
+          {showMobileControls && (
+              <div className="absolute inset-0 pointer-events-none z-40 overflow-hidden">
+                 
+                 {/* JOYSTICK */}
                  {settings.mobileControlScheme === 'JOYSTICK' && (
-                     <div className="absolute bottom-10 left-10 pointer-events-auto">
-                         <VirtualJoystick onDirection={handleInput} />
-                     </div>
+                     <DraggableControl 
+                        id="joystick" 
+                        x={controlPos.joystick.x} 
+                        y={controlPos.joystick.y}
+                        isEditing={settings.isControlEditMode}
+                        onUpdate={handleControlUpdate}
+                        opacity={settings.controlOpacity}
+                     >
+                         <div className="pointer-events-auto">
+                            <VirtualJoystick onDirection={handleInput} />
+                         </div>
+                     </DraggableControl>
                  )}
                  {settings.mobileControlScheme === 'ARROWS' && (
-                     <div className="absolute bottom-10 right-10 pointer-events-auto">
-                         <ArrowControls onDirection={handleInput} />
-                     </div>
+                     <DraggableControl 
+                        id="joystick" 
+                        x={controlPos.joystick.x} 
+                        y={controlPos.joystick.y}
+                        isEditing={settings.isControlEditMode}
+                        onUpdate={handleControlUpdate}
+                        opacity={settings.controlOpacity}
+                     >
+                         <div className="pointer-events-auto">
+                            <ArrowControls onDirection={handleInput} />
+                         </div>
+                     </DraggableControl>
                  )}
                  {settings.mobileControlScheme === 'SWIPE' && (
-                     <SwipeControls onDirection={handleInput} />
+                     <SwipeControls 
+                        onDirection={handleInput} 
+                        onBrake={handleBrake}
+                        brakeMode={settings.swipeBrakeBehavior}
+                     />
+                 )}
+                 
+                 {/* ACTION BUTTON (BRAKE) */}
+                 {showBrakeButton && (
+                    <DraggableControl 
+                        id="action" 
+                        x={controlPos.action.x} 
+                        y={controlPos.action.y}
+                        isEditing={settings.isControlEditMode}
+                        onUpdate={handleControlUpdate}
+                        opacity={settings.controlOpacity}
+                    >
+                        <div className="pointer-events-auto">
+                            <BrakeButton game={game} />
+                        </div>
+                    </DraggableControl>
+                 )}
+
+                 {/* EDIT MODE OVERLAY */}
+                 {settings.isControlEditMode && (
+                     <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-black/80 border border-yellow-500 p-4 rounded-lg pointer-events-auto flex flex-col items-center gap-2">
+                         <div className="text-yellow-400 font-bold text-sm tracking-widest uppercase">Layout Editor</div>
+                         <div className="text-[10px] text-gray-400">Drag controls to reposition</div>
+                         <div className="flex gap-2 mt-2">
+                             <button 
+                                onClick={resetControlLayout}
+                                className="px-3 py-1 bg-gray-800 text-gray-300 text-xs rounded hover:bg-gray-700"
+                             >
+                                 Reset
+                             </button>
+                             <button 
+                                onClick={saveControlLayout}
+                                className="px-4 py-1 bg-yellow-600 text-black text-xs font-bold rounded hover:bg-yellow-500"
+                             >
+                                 Save & Exit
+                             </button>
+                         </div>
+                     </div>
                  )}
               </div>
           )}
@@ -688,6 +926,12 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
                             ? { filter: 'grayscale(1) brightness(0.5)' } 
                             : {}
                 }
+                onClick={(e) => {
+                    // Prevent interfering if we are in a special glitch phase
+                    if (initPhase === 'NONE') {
+                         handleStartClick();
+                    }
+                }}
               >
                   {initPhase === 'RECOVER' && (
                       <div className="absolute inset-0 bg-black flex items-center justify-center z-[60]">
@@ -697,7 +941,7 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
                       </div>
                   )}
 
-                  <div className="text-center mb-12">
+                  <div className="text-center mb-12 pointer-events-none">
                       <h1 className="text-6xl md:text-8xl font-display font-bold text-transparent bg-clip-text bg-gradient-to-b from-cyan-300 to-cyan-700 drop-shadow-[0_0_20px_rgba(0,255,255,0.6)] tracking-tighter mb-4">
                           NEON SNAKE
                       </h1>
@@ -708,7 +952,10 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
                   
                   <div className={`flex flex-col items-center gap-4 transition-opacity duration-0 ${initPhase === 'STALL' || initPhase === 'RECOVER' ? 'opacity-0' : 'opacity-100'}`}>
                       <button 
-                          onClick={handleStartClick}
+                          onClick={(e) => {
+                              e.stopPropagation(); // Avoid double trigger
+                              handleStartClick();
+                          }}
                           className="group relative px-12 py-4 bg-cyan-900/20 border-2 border-cyan-500 hover:bg-cyan-500/20 transition-all duration-200 overflow-hidden"
                       >
                           <div className="absolute inset-0 bg-cyan-400/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
@@ -718,7 +965,11 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
                       </button>
 
                       <button 
-                          onClick={() => { setStatus(GameStatus.COSMETICS); audio.play('MOVE'); }}
+                          onClick={(e) => { 
+                              e.stopPropagation();
+                              setStatus(GameStatus.COSMETICS); 
+                              audio.play('MOVE'); 
+                          }}
                           className="px-8 py-2 text-xs font-bold tracking-[0.2em] text-cyan-700 hover:text-cyan-400 border border-transparent hover:border-cyan-900/50 transition-all relative"
                       >
                           [ PROTOCOL FORGE ]
@@ -731,7 +982,7 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
                       </button>
                   </div>
 
-                  <div className="mt-8 text-xs text-gray-500 font-mono">
+                  <div className="mt-8 text-xs text-gray-500 font-mono pointer-events-none">
                       v1.0.0 // SECURE CONNECTION ESTABLISHED
                   </div>
                   
@@ -741,7 +992,10 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
                           ? 'text-cyan-400 drop-shadow-[0_0_8px_rgba(0,255,255,0.8)] animate-pulse' 
                           : 'text-gray-700 hover:text-gray-500'
                       }`} 
-                      onClick={handleArchiveOpen}
+                      onClick={(e) => {
+                          e.stopPropagation();
+                          handleArchiveOpen();
+                      }}
                   >
                       {hasUnreadArchiveData ? (
                           <span className="flex items-center gap-2">
@@ -758,24 +1012,28 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
           {status === GameStatus.DIFFICULTY_SELECT && (
               <div className="absolute inset-0 z-40 bg-black/95 flex flex-col pointer-events-auto animate-in fade-in duration-300">
                   
-                  {/* BACK BUTTON */}
-                  <button 
-                      onClick={handleBack}
-                      className="absolute top-8 left-8 z-50 group flex items-center gap-2 px-4 py-2 border border-gray-700 bg-black/80 hover:border-cyan-500 hover:bg-cyan-900/20 transition-all rounded-sm"
-                  >
-                      <span className="text-cyan-600 font-mono text-xs group-hover:text-cyan-400">{'<<'}</span>
-                      <span className="text-gray-300 font-bold text-xs tracking-widest group-hover:text-white">RETURN</span>
-                  </button>
+                  {/* HEADER WITH BACK BUTTON INTEGRATED */}
+                  <div className="flex-none p-4 md:p-6 bg-black/95 border-b border-cyan-900/50 backdrop-blur-md z-50 relative shadow-lg">
+                      
+                      <button 
+                          onClick={handleBack}
+                          className="absolute left-4 top-1/2 -translate-y-1/2 z-50 group flex items-center gap-2 px-3 py-1.5 border border-gray-700 bg-black/80 hover:border-cyan-500 hover:bg-cyan-900/20 transition-all rounded-sm"
+                      >
+                          <span className="text-cyan-600 font-mono text-xs group-hover:text-cyan-400">{'<<'}</span>
+                          <span className="text-gray-300 font-bold text-xs tracking-widest group-hover:text-white hidden md:inline">RETURN</span>
+                      </button>
 
-                  <div className="flex-none p-6 bg-black/95 border-b border-cyan-900/50 backdrop-blur-md z-50 flex flex-col items-center shadow-lg">
-                      <h2 className="text-4xl text-white font-display tracking-[0.2em] text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 drop-shadow-[0_0_10px_rgba(0,255,255,0.3)] mb-2">
-                          THREAT LEVEL
-                      </h2>
-                      <div className="h-1 w-32 bg-cyan-500/50 rounded-full"></div>
+                      <div className="flex flex-col items-center pointer-events-none">
+                          <h2 className="text-2xl md:text-4xl text-white font-display tracking-[0.2em] text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 drop-shadow-[0_0_10px_rgba(0,255,255,0.3)] mb-2 text-center">
+                              THREAT LEVEL
+                          </h2>
+                          <div className="h-1 w-32 bg-cyan-500/50 rounded-full"></div>
+                      </div>
                   </div>
 
-                  <div className="flex-1 overflow-y-auto custom-scrollbar p-6 pb-32 flex items-center justify-center">
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 w-full max-w-7xl">
+                  {/* SCROLLABLE CONTENT AREA */}
+                  <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-6 flex flex-col z-0">
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 w-full max-w-7xl m-auto min-h-min">
                           {Object.values(DIFFICULTY_CONFIGS).map((conf) => {
                               const isUnlocked = unlockedDifficulties.includes(conf.id);
                               return (
@@ -784,7 +1042,7 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
                                     disabled={!isUnlocked}
                                     onClick={() => handleDifficultySelect(conf.id)}
                                     className={`
-                                        relative group border rounded-xl p-6 transition-all duration-300 flex flex-col justify-between overflow-hidden text-left h-full min-h-[340px]
+                                        relative group border rounded-xl p-6 transition-all duration-300 flex flex-col justify-between overflow-hidden text-left h-full min-h-[200px] md:min-h-[340px]
                                         ${isUnlocked 
                                             ? 'border-gray-700 bg-[#0a0a0a] hover:border-cyan-500/50 hover:bg-gray-900/80 hover:-translate-y-2 hover:shadow-[0_0_30px_rgba(0,255,255,0.1)] cursor-pointer' 
                                             : 'border-gray-800 bg-black/60 opacity-60 cursor-not-allowed grayscale'}
@@ -794,10 +1052,10 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
                                           <div className="absolute inset-0 opacity-0 group-hover:opacity-10 bg-[linear-gradient(rgba(0,255,255,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(0,255,255,0.1)_1px,transparent_1px)] bg-[length:20px_20px] transition-opacity duration-500 pointer-events-none" />
                                       )}
                                       <div className="z-10 mb-4">
-                                          <div className={`text-2xl font-display font-bold tracking-widest mb-2 ${isUnlocked ? conf.color : 'text-gray-600'}`}>
+                                          <div className={`text-xl md:text-2xl font-display font-bold tracking-widest mb-2 ${isUnlocked ? conf.color : 'text-gray-600'}`}>
                                               {conf.label}
                                           </div>
-                                          <p className="text-xs text-gray-400 font-mono leading-relaxed h-12">
+                                          <p className="text-xs text-gray-400 font-mono leading-relaxed h-auto md:h-12">
                                               {conf.description}
                                           </p>
                                       </div>
@@ -813,8 +1071,9 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
                               );
                           })}
                       </div>
+                      <div className="h-8 shrink-0" />
                   </div>
-                  <div className="flex-none p-6 text-center text-xs text-gray-600 font-mono border-t border-cyan-900/30 bg-black/95 backdrop-blur-md z-50">
+                  <div className="flex-none p-4 md:p-6 text-center text-[10px] md:text-xs text-gray-600 font-mono border-t border-cyan-900/30 bg-black/95 backdrop-blur-md z-50">
                       WARNING: HIGH VELOCITY KINETIC INTERACTION AUTHORIZED
                   </div>
               </div>
@@ -823,24 +1082,26 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
           {status === GameStatus.CHARACTER_SELECT && (
               <div className="absolute inset-0 z-40 bg-black/95 flex flex-col pointer-events-auto animate-in fade-in duration-300">
                   
-                  {/* BACK BUTTON */}
-                  <button 
-                      onClick={handleBack}
-                      className="absolute top-8 left-8 z-50 group flex items-center gap-2 px-4 py-2 border border-gray-700 bg-black/80 hover:border-cyan-500 hover:bg-cyan-900/20 transition-all rounded-sm"
-                  >
-                      <span className="text-cyan-600 font-mono text-xs group-hover:text-cyan-400">{'<<'}</span>
-                      <span className="text-gray-300 font-bold text-xs tracking-widest group-hover:text-white">RETURN</span>
-                  </button>
+                  {/* HEADER WITH BACK BUTTON INTEGRATED */}
+                  <div className="flex-none p-4 md:p-6 bg-black/95 border-b border-cyan-900/50 backdrop-blur-md z-50 relative shadow-lg">
+                      <button 
+                          onClick={handleBack}
+                          className="absolute left-4 top-1/2 -translate-y-1/2 z-50 group flex items-center gap-2 px-3 py-1.5 border border-gray-700 bg-black/80 hover:border-cyan-500 hover:bg-cyan-900/20 transition-all rounded-sm"
+                      >
+                          <span className="text-cyan-600 font-mono text-xs group-hover:text-cyan-400">{'<<'}</span>
+                          <span className="text-gray-300 font-bold text-xs tracking-widest group-hover:text-white hidden md:inline">RETURN</span>
+                      </button>
 
-                  <div className="flex-none p-6 bg-black/95 border-b border-cyan-900/50 backdrop-blur-md z-50 flex flex-col items-center shadow-lg">
-                      <h2 className="text-4xl text-white font-display tracking-[0.2em] text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 drop-shadow-[0_0_10px_rgba(0,255,255,0.3)] mb-2">
-                          SELECT OPERATOR
-                      </h2>
-                      <div className="h-1 w-32 bg-cyan-500/50 rounded-full"></div>
+                      <div className="flex flex-col items-center pointer-events-none">
+                          <h2 className="text-2xl md:text-4xl text-white font-display tracking-[0.2em] text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 drop-shadow-[0_0_10px_rgba(0,255,255,0.3)] mb-2 text-center">
+                              SELECT OPERATOR
+                          </h2>
+                          <div className="h-1 w-32 bg-cyan-500/50 rounded-full"></div>
+                      </div>
                   </div>
 
-                  <div className="flex-1 overflow-y-auto custom-scrollbar p-6 flex items-center justify-center">
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full max-w-7xl">
+                  <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-6 flex flex-col z-0">
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 w-full max-w-7xl m-auto min-h-min">
                           {CHARACTERS.map((char) => {
                               const stats = CHAR_STATS[char.id] || { off: 5, def: 5, spd: 5, util: 5 };
                               const isSelected = bindingState?.charId === char.id;
@@ -856,7 +1117,7 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
                                       onMouseLeave={handleMouseLeave}
                                       disabled={!!bindingState}
                                       className={`
-                                          relative group border rounded-xl p-1 transition-all duration-300 flex flex-col overflow-hidden text-left h-full min-h-[480px]
+                                          relative group border rounded-xl p-1 transition-all duration-300 flex flex-col overflow-hidden text-left h-full min-h-[350px] md:min-h-[480px]
                                           ${isSelected 
                                               ? 'border-cyan-400 bg-cyan-950/30 scale-105 z-10 shadow-[0_0_50px_rgba(0,255,255,0.2)]' 
                                               : isDimmed 
@@ -865,12 +1126,12 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
                                           }
                                       `}
                                   >
-                                      <div className="flex-1 flex flex-col bg-black/40 rounded-lg p-5 relative z-10 h-full">
+                                      <div className="flex-1 flex flex-col bg-black/40 rounded-lg p-4 md:p-5 relative z-10 h-full">
                                           {/* HEADER */}
                                           <div className="flex justify-between items-start mb-4 border-b border-white/10 pb-2">
                                               <div>
                                                   <div className="text-xs font-mono text-cyan-600 mb-1 tracking-widest uppercase">{char.tag} CLASS</div>
-                                                  <div className="text-2xl font-display font-bold text-white tracking-wider group-hover:text-cyan-200 transition-colors">{char.name}</div>
+                                                  <div className="text-xl md:text-2xl font-display font-bold text-white tracking-wider group-hover:text-cyan-200 transition-colors">{char.name}</div>
                                               </div>
                                               <div className="text-3xl opacity-50 group-hover:opacity-100 transition-opacity grayscale group-hover:grayscale-0">
                                                   <div className="w-10 h-10 border border-white/20 rounded flex items-center justify-center bg-white/5">
@@ -942,6 +1203,7 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
                               );
                           })}
                       </div>
+                      <div className="h-8 shrink-0" />
                   </div>
               </div>
           )}
@@ -991,15 +1253,15 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
 
           {status === GameStatus.LEVEL_UP && (
               <div className="absolute inset-0 z-[60] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto animate-in fade-in zoom-in-95 duration-200">
-                  <div className="w-full max-w-4xl">
-                      <div className="text-center mb-8">
+                  <div className="w-full max-w-4xl max-h-full overflow-y-auto">
+                      <div className="text-center mb-6 md:mb-8">
                           <div className="text-cyan-500 font-mono text-sm tracking-[0.5em] mb-2 animate-pulse">SYSTEM UPGRADE</div>
-                          <h2 className="text-5xl font-display font-bold text-white tracking-wider drop-shadow-[0_0_15px_rgba(0,255,255,0.5)]">
+                          <h2 className="text-4xl md:text-5xl font-display font-bold text-white tracking-wider drop-shadow-[0_0_15px_rgba(0,255,255,0.5)]">
                               CHOOSE PROTOCOL
                           </h2>
                       </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 pb-20 md:pb-0">
                           {upgradeOptions.map((option, index) => (
                               <button
                                   key={index}
@@ -1007,7 +1269,7 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
                                   className={`
                                       group relative p-1 transition-all duration-300 hover:-translate-y-2 hover:shadow-[0_0_30px_rgba(0,0,0,0.5)]
                                       ${RARITY_STYLES[option.rarity] || 'border-gray-700 bg-gray-900'}
-                                      border-2 rounded-xl overflow-hidden text-left h-full
+                                      border-2 rounded-xl overflow-hidden text-left h-full min-h-[250px]
                                   `}
                               >
                                   <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent pointer-events-none" />
@@ -1045,8 +1307,11 @@ const GameInner: React.FC<{ game: ReturnType<typeof useGameState> }> = ({ game }
                                           </div>
                                       )}
                                       
-                                      <div className="mt-4 text-[10px] text-gray-500 font-mono text-right opacity-0 group-hover:opacity-100 transition-opacity">
+                                      <div className="mt-4 text-[10px] text-gray-500 font-mono text-right opacity-0 group-hover:opacity-100 transition-opacity hidden md:block">
                                           [PRESS {index + 1}]
+                                      </div>
+                                      <div className="mt-4 text-[10px] text-gray-500 font-mono text-right md:hidden opacity-50">
+                                          TAP TO SELECT
                                       </div>
                                   </div>
                               </button>

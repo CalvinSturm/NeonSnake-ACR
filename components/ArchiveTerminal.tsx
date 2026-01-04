@@ -21,6 +21,7 @@ export const ArchiveTerminal: React.FC<ArchiveTerminalProps> = ({ onClose }) => 
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list'); 
   
   const [unlockedFiles, setUnlockedFiles] = useState<string[]>([]);
+  const [isMobileCAI, setIsMobileCAI] = useState(false); // Toggle for mobile
 
   useEffect(() => {
     const timer = setTimeout(() => setBootSequence(false), 800);
@@ -66,7 +67,6 @@ export const ArchiveTerminal: React.FC<ArchiveTerminalProps> = ({ onClose }) => 
 
   const handleFileClick = (file: VirtualFile) => {
     if (file.type === 'dir') {
-      // For now, directories inside ARCHIVE are locked
       audio.play('ARCHIVE_LOCK'); 
       return;
     }
@@ -124,37 +124,47 @@ export const ArchiveTerminal: React.FC<ArchiveTerminalProps> = ({ onClose }) => 
   }
 
   return (
-    <div className={`absolute inset-0 bg-[#020502] z-50 flex flex-col font-mono text-sm md:text-base text-green-500 p-4 md:p-8 overflow-hidden transition-all duration-75 pointer-events-auto selection:bg-green-900 selection:text-white`}>
+    <div className={`absolute inset-0 bg-[#020502] z-50 flex flex-col font-mono text-sm md:text-base text-green-500 p-2 md:p-8 overflow-hidden transition-all duration-75 pointer-events-auto selection:bg-green-900 selection:text-white`}>
       
       {/* ── CRT SCANLINES ── */}
       <div className="absolute inset-0 pointer-events-none z-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.1)_50%),linear-gradient(90deg,rgba(255,0,0,0.03),rgba(0,255,0,0.01),rgba(0,0,255,0.03))] bg-[length:100%_4px,3px_100%] opacity-20"></div>
       
       {/* ────────────────── HEADER ────────────────── */}
-      <div className="flex justify-between items-end border-b-2 border-green-800 pb-4 mb-6 shrink-0 relative z-10">
-        <div>
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end border-b-2 border-green-800 pb-4 mb-4 md:mb-6 shrink-0 relative z-10 gap-4 md:gap-0">
+        <div className="w-full md:w-auto">
           <div className="text-[10px] text-green-800 tracking-widest mb-1 flex items-center gap-2">
               <span>SYSTEM_ARCHIVE // OMEGA_ACTUAL</span>
               <span className="text-green-900">|</span>
-              <span className="text-green-600">OPERATOR INTERFACE LAYER INITIALIZED</span>
+              <span className="text-green-600">OPERATOR INTERFACE LAYER</span>
           </div>
-          <div className="text-2xl font-bold flex items-center gap-3">
+          <div className="text-xl md:text-2xl font-bold flex flex-wrap items-center gap-2 md:gap-3">
              <span className="animate-pulse">_MEMORY_MODULES</span>
-             <span className="text-xs border border-green-800 px-2 py-0.5 rounded bg-green-900/20 text-green-600 font-mono">
+             <span className="text-xs border border-green-800 px-2 py-0.5 rounded bg-green-900/20 text-green-600 font-mono truncate max-w-[200px]">
                  {visiblePath}
              </span>
           </div>
         </div>
-        <div className="text-right flex flex-col items-end gap-2">
+        
+        <div className="w-full md:w-auto text-right flex flex-row-reverse md:flex-col items-center md:items-end justify-between gap-2">
           <div className="text-[10px] text-green-700">ENCRYPTION_TIER: {capabilities.aiModuleTier}</div>
           <div className="flex gap-2">
              {!isVirtualRoot && !selectedFile && (
                  <button 
                     onClick={() => setViewMode(prev => prev === 'list' ? 'grid' : 'list')}
-                    className="hover:bg-green-900/50 text-green-600 hover:text-white px-3 py-1 border border-green-800 text-xs tracking-widest transition-colors"
+                    className="hover:bg-green-900/50 text-green-600 hover:text-white px-2 py-1 md:px-3 border border-green-800 text-xs tracking-widest transition-colors"
                  >
-                    [ VIEW: {viewMode.toUpperCase()} ]
+                    [ {viewMode.toUpperCase()} ]
                  </button>
              )}
+             
+             {/* Mobile CAI Toggle */}
+             <button
+                className="md:hidden hover:bg-green-900/50 text-green-600 hover:text-white px-2 py-1 border border-green-800 text-xs tracking-widest transition-colors"
+                onClick={() => setIsMobileCAI(!isMobileCAI)}
+             >
+                {isMobileCAI ? '[ HIDE CAI ]' : '[ SHOW CAI ]'}
+             </button>
+
              <button onClick={handleBack} className="hover:bg-green-900/50 text-green-600 hover:text-white px-4 py-1 border border-green-800 text-xs tracking-widest transition-colors">
                 [ {currentPath === VIRTUAL_ROOT ? 'EJECT' : 'RETURN'} ]
              </button>
@@ -163,15 +173,15 @@ export const ArchiveTerminal: React.FC<ArchiveTerminalProps> = ({ onClose }) => 
       </div>
 
       {/* ────────────────── MAIN LAYOUT ────────────────── */}
-      <div className="flex-1 flex min-h-0 relative z-10 gap-4">
+      <div className="flex-1 flex flex-col md:flex-row min-h-0 relative z-10 gap-4 overflow-hidden">
           
           {/* LEFT: CONTENT BROWSER */}
-          <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative pr-2">
+          <div className={`flex-1 flex flex-col min-h-0 overflow-hidden relative pr-2 ${isMobileCAI ? 'hidden md:flex' : 'flex'}`}>
               
               {/* ── MODE 1: VIRTUAL ROOT (DESKTOP) ── */}
               {isVirtualRoot ? (
                   <div className="flex-1 overflow-y-auto p-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
-                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                           {Object.values(VIRTUAL_DIRECTORIES).map((dir) => (
                               <button
                                   key={dir.id}
@@ -205,10 +215,10 @@ export const ArchiveTerminal: React.FC<ArchiveTerminalProps> = ({ onClose }) => 
               
               /* ── MODE 2: FILE VIEWER ── */
               selectedFile ? (
-                <div className="flex-1 flex flex-col min-h-0 bg-green-950/10 border border-green-800 p-4 relative animate-in fade-in zoom-in-95 duration-200 z-20">
-                  <div className="flex justify-between items-start mb-4 border-b border-green-800 pb-2">
+                <div className="flex-1 flex flex-col min-h-0 bg-green-950/10 border border-green-800 p-2 md:p-4 relative animate-in fade-in zoom-in-95 duration-200 z-20">
+                  <div className="flex flex-col md:flex-row justify-between items-start mb-4 border-b border-green-800 pb-2 gap-2">
                     <div>
-                      <div className="text-xl font-bold text-white flex items-center gap-2">
+                      <div className="text-lg md:text-xl font-bold text-white flex items-center gap-2">
                           <span className="text-green-600 text-sm">READING_MEMORY:</span> {selectedFile.name}
                       </div>
                       <div className="text-xs text-green-600 font-mono mt-1">
@@ -218,13 +228,13 @@ export const ArchiveTerminal: React.FC<ArchiveTerminalProps> = ({ onClose }) => 
                     </div>
                     <button 
                       onClick={closeFile}
-                      className="text-green-500 hover:text-white border border-green-700 hover:bg-green-900 px-4 py-2 text-xs font-bold tracking-widest"
+                      className="text-green-500 hover:text-white border border-green-700 hover:bg-green-900 px-4 py-2 text-xs font-bold tracking-widest self-end md:self-auto"
                     >
                       [ CLOSE ]
                     </button>
                   </div>
 
-                  <div className="flex-1 overflow-y-auto whitespace-pre-wrap font-mono text-sm leading-relaxed text-green-300 custom-scrollbar p-2 bg-black/20">
+                  <div className="flex-1 overflow-y-auto whitespace-pre-wrap font-mono text-xs md:text-sm leading-relaxed text-green-300 custom-scrollbar p-2 bg-black/20">
                     {!unlockedFiles.includes(selectedFile.id) && selectedFile.type === 'file' ? (
                         <div className="flex flex-col gap-4 h-full justify-center items-center">
                             <div className="text-4xl text-gray-700 mb-4 animate-pulse">🔒</div>
@@ -277,7 +287,8 @@ export const ArchiveTerminal: React.FC<ArchiveTerminalProps> = ({ onClose }) => 
 
                   {viewMode === 'list' ? (
                     <div className="flex flex-col gap-1 pb-20">
-                        <div className="flex px-2 text-[10px] text-green-800 border-b border-green-900/50 pb-2 mb-2 font-bold tracking-wider">
+                        {/* Header Row (Hidden on mobile) */}
+                        <div className="hidden md:flex px-2 text-[10px] text-green-800 border-b border-green-900/50 pb-2 mb-2 font-bold tracking-wider">
                             <div className="w-24">PERMISSIONS</div>
                             <div className="w-24 text-right pr-4">SIZE</div>
                             <div className="w-32">MODIFIED</div>
@@ -295,23 +306,25 @@ export const ArchiveTerminal: React.FC<ArchiveTerminalProps> = ({ onClose }) => 
                                     key={file.name}
                                     onClick={() => handleFileClick(file)}
                                     className={`
-                                        flex items-center px-2 py-2 border-b border-green-900/30 font-mono text-xs cursor-pointer transition-colors
+                                        flex flex-col md:flex-row md:items-center px-2 py-3 md:py-2 border-b border-green-900/30 font-mono text-xs cursor-pointer transition-colors gap-1 md:gap-0
                                         ${isLocked ? 'text-gray-600 hover:bg-red-950/10' : 'text-green-400 hover:bg-green-900/20 hover:text-white'}
                                     `}
                                 >
-                                    <div className="w-24 opacity-60 font-mono">{file.permissions || '-r--------'}</div>
-                                    <div className="w-24 text-right pr-4 opacity-60 font-mono">{file.sizeDisplay}</div>
-                                    <div className="w-32 opacity-60">{file.modified.split(' ')[0]}</div>
+                                    <div className="hidden md:block w-24 opacity-60 font-mono">{file.permissions || '-r--------'}</div>
+                                    <div className="hidden md:block w-24 text-right pr-4 opacity-60 font-mono">{file.sizeDisplay}</div>
+                                    <div className="hidden md:block w-32 opacity-60">{file.modified.split(' ')[0]}</div>
                                     <div className="flex-1 font-bold flex items-center gap-2">
-                                        <span>{isDir ? '📁' : isMemoryLocked ? '🔒' : isEncrypted ? '🔐' : '📄'}</span>
-                                        {isMemoryLocked ? 'CORRUPTED_DATA_SEGMENT' : file.name}
+                                        <span className="text-base">{isDir ? '📁' : isMemoryLocked ? '🔒' : isEncrypted ? '🔐' : '📄'}</span>
+                                        <span className="truncate">{isMemoryLocked ? 'CORRUPTED_DATA_SEGMENT' : file.name}</span>
+                                        {/* Mobile Metadata */}
+                                        <div className="md:hidden ml-auto text-[10px] opacity-50">{file.sizeDisplay}</div>
                                     </div>
                                 </div>
                             );
                         })}
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pb-20">
+                    <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-4 pb-20">
                       {sortedFiles.map((file) => {
                         const isMemoryLocked = !unlockedFiles.includes(file.id) && file.type === 'file';
                         const isEncrypted = file.encrypted && capabilities.aiModuleTier !== 'ORACLE';
@@ -331,7 +344,7 @@ export const ArchiveTerminal: React.FC<ArchiveTerminalProps> = ({ onClose }) => 
                             key={file.name} 
                             onClick={() => handleFileClick(file)}
                             className={`
-                              relative group h-32 border-2 flex flex-col p-3 transition-all duration-200
+                              relative group h-28 md:h-32 border-2 flex flex-col p-3 transition-all duration-200
                               ${colorClass} ${hoverClass}
                             `}
                           >
@@ -349,7 +362,7 @@ export const ArchiveTerminal: React.FC<ArchiveTerminalProps> = ({ onClose }) => 
                                 )}
                             </div>
                             <div className="mt-auto w-full text-left">
-                                <div className={`text-sm font-bold truncate ${isLocked ? 'text-gray-500' : 'text-green-400 group-hover:text-white'}`}>
+                                <div className={`text-xs md:text-sm font-bold truncate ${isLocked ? 'text-gray-500' : 'text-green-400 group-hover:text-white'}`}>
                                     {isMemoryLocked ? 'CORRUPTED' : file.name}
                                 </div>
                             </div>
@@ -370,23 +383,11 @@ export const ArchiveTerminal: React.FC<ArchiveTerminalProps> = ({ onClose }) => 
           </div>
 
           {/* RIGHT: CAI-OS PANEL */}
-          <CAIPanel capabilities={capabilities} />
+          <div className={`${isMobileCAI ? 'flex' : 'hidden'} md:flex w-full md:w-80 h-full border-t md:border-t-0 md:border-l border-green-900/50`}>
+              <CAIPanel capabilities={capabilities} />
+          </div>
 
       </div>
-
-      {/* ── AMBIENT OVERLAYS ── */}
-      {/* Dev backdoor to toggle capability */}
-      <div 
-        className="absolute bottom-0 left-0 w-10 h-10 z-50 cursor-help opacity-0"
-        onClick={() => {
-            setCapabilities(prev => ({
-                aiModuleTier: prev.aiModuleTier === 'ORACLE' ? 'MISSING' : 'ORACLE'
-            }));
-            audio.play('POWER_UP');
-        }}
-        title="[DEBUG] Toggle AI Tier"
-      />
-
     </div>
   );
 };

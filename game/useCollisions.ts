@@ -9,6 +9,15 @@ import { Point, GameStatus, FoodType, CameraMode } from '../types';
 import { GRID_COLS, GRID_ROWS, COLORS, DEFAULT_SETTINGS } from '../constants';
 import { audio } from '../utils/audio';
 
+// Helper: Point line distance squared
+function distToSegmentSquared(p: Point, v: Point, w: Point) {
+  const l2 = (w.x - v.x)**2 + (w.y - v.y)**2;
+  if (l2 == 0) return (p.x - v.x)**2 + (p.y - v.y)**2;
+  let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
+  t = Math.max(0, Math.min(1, t));
+  return (p.x - v.x - t * (w.x - v.x))**2 + (p.y - v.y - t * (w.y - v.y))**2;
+}
+
 export function useCollisions(
   game: ReturnType<typeof useGameState>,
   combat: ReturnType<typeof useCombat>,
@@ -23,6 +32,7 @@ export function useCollisions(
     foodRef,
     terminalsRef,
     projectilesRef,
+    hitboxesRef, // Added
     status,
     setStatus,
     statsRef,
@@ -167,6 +177,26 @@ export function useCollisions(
             e.y += Math.sin(ang) * 2;
         }
 
+        // SPACESHIP BOSS BEAM CHECK
+        if (e.bossConfigId === 'SPACESHIP_BOSS' && e.bossState?.stateId === 'FIRE_CANNON') {
+            const angle = e.angle || 0;
+            const beamLength = 60; // Grid units (1200px)
+            const beamWidth = 1.0; // Grid units
+            
+            // Beam Start (Offset from center roughly to nose)
+            const startX = e.x + Math.cos(angle) * 3; 
+            const startY = e.y + Math.sin(angle) * 3;
+            const endX = startX + Math.cos(angle) * beamLength;
+            const endY = startY + Math.sin(angle) * beamLength;
+            
+            // Distance from head to beam segment
+            const distSq = distToSegmentSquared({x: head.x, y: head.y}, {x: startX, y: startY}, {x: endX, y: endY});
+            
+            if (distSq < (beamWidth/2)**2) {
+                takeDamage(40, 'PARTICLE_BEAM');
+            }
+        }
+
         if (traitsRef.current.collisionDodgeChance > 0 && Math.random() < traitsRef.current.collisionDodgeChance) {
              return; 
         }
@@ -230,7 +260,28 @@ export function useCollisions(
         }
     });
 
-  }, [status, snakeRef, enemiesRef, projectilesRef, traitsRef, tailIntegrityRef, fx, damageEnemy, takeDamage, createParticles]);
+    // C. Snake vs Boss Hitboxes (Zones)
+    // Hitboxes are simple AABBs defined in grid coordinates
+    hitboxesRef.current.forEach(h => {
+        const hCenterX = h.x; 
+        const hCenterY = h.y;
+        // Half-extents
+        const hw = h.width / 2;
+        const hh = h.height / 2;
+        
+        const snakeCenterX = head.x + 0.5;
+        const snakeCenterY = head.y + 0.5;
+        
+        // Simple AABB vs Point check (Snake head center)
+        if (
+            Math.abs(snakeCenterX - hCenterX) < hw + 0.3 && // 0.3 buffer for snake size
+            Math.abs(snakeCenterY - hCenterY) < hh + 0.3
+        ) {
+             takeDamage(h.damage, 'HIGH_ENERGY_IMPACT');
+        }
+    });
+
+  }, [status, snakeRef, enemiesRef, projectilesRef, hitboxesRef, traitsRef, tailIntegrityRef, fx, damageEnemy, takeDamage, createParticles]);
 
   // 5. Terminals
   const updateCollisionLogic = useCallback((dt: number) => {

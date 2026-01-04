@@ -5,6 +5,7 @@ import { COLORS } from '../../../constants';
 import { drawShadow, drawSphere } from '../primitives';
 import { renderBoss } from '../entities/renderBoss';
 import { renderWarden } from '../entities/renderWarden';
+import { renderSpaceship } from '../entities/renderSpaceship';
 import { renderEnemy } from '../entities/renderEnemy';
 import { renderSnake } from '../entities/renderSnake';
 
@@ -167,6 +168,8 @@ export const renderEntities = (
             // Dispatch based on config ID
             if (e.bossConfigId === 'WARDEN_07') {
                 renderWarden(ctx, e, now, gridSize, !!reduceFlashing);
+            } else if (e.bossConfigId === 'SPACESHIP_BOSS') {
+                renderSpaceship(ctx, e, gridSize, halfGrid, now, snake[0]);
             } else {
                 renderBoss(ctx, e, now, gridSize, halfGrid, snake[0], !!reduceFlashing);
             }
