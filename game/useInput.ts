@@ -26,7 +26,9 @@ export function useInput(
     jumpIntentRef, 
     cameraControlsEnabled,
     stopIntentRef,
-    settings // Access settings for invert flag
+    settings, // Access settings for invert flag
+    setModalState,
+    stageArmedRef
   } = game;
 
   const { queueCameraIntent } = useCameraController(game);
@@ -42,6 +44,18 @@ export function useInput(
   const handleInput = useCallback((newDir: Direction) => {
     // BLOCK INPUT IF MODAL OPEN
     if (modalState !== 'NONE') return;
+
+    // READY STATE START
+    if (status === GameStatus.READY) {
+        setStatus(GameStatus.PLAYING);
+        stageArmedRef.current = true;
+        // Also queue the direction if valid
+        if (newDir) {
+             directionRef.current = newDir;
+             directionQueueRef.current = [];
+        }
+        return;
+    }
 
     // SIDE SCROLL OVERRIDE: 
     // In Side Scroll mode, UP acts as Jump, not directional change.
@@ -68,7 +82,7 @@ export function useInput(
         directionQueueRef.current.push(newDir);
       }
     }
-  }, [directionRef, directionQueueRef, modalState, cameraRef, jumpIntentRef]);
+  }, [directionRef, directionQueueRef, modalState, cameraRef, jumpIntentRef, status, setStatus, stageArmedRef]);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     // 1. SETTINGS OVERRIDE (Must close settings first)
@@ -77,6 +91,16 @@ export function useInput(
             closeSettings();
         }
         return; // Block all other input
+    }
+    
+    // CAMERA EDIT OVERRIDE
+    if (status === GameStatus.CAMERA_EDIT) {
+        if (e.key === 'Escape') {
+             // Return to Settings/Pause
+             setStatus(GameStatus.PAUSED);
+             setModalState('SETTINGS');
+             return;
+        }
     }
 
     // 2. MENU NAVIGATION (Escape Back)
@@ -91,7 +115,14 @@ export function useInput(
         }
     }
 
-    // 3. RESUME / PAUSE CONTROLS
+    // 3. READY STATE (Any Key to Start)
+    if (status === GameStatus.READY) {
+        setStatus(GameStatus.PLAYING);
+        stageArmedRef.current = true;
+        return;
+    }
+
+    // 4. RESUME / PAUSE CONTROLS
     // Allow skipping countdown with Space or Enter
     if (status === GameStatus.RESUMING && (e.key === ' ' || e.key === 'Enter')) {
          setResumeCountdown(0);
@@ -115,7 +146,7 @@ export function useInput(
         }
     }
 
-    // 4. GAME OVER
+    // 5. GAME OVER
     if (status === GameStatus.GAME_OVER) {
       if (e.key === ' ' || e.key === 'Enter') {
         handleStartClick();
@@ -123,7 +154,7 @@ export function useInput(
       return;
     }
 
-    // 5. LEVEL UP
+    // 6. LEVEL UP
     if (status === GameStatus.LEVEL_UP) {
       if (e.key === '1' && upgrades[0])
         applyUpgrade(upgrades[0].id as UpgradeId);
@@ -134,8 +165,11 @@ export function useInput(
       return;
     }
 
-    // 6. CAMERA CONTROLS (GATED)
-    if (status === GameStatus.PLAYING && cameraControlsEnabled) {
+    // 7. CAMERA CONTROLS (GATED)
+    // Enabled during PLAYING (if allowed) OR during CAMERA_EDIT mode
+    const isCameraAllowed = (status === GameStatus.PLAYING && cameraControlsEnabled) || status === GameStatus.CAMERA_EDIT;
+    
+    if (isCameraAllowed) {
         if (e.key === '=' || e.key === '+') {
             queueCameraIntent({ type: 'ADJUST_ZOOM', delta: 0.1, duration: 150 });
         }
@@ -146,30 +180,28 @@ export function useInput(
              queueCameraIntent({ type: 'RESET_DEFAULT', duration: 400 });
         }
         
-        // Rotation (Q/E)
-        const invertMult = settings.invertRotation ? -1 : 1;
+        // TILT CONTROLS ([ and ])
+        if (e.key === '[') {
+            queueCameraIntent({ type: 'ADJUST_TILT', delta: -0.1, duration: 150 });
+        }
+        if (e.key === ']') {
+            queueCameraIntent({ type: 'ADJUST_TILT', delta: 0.1, duration: 150 });
+        }
         
-        if (e.key === 'q' || e.key === 'Q') {
-            queueCameraIntent({ type: 'ROTATE', angle: cameraRef.current.rotation - (Math.PI / 4) * invertMult, duration: 300 });
-        }
-        if (e.key === 'e' || e.key === 'E') {
-            queueCameraIntent({ type: 'ROTATE', angle: cameraRef.current.rotation + (Math.PI / 4) * invertMult, duration: 300 });
-        }
-
         // Cycle Mode (C)
         if (e.key === 'c' || e.key === 'C') {
             queueCameraIntent({ type: 'CYCLE_MODE' });
         }
     }
 
-    // 7. STOP MECHANIC (Shift)
+    // 8. STOP MECHANIC (Shift)
     if (status === GameStatus.PLAYING && modalState === 'NONE') {
         if (e.key === 'Shift') {
             stopIntentRef.current = true;
         }
     }
 
-    // 8. GAMEPLAY (Only if playing and no modal)
+    // 9. GAMEPLAY (Only if playing and no modal)
     if (status !== GameStatus.PLAYING || modalState !== 'NONE') return;
 
     switch (e.key) {
@@ -214,7 +246,9 @@ export function useInput(
     queueCameraIntent,
     cameraControlsEnabled,
     stopIntentRef,
-    settings.invertRotation
+    settings.invertRotation,
+    setModalState,
+    stageArmedRef
   ]);
 
   const handleKeyUp = useCallback((e: KeyboardEvent) => {
@@ -225,24 +259,26 @@ export function useInput(
 
   useEffect(() => {
     // ─── MOUSE / WHEEL HANDLERS ───
+    const isCameraAllowed = (status === GameStatus.PLAYING && cameraControlsEnabled) || status === GameStatus.CAMERA_EDIT;
+
     const handleWheel = (e: WheelEvent) => {
-        if (status !== GameStatus.PLAYING || !cameraControlsEnabled) return;
+        if (!isCameraAllowed) return;
         
         const delta = Math.sign(e.deltaY) * -0.2; // Invert scroll for intuitive zoom (Up = In)
         queueCameraIntent({ type: 'ADJUST_ZOOM', delta, duration: 150 });
     };
 
     const handleMouseDown = (e: MouseEvent) => {
-        if (status !== GameStatus.PLAYING || !cameraControlsEnabled) return;
-
-        // Middle Mouse Button (1) -> Rotation
-        if (e.button === 1) {
-            e.preventDefault(); 
-            isDraggingRef.current = true;
-            lastMousePosRef.current = { x: e.clientX, y: e.clientY };
+        // Special case for READY state: Mouse click starts game
+        if (status === GameStatus.READY) {
+            setStatus(GameStatus.PLAYING);
+            stageArmedRef.current = true;
+            return;
         }
-        
-        // Right Mouse Button (2) -> Pan (Only in Manual or Force Override)
+
+        if (!isCameraAllowed) return;
+
+        // Right Mouse Button (2) -> Pan
         if (e.button === 2) {
             isPanningRef.current = true;
             lastMousePosRef.current = { x: e.clientX, y: e.clientY };
@@ -250,7 +286,7 @@ export function useInput(
     };
 
     const handleMouseMove = (e: MouseEvent) => {
-        if (status !== GameStatus.PLAYING || !cameraControlsEnabled) return;
+        if (!isCameraAllowed) return;
 
         // Correct delta based on current viewport scale
         const scale = settings.gameScale || 1.0;
@@ -259,29 +295,15 @@ export function useInput(
         
         const cam = cameraRef.current;
 
-        if (isDraggingRef.current) {
-            // Rotation Logic
-            const sensitivity = 0.01;
-            const invertMult = settings.invertRotation ? -1 : 1;
-            const newRotation = cam.rotation + (dx * sensitivity * invertMult);
-            
-            queueCameraIntent({ type: 'ROTATE', angle: newRotation, duration: 0 }); // Instant
-            
-            lastMousePosRef.current = { x: e.clientX, y: e.clientY };
-        } 
-        else if (isPanningRef.current) {
-            // Panning Logic (Relative to Rotation)
-            const r = -cam.rotation;
-            const cos = Math.cos(r);
-            const sin = Math.sin(r);
-            
-            const worldDx = (dx * cos - dy * sin);
-            const worldDy = (dx * sin + dy * cos);
+        if (isPanningRef.current) {
+            // Panning Logic (Relative to Tilt)
+            // If tilted, Y mouse movement should cover more world Y
+            const tiltScale = Math.cos(cam.tilt || 0);
             
             queueCameraIntent({ 
                 type: 'PAN_DELTA', 
-                dx: worldDx / cam.zoom, 
-                dy: worldDy / cam.zoom 
+                dx: dx / cam.zoom, 
+                dy: (dy / tiltScale) / cam.zoom 
             });
             
             lastMousePosRef.current = { x: e.clientX, y: e.clientY };
@@ -294,7 +316,7 @@ export function useInput(
     };
     
     const handleContextMenu = (e: MouseEvent) => {
-        if (status === GameStatus.PLAYING && cameraControlsEnabled) e.preventDefault();
+        if (isCameraAllowed) e.preventDefault();
     }
 
     window.addEventListener('keydown', handleKeyDown);
@@ -314,7 +336,7 @@ export function useInput(
         window.removeEventListener('mouseup', handleMouseUp);
         window.removeEventListener('contextmenu', handleContextMenu);
     };
-  }, [handleKeyDown, handleKeyUp, status, cameraRef, queueCameraIntent, cameraControlsEnabled, settings.invertRotation, settings.gameScale]);
+  }, [handleKeyDown, handleKeyUp, status, cameraRef, queueCameraIntent, cameraControlsEnabled, settings.invertRotation, settings.gameScale, setStatus, stageArmedRef]);
 
   return { handleInput };
 }

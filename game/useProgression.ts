@@ -4,10 +4,11 @@ import { useGameState } from './useGameState';
 import { UpgradeId } from '../upgrades/types';
 import { XP_TO_LEVEL_UP, PASSIVE_SCORE_PER_SEC, COMBO_WINDOW, DIFFICULTY_CONFIGS, RARITY_MULTIPLIERS, UPGRADE_BASES } from '../constants';
 import { UPGRADE_DEFINITIONS } from '../upgrades/factories';
-import { GameStatus, Difficulty, WeaponStats, TerminalType, EnemyType, UpgradeRarity } from '../types';
+import { GameStatus, Difficulty, WeaponStats, TerminalType, EnemyType, UpgradeRarity, FoodType } from '../types';
 import { DESCRIPTOR_REGISTRY } from './descriptors';
 import { unlockMemoryId } from './memory/MemorySystem';
 import { ROOT_FILESYSTEM } from '../archive/data';
+import { applyWeaponGrowth } from './weaponScaling';
 
 export interface ProgressionAPI {
   applyUpgrade: (id: UpgradeId, rarity?: UpgradeRarity) => void;
@@ -83,7 +84,9 @@ export function useProgression(game: ReturnType<typeof useGameState>): Progressi
     setResumeCountdown,
     syncUiStats, // Import sync
     unlockCosmetic, // Using the cosmetic toaster for memory reveals
-    addNeonFragments // New Currency
+    addNeonFragments, // New Currency
+    traitsRef,
+    tailIntegrityRef // For Regen
   } = game;
 
   const unlockNextDifficulty = useCallback(() => {
@@ -165,7 +168,13 @@ export function useProgression(game: ReturnType<typeof useGameState>): Progressi
                 }
             }
             // 🎲 ROLL RARITY HERE (Using LUCK)
-            const rarity = rollRarity(pickedId, stats.luck);
+            let rarity = rollRarity(pickedId, stats.luck);
+            
+            // Force Red Rarity for Override Protocol
+            if (pickedId === 'OVERRIDE_PROTOCOL') {
+                rarity = 'OVERCLOCKED';
+            }
+            
             options.push(UPGRADE_DEFINITIONS[pickedId](context, rarity));
             currentPool = currentPool.filter(id => id !== pickedId);
         }
@@ -179,7 +188,7 @@ export function useProgression(game: ReturnType<typeof useGameState>): Progressi
     setUpgradeOptions(options);
   }, [setStatus, audioEventsRef, levelRef, difficulty, uiCombo, statsRef, setUpgradeOptions]);
 
-  // 🔒 RESTORED XP AUTHORITY
+  // 🔒 RESTORE XP AUTHORITY
   const gainXp = useCallback((amount: number) => {
       // Invariant 1: Always increment XP
       xpRef.current += amount;
@@ -207,7 +216,11 @@ export function useProgression(game: ReturnType<typeof useGameState>): Progressi
 
   const onFoodConsumed = useCallback(({ type, byMagnet, value }: { type: string, byMagnet: boolean, value?: number }) => {
       lastEatTimeRef.current = gameTimeRef.current;
-      if (uiCombo < 10) setUiCombo(c => c + 1);
+      
+      // FIXED: Only increment combo for Normal Food (not XP orbs) to make combo skill-based
+      if ((type === FoodType.NORMAL || type === 'BONUS') && uiCombo < 10) {
+          setUiCombo(c => c + 1);
+      }
       
       const baseScore = 50;
       const comboMult = 1 + (uiCombo * 0.1);
@@ -292,15 +305,23 @@ export function useProgression(game: ReturnType<typeof useGameState>): Progressi
           }
       }
 
+      // MAJOR TRAIT: BULWARK (Hull Regen)
+      // Regenerate based on level scaling
+      if (traitsRef.current.regenPerLevel > 0) {
+          const regenAmount = traitsRef.current.regenPerLevel * levelRef.current * (dt / 1000);
+          tailIntegrityRef.current = Math.min(100, tailIntegrityRef.current + regenAmount);
+      }
+
       const inc = PASSIVE_SCORE_PER_SEC * (dt / 1000) * statsRef.current.scoreMultiplier;
       scoreRef.current += inc;
       stageScoreRef.current += inc;
       setUiScore(Math.floor(scoreRef.current));
       
+      // FIXED: Combo Counter Logic (Reset if window passed)
       if (uiCombo > 0 && gameTimeRef.current - lastEatTimeRef.current > COMBO_WINDOW) {
           setUiCombo(0);
       }
-  }, [statsRef, scoreRef, stageScoreRef, setUiScore, uiCombo, gameTimeRef, lastEatTimeRef, setUiCombo, game.stageReadyRef, game.pendingStatusRef]);
+  }, [statsRef, scoreRef, stageScoreRef, setUiScore, uiCombo, gameTimeRef, lastEatTimeRef, setUiCombo, game.stageReadyRef, game.pendingStatusRef, traitsRef, levelRef, tailIntegrityRef]);
 
   // 💡 UPGRADE APPLICATION (WITH RARITY SCALING)
   const applyUpgrade = useCallback((id: UpgradeId, rarity: UpgradeRarity = 'COMMON') => {
@@ -314,131 +335,59 @@ export function useProgression(game: ReturnType<typeof useGameState>): Progressi
     // 🛠️ OVERCLOCK EXCEPTION LOGIC
     if (id === 'OVERCLOCK' && rarity === 'OVERCLOCKED') {
         stats.maxWeaponSlots = Math.min(UPGRADE_BASES.MAX_WEAPON_SLOTS, stats.maxWeaponSlots + 1);
-        // Also apply the base overclock level bump below
     }
 
-    switch (id) {
-      // ── SCALARS ──
-      case 'SCALAR_DAMAGE':
-        stats.globalDamageMod += UPGRADE_BASES.SCALAR_DAMAGE * mod;
-        break;
-      case 'SCALAR_FIRE_RATE':
-        stats.globalFireRateMod += UPGRADE_BASES.SCALAR_FIRE_RATE * mod;
-        break;
-      case 'SCALAR_AREA':
-        stats.globalAreaMod += UPGRADE_BASES.SCALAR_AREA * mod;
-        break;
-      
-      // ── WEAPONS (Mod scales damage or stats) ──
-      case 'CANNON':
-        stats.weapon.cannonLevel++;
-        stats.weapon.cannonDamage += UPGRADE_BASES.CANNON_DMG * mod;
-        // Fire rate improvements diminish
-        stats.weapon.cannonFireRate = Math.max(100, stats.weapon.cannonFireRate - (UPGRADE_BASES.CANNON_FIRE_RATE_REDUCTION * mod));
-        if (stats.weapon.cannonLevel >= 5 && stats.weapon.cannonLevel % 5 === 0) stats.weapon.cannonProjectileCount++;
-        if (!stats.activeWeaponIds.includes('CANNON')) stats.activeWeaponIds.push('CANNON');
-        break;
-      case 'AURA':
-        // FIX: Acquisition vs Upgrade split to ensure consistent Level 1 stats
-        if (stats.weapon.auraLevel === 0) {
-            // First time acquisition: Set explicit base Level 1 stats
-            stats.weapon.auraLevel = 1;
-            stats.weapon.auraRadius = 2.5; 
-            stats.weapon.auraDamage = 15;
-        } else {
-            // Upgrade existing
-            stats.weapon.auraLevel++;
-            stats.weapon.auraRadius += UPGRADE_BASES.AURA_RADIUS * mod;
-            stats.weapon.auraDamage += UPGRADE_BASES.AURA_DMG * mod;
-        }
-        
-        // Safety: If radius is somehow effectively 0, restore base
-        if (stats.weapon.auraRadius < 1) stats.weapon.auraRadius = 2.5;
+    // ── SCALARS & UTILITY ──
+    if (id === 'SCALAR_DAMAGE') stats.globalDamageMod += UPGRADE_BASES.SCALAR_DAMAGE * mod;
+    else if (id === 'SCALAR_FIRE_RATE') stats.globalFireRateMod += UPGRADE_BASES.SCALAR_FIRE_RATE * mod;
+    else if (id === 'SCALAR_AREA') stats.globalAreaMod += UPGRADE_BASES.SCALAR_AREA * mod;
+    else if (id === 'SHIELD') { stats.shieldActive = true; setUiShield(true); }
+    else if (id === 'CRITICAL') { stats.critChance += UPGRADE_BASES.CRIT_CHANCE * mod; stats.critMultiplier += UPGRADE_BASES.CRIT_MULT * mod; }
+    else if (id === 'FOOD') stats.foodQualityMod += UPGRADE_BASES.FOOD_QUALITY * mod;
+    else if (id === 'TERMINAL_PROTOCOL') { stats.hackSpeedMod *= (1 + (UPGRADE_BASES.HACK_SPEED * mod)); stats.scoreMultiplier += UPGRADE_BASES.SCORE_MULT * mod; }
+    else if (id === 'OVERRIDE_PROTOCOL') stats.maxWeaponSlots = Math.min(UPGRADE_BASES.MAX_WEAPON_SLOTS, stats.maxWeaponSlots + 1);
+    
+    // ── WEAPON LEVELING ──
+    else {
+        // Handle Initialization Logic (Level 0 -> 1)
+        const key = WEAPON_STAT_MAP[id];
+        const isNewUnlock = key && stats.weapon[key] === 0;
 
-        if (!stats.activeWeaponIds.includes('AURA')) stats.activeWeaponIds.push('AURA');
-        break;
-      case 'MINES':
-        // Initialize base rate if acquiring for first time and it wasn't pre-set (e.g. by Rigger)
-        if (stats.weapon.mineLevel === 0 && stats.weapon.mineDropRate === 0) {
-             stats.weapon.mineDropRate = 5000; // Base rate for new adopters
+        if (isNewUnlock) {
+            // First time unlock: Set base stats
+            stats.weapon[key] = 1;
+            stats.activeWeaponIds.push(id);
+            
+            // Apply Base Constants for Level 1
+            if (id === 'CANNON') {
+                stats.weapon.cannonDamage = UPGRADE_BASES.CANNON_DMG;
+                stats.weapon.cannonFireRate = UPGRADE_BASES.CANNON_FIRE_RATE;
+            } else if (id === 'AURA') {
+                stats.weapon.auraDamage = UPGRADE_BASES.AURA_DMG;
+                stats.weapon.auraRadius = UPGRADE_BASES.AURA_RADIUS;
+            } else if (id === 'MINES') {
+                stats.weapon.mineDamage = UPGRADE_BASES.MINE_DMG;
+                stats.weapon.mineDropRate = UPGRADE_BASES.MINE_RATE;
+                stats.weapon.mineRadius = 2.5;
+            } else if (id === 'LIGHTNING') {
+                stats.weapon.chainLightningDamage = UPGRADE_BASES.LIGHTNING_DMG;
+                stats.weapon.chainLightningRange = UPGRADE_BASES.LIGHTNING_RANGE;
+            } else if (id === 'NANO_SWARM') {
+                stats.weapon.nanoSwarmDamage = UPGRADE_BASES.NANO_DMG;
+                stats.weapon.nanoSwarmCount = 1;
+            } else if (id === 'PRISM_LANCE') {
+                stats.weapon.prismLanceDamage = UPGRADE_BASES.PRISM_DMG;
+            } else if (id === 'NEON_SCATTER') {
+                stats.weapon.neonScatterDamage = UPGRADE_BASES.SCATTER_DMG;
+            } else if (id === 'VOLT_SERPENT') {
+                stats.weapon.voltSerpentDamage = UPGRADE_BASES.SERPENT_DMG;
+            } else if (id === 'PHASE_RAIL') {
+                stats.weapon.phaseRailDamage = UPGRADE_BASES.RAIL_DMG;
+            }
+        } else {
+            // Standard Level Up: Apply Scaling
+            applyWeaponGrowth(stats.weapon, id, rarity);
         }
-        
-        stats.weapon.mineLevel++;
-        stats.weapon.mineDamage += UPGRADE_BASES.MINE_DMG * mod;
-        stats.weapon.mineDropRate = Math.max(500, stats.weapon.mineDropRate - (UPGRADE_BASES.MINE_RATE_REDUCTION * mod));
-        if (!stats.activeWeaponIds.includes('MINES')) stats.activeWeaponIds.push('MINES');
-        break;
-      case 'LIGHTNING':
-        stats.weapon.chainLightningLevel++;
-        stats.weapon.chainLightningDamage += UPGRADE_BASES.LIGHTNING_DMG * mod; 
-        stats.weapon.chainLightningRange += UPGRADE_BASES.LIGHTNING_RANGE * mod;
-        if (!stats.activeWeaponIds.includes('LIGHTNING')) stats.activeWeaponIds.push('LIGHTNING');
-        break;
-      case 'NANO_SWARM':
-        stats.weapon.nanoSwarmLevel++;
-        stats.weapon.nanoSwarmCount += 1; 
-        stats.weapon.nanoSwarmDamage += UPGRADE_BASES.NANO_DMG * mod;
-        if (!stats.activeWeaponIds.includes('NANO_SWARM')) stats.activeWeaponIds.push('NANO_SWARM');
-        break;
-      case 'PRISM_LANCE':
-        stats.weapon.prismLanceLevel++;
-        stats.weapon.prismLanceDamage += UPGRADE_BASES.PRISM_DMG * mod;
-        if (!stats.activeWeaponIds.includes('PRISM_LANCE')) stats.activeWeaponIds.push('PRISM_LANCE');
-        break;
-      case 'NEON_SCATTER':
-        stats.weapon.neonScatterLevel++;
-        stats.weapon.neonScatterDamage += UPGRADE_BASES.SCATTER_DMG * mod;
-        if (!stats.activeWeaponIds.includes('NEON_SCATTER')) stats.activeWeaponIds.push('NEON_SCATTER');
-        break;
-      case 'VOLT_SERPENT':
-        stats.weapon.voltSerpentLevel++;
-        stats.weapon.voltSerpentDamage += UPGRADE_BASES.SERPENT_DMG * mod;
-        if (!stats.activeWeaponIds.includes('VOLT_SERPENT')) stats.activeWeaponIds.push('VOLT_SERPENT');
-        break;
-      case 'PHASE_RAIL':
-        stats.weapon.phaseRailLevel++;
-        stats.weapon.phaseRailDamage += UPGRADE_BASES.RAIL_DMG * mod;
-        if (!stats.activeWeaponIds.includes('PHASE_RAIL')) stats.activeWeaponIds.push('PHASE_RAIL');
-        break;
-        
-      // ── UTILITY / PASSIVE ──
-      case 'SHIELD':
-        stats.shieldActive = true;
-        setUiShield(true);
-        break;
-      case 'CRITICAL':
-        stats.critChance += UPGRADE_BASES.CRIT_CHANCE * mod;
-        stats.critMultiplier += UPGRADE_BASES.CRIT_MULT * mod;
-        break;
-      case 'FOOD':
-        stats.foodQualityMod += UPGRADE_BASES.FOOD_QUALITY * mod;
-        break;
-      case 'REFLECTOR_MESH':
-        stats.weapon.reflectorMeshLevel++;
-        break;
-      case 'GHOST_COIL':
-        stats.weapon.ghostCoilLevel++;
-        break;
-      case 'NEURAL_MAGNET':
-        stats.weapon.neuralMagnetLevel++;
-        break;
-      case 'OVERCLOCK':
-        stats.weapon.overclockLevel++;
-        break;
-      case 'ECHO_CACHE':
-        stats.weapon.echoCacheLevel++;
-        break;
-      case 'TERMINAL_PROTOCOL':
-        stats.hackSpeedMod *= (1 + (UPGRADE_BASES.HACK_SPEED * mod)); 
-        stats.scoreMultiplier += UPGRADE_BASES.SCORE_MULT * mod;
-        break;
-      case 'LUCK':
-        stats.weapon.luckLevel++;
-        stats.luck += UPGRADE_BASES.LUCK * mod;
-        break;
-      case 'OVERRIDE_PROTOCOL':
-        stats.maxWeaponSlots = Math.min(4, stats.maxWeaponSlots + 1);
-        break;
     }
 
     if (pendingStatusRef.current) {

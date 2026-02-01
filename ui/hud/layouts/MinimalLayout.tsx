@@ -24,7 +24,7 @@ export const MinimalLayout: React.FC<MinimalLayoutProps> = ({ data, config, chil
 
   return (
     <div 
-        className="relative bg-black overflow-hidden font-sans"
+        className="relative bg-transparent overflow-hidden font-sans"
         style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
     >
       

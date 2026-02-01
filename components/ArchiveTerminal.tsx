@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { ROOT_FILESYSTEM } from '../archive/data';
 import { VirtualFile, ArchiveCapabilities } from '../archive/types';
 import { audio } from '../utils/audio';
@@ -22,11 +22,38 @@ export const ArchiveTerminal: React.FC<ArchiveTerminalProps> = ({ onClose }) => 
   
   const [unlockedFiles, setUnlockedFiles] = useState<string[]>([]);
   const [isMobileCAI, setIsMobileCAI] = useState(false); // Toggle for mobile
+  
+  // Boot Sequence State
+  const [bootLines, setBootLines] = useState<string[]>([]);
+  const bootLinesRef = useRef<string[]>([]);
 
   useEffect(() => {
-    const timer = setTimeout(() => setBootSequence(false), 800);
+    // Start fast boot sequence
+    const bootData = [
+        "KERNEL_INIT...",
+        "MOUNTING_VOLUME_0...",
+        "DECRYPTING_INDEX...",
+        "VERIFYING_HASHES...",
+        "LOADING_UI_FRAMEWORK...",
+        "ESTABLISHING_SECURE_LINK...",
+        "ACCESS_GRANTED."
+    ];
+
+    let lineIdx = 0;
+    const interval = setInterval(() => {
+        if (lineIdx >= bootData.length) {
+            clearInterval(interval);
+            setTimeout(() => setBootSequence(false), 200); // Slight pause after text finishes
+        } else {
+            bootLinesRef.current = [...bootLinesRef.current, bootData[lineIdx]];
+            setBootLines([...bootLinesRef.current]);
+            audio.play('MOVE'); // Ticking sound
+            lineIdx++;
+        }
+    }, 50); // Fast text speed
+
     setUnlockedFiles(getUnlockedMemoryIds());
-    return () => clearTimeout(timer);
+    return () => clearInterval(interval);
   }, []);
 
   // ─── CONTENT RESOLUTION ───
@@ -113,18 +140,39 @@ export const ArchiveTerminal: React.FC<ArchiveTerminalProps> = ({ onClose }) => 
 
   if (bootSequence) {
     return (
-      <div className="absolute inset-0 bg-black z-50 flex items-center justify-center font-mono text-green-500 pointer-events-auto">
-        <div className="text-xl animate-pulse text-center">
-          INITIALIZING MEMORY BANK...
-          <br/>
-          <span className="text-sm opacity-70">Mounting volume /dev/mem0...</span>
+      <div className="absolute inset-0 bg-[#020502] z-50 flex items-center justify-center pointer-events-auto">
+        {/* CRT Turn-On Animation: Scale Y from 0 to 1 */}
+        <div className="w-full h-1 bg-green-500 animate-crt-expand relative overflow-hidden flex flex-col items-center justify-center">
+             <div className="absolute inset-0 bg-black opacity-90" /> {/* Darken slightly */}
+             
+             <div className="relative z-10 w-64 font-mono text-xs text-green-500">
+                {bootLines.map((line, i) => (
+                    <div key={i} className="opacity-80">{`> ${line}`}</div>
+                ))}
+                <div className="animate-pulse mt-2">_</div>
+             </div>
+             
+             {/* Scanline overlay inside the boot screen */}
+             <div className="absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.1)_50%),linear-gradient(90deg,rgba(0,255,0,0.03),rgba(0,255,0,0.01),rgba(0,0,255,0.03))] bg-[length:100%_4px,3px_100%] pointer-events-none opacity-50"></div>
         </div>
+        
+        <style>{`
+            @keyframes crt-expand {
+                0% { height: 2px; width: 100%; opacity: 0; }
+                20% { height: 2px; width: 100%; opacity: 1; }
+                50% { height: 100%; width: 100%; }
+                100% { height: 100%; width: 100%; }
+            }
+            .animate-crt-expand {
+                animation: crt-expand 0.6s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+            }
+        `}</style>
       </div>
     );
   }
 
   return (
-    <div className={`absolute inset-0 bg-[#020502] z-50 flex flex-col font-mono text-sm md:text-base text-green-500 p-2 md:p-8 overflow-hidden transition-all duration-75 pointer-events-auto selection:bg-green-900 selection:text-white`}>
+    <div className={`absolute inset-0 bg-[#020502] z-50 flex flex-col font-mono text-sm md:text-base text-green-500 p-2 md:p-8 overflow-hidden pointer-events-auto selection:bg-green-900 selection:text-white animate-in fade-in duration-300`}>
       
       {/* ── CRT SCANLINES ── */}
       <div className="absolute inset-0 pointer-events-none z-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.1)_50%),linear-gradient(90deg,rgba(255,0,0,0.03),rgba(0,255,0,0.01),rgba(0,0,255,0.03))] bg-[length:100%_4px,3px_100%] opacity-20"></div>

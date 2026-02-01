@@ -20,6 +20,8 @@ export interface HUDConfig {
   theme: HUDTheme;
   showAnimations: boolean;
   opacity: number;
+  visible: boolean;
+  autoHide: boolean;
 }
 
 export interface HUDItemData {

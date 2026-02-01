@@ -1,5 +1,5 @@
 
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useGameState } from './useGameState';
 import { useSpawner } from './useSpawner';
 import { useProgression } from './useProgression';
@@ -8,12 +8,13 @@ import { GameStatus, EnemyType, Direction, CameraMode } from '../types';
 import {
   DIFFICULTY_CONFIGS,
   POINTS_PER_STAGE,
-  TRANSITION_DURATION
+  TRANSITION_DURATION,
+  STAMINA_CONFIG
 } from '../constants';
 import { generateWalls } from './gameUtils';
 import { audio } from '../utils/audio';
 
-const READY_MIN_TIME = 1.0; // seconds (simulation time)
+const READY_MIN_TIME = 2000; // ms (2 Seconds of "CLEARING")
 
 export function useStageController(
   game: ReturnType<typeof useGameState>,
@@ -52,19 +53,23 @@ export function useStageController(
     gameTimeRef,
     stageArmedRef,
     stageReadyRef,
+    stageReadyTimeRef, // Use from game state
     settings,
     statsRef,
     setUiShield,
     setUiStageStatus,
     requestCameraSwitch,
     addNeonFragments, // Currency
-    audioEventsRef
+    audioEventsRef,
+    viewport, // NEW: Viewport Access
+    // Brake/Stamina state (reset on stage advance)
+    isStoppedRef,
+    stopIntentRef,
+    staminaRef,
+    stopCooldownRef
   } = game;
 
   const { unlockNextDifficulty } = progression;
-
-  const lastStageStatusStrRef = useRef('IN PROGRESS');
-  const stageReadyTimeRef = useRef(0);
 
   // ─────────────────────────────────────────────
   // BOSS CACHE
@@ -92,10 +97,9 @@ export function useStageController(
     // Removed Side Scroll switching ("Bounce")
     requestCameraSwitch(CameraMode.TOP_DOWN, 1000);
 
-    lastStageStatusStrRef.current = 'IN PROGRESS';
     setUiStageStatus('IN PROGRESS');
 
-    wallsRef.current = generateWalls(stageRef.current);
+    wallsRef.current = generateWalls(stageRef.current, viewport.cols, viewport.rows);
     stageScoreRef.current = 0;
     bossDefeatedRef.current = false;
 
@@ -109,6 +113,13 @@ export function useStageController(
 
     directionRef.current = Direction.RIGHT;
     directionQueueRef.current = [];
+
+    // Reset brake/stamina state to prevent stuck braking on new stage
+    isStoppedRef.current = false;
+    stopIntentRef.current = false;
+    stopCooldownRef.current = false;
+    staminaRef.current = STAMINA_CONFIG.MAX;
+    audio.setStopEffect(false); // Stop brake audio
 
     foodRef.current = [];
     enemiesRef.current = [];
@@ -140,8 +151,8 @@ export function useStageController(
       setStatus(GameStatus.PLAYING);
       stageArmedRef.current = true;
     } else {
-      setStatus(GameStatus.RESUMING);
-      setResumeCountdown(3);
+      // Changed from RESUMING to READY for manual start press
+      setStatus(GameStatus.READY);
     }
   }, [
     stageRef,
@@ -167,12 +178,18 @@ export function useStageController(
     bossDefeatedRef,
     stageArmedRef,
     stageReadyRef,
+    stageReadyTimeRef,
     settings.skipCountdown,
     statsRef,
     setUiShield,
     bossOverrideTimerRef,
     setUiStageStatus,
-    requestCameraSwitch
+    requestCameraSwitch,
+    viewport,
+    isStoppedRef,
+    stopIntentRef,
+    staminaRef,
+    stopCooldownRef
   ]);
 
   // ─────────────────────────────────────────────
@@ -212,7 +229,7 @@ export function useStageController(
     if (objectivesMet && !stageReadyRef.current) {
       stageReadyRef.current = true;
       stageReadyTimeRef.current = gameTimeRef.current;
-      setUiStageStatus('CLEARING');
+      setUiStageStatus('EXIT OPEN >>');
       
       // AWARD CURRENCY
       const reward = isBossStage ? 200 : 50;
@@ -226,33 +243,43 @@ export function useStageController(
       );
       audioEventsRef.current.push({ type: 'BONUS' });
 
+      // Clear enemies for exit run
+      const activeEnemies = enemiesRef.current.filter(e => !e.shouldRemove);
+      const activeTerminals = terminalsRef.current.filter(t => !t.shouldRemove);
+      
+      activeEnemies.forEach(e => {
+        e.shouldRemove = true;
+        fx.createParticles(e.x, e.y, '#ffffff', 8);
+      });
+      activeTerminals.forEach(t => {
+        t.shouldRemove = true;
+        fx.createParticles(t.x, t.y, '#00ffff', 5);
+      });
+      audio.play('COMPRESS');
+
       return;
     }
 
     if (!stageReadyRef.current) return;
 
-    // ── MIN READY TIME
-    if (
-      gameTimeRef.current - stageReadyTimeRef.current <
-      READY_MIN_TIME
-    ) {
-      return;
+    // ── EXIT CONDITION: SNAKE LEFT SCREEN OR TIMEOUT
+    const head = snakeRef.current[0];
+    const hasExited = head.x > viewport.cols + 2;
+    const timeSinceReady = gameTimeRef.current - stageReadyTimeRef.current;
+    
+    // Fallback: If player somehow stuck for 8 seconds, force transition
+    if (hasExited || timeSinceReady > 8000) {
+        const config = DIFFICULTY_CONFIGS[difficulty];
+        if (stageRef.current === config.stageGoal) {
+          unlockNextDifficulty();
+        }
+
+        // ── ENTER TRANSITION
+        pendingStatusRef.current = GameStatus.STAGE_TRANSITION;
+        transitionStartTimeRef.current = gameTimeRef.current;
+        setStatus(GameStatus.STAGE_TRANSITION);
     }
 
-    const activeEnemies = enemiesRef.current.filter(e => !e.shouldRemove);
-    const activeTerminals = terminalsRef.current.filter(t => !t.shouldRemove);
-
-    if (activeEnemies.length || activeTerminals.length) return;
-
-    const config = DIFFICULTY_CONFIGS[difficulty];
-    if (stageRef.current === config.stageGoal) {
-      unlockNextDifficulty();
-    }
-
-    // ── ENTER TRANSITION (ONCE)
-    pendingStatusRef.current = GameStatus.STAGE_TRANSITION;
-    transitionStartTimeRef.current = gameTimeRef.current;
-    setStatus(GameStatus.STAGE_TRANSITION);
   }, [
     status,
     stageRef,
@@ -265,6 +292,7 @@ export function useStageController(
     transitionStartTimeRef,
     stageArmedRef,
     stageReadyRef,
+    stageReadyTimeRef,
     enemiesRef,
     terminalsRef,
     gameTimeRef,
@@ -272,7 +300,8 @@ export function useStageController(
     addNeonFragments,
     fx,
     snakeRef,
-    audioEventsRef
+    audioEventsRef,
+    viewport
   ]);
 
   return useMemo(

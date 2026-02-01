@@ -5,12 +5,13 @@ import { DEFAULT_SETTINGS } from '../../constants';
 
 /**
  * Projects world grid coordinates to screen pixel coordinates based on camera state.
- * This is a pure function.
+ * This is a pure function used for UI overlays.
+ * Includes Tilt (Y-compression).
  * 
  * @param worldX World grid X
  * @param worldY World grid Y
  * @param camera Current camera state
- * @returns {x, y} in Screen Pixels
+ * @returns {x, y} in Screen Pixels relative to camera origin (Center of Screen)
  */
 export function projectToScreen(
   worldX: number,
@@ -21,16 +22,16 @@ export function projectToScreen(
   const worldPxX = worldX * gridSize;
   const worldPxY = worldY * gridSize;
 
-  if (camera.mode === CameraMode.SIDE_SCROLL) {
-    return {
-      x: worldPxX - camera.x,
-      y: worldPxY - camera.y
-    };
-  }
+  // Apply tilt compression to the relative Y distance
+  const tiltScale = Math.cos(camera.tilt || 0);
+  
+  // Calculate relative position from camera center
+  // In both modes, we want to project relative to the camera's position
+  const relX = worldPxX - camera.x;
+  const relY = worldPxY - camera.y;
 
-  // TOP_DOWN (Default)
   return {
-    x: worldPxX,
-    y: worldPxY
+    x: relX,
+    y: relY * tiltScale
   };
 }

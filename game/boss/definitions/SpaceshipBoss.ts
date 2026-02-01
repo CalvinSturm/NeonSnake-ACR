@@ -7,23 +7,26 @@ import { BossConfig, BossStateTable, HitboxDef } from '../types';
 const PHASE_1: BossStateTable = {
     'IDLE': {
         id: 'IDLE',
-        duration: 2000,
+        duration: 1500,
         next: 'CHARGE_CANNON',
     },
     'CHARGE_CANNON': {
         id: 'CHARGE_CANNON',
-        duration: 1500, // Reduced slightly for better pacing
+        duration: 1000, // Faster charge
         next: 'FIRE_CANNON',
     },
     'FIRE_CANNON': {
         id: 'FIRE_CANNON',
-        duration: 1200, // Duration of the lethal beam
+        duration: 800, // Shorter fire duration
         next: 'COOLDOWN',
-        onEnter: [] // Collision handled via state check
+        onEnter: [
+            // Spawn a spread of projectiles aimed downward - faster and more dangerous
+            { type: 'SPAWN_PROJECTILE', angle: Math.PI / 2, speed: 25, damage: 25, count: 7, spread: 1.2 }
+        ]
     },
     'COOLDOWN': {
         id: 'COOLDOWN',
-        duration: 2000,
+        duration: 1200, // Shorter cooldown
         next: 'IDLE'
     }
 };

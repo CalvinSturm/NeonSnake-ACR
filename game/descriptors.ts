@@ -44,5 +44,5 @@ export const DESCRIPTOR_REGISTRY: Record<string, Descriptor> = {
   
   // HACKING
   TERMINAL_PROTOCOL: { id: 'TERMINAL_PROTOCOL', name: 'TERMINAL OPTIMIZER', description: 'Accelerates hacking speed and increases score rewards.', category: 'HACKING', rarity: 'COMMON', icon: '📶', color: 'text-fuchsia-400', maxLevel: 5 },
-  OVERRIDE_PROTOCOL: { id: 'OVERRIDE_PROTOCOL', name: 'PROTOCOL OVERRIDE', description: 'UNSANCTIONED: Force-enables an additional weapon slot.', category: 'SYSTEM', rarity: 'LEGENDARY', icon: '🔓', color: 'text-red-600', maxLevel: 1 }
+  OVERRIDE_PROTOCOL: { id: 'OVERRIDE_PROTOCOL', name: 'PROTOCOL OVERRIDE', description: 'UNSANCTIONED: Force-enables an additional weapon slot.', category: 'SYSTEM', rarity: 'OVERCLOCKED', icon: '🔓', color: 'text-red-600', maxLevel: 1 }
 };

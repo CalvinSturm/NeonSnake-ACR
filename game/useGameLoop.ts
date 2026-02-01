@@ -43,7 +43,7 @@ export function useGameLoop(
       accumulatorRef.current += frameDt;
 
       while (accumulatorRef.current >= FIXED_DT) {
-        // SIMULATION GATE: Update only if playing and NO modal is open
+        // SIMULATION GATE: Update based on status
         if (game.status === GameStatus.PLAYING && game.modalState === 'NONE') {
           game.gameTimeRef.current += FIXED_DT;
           
@@ -56,16 +56,20 @@ export function useGameLoop(
           // 3. Camera Update Phase (New)
           cameraController.update(FIXED_DT);
           
-          // Note: game.updateCamera was legacy transition logic, now handled inside cameraController.update
-          // but we keep the hook invocation for any edge cases until full refactor.
-          // game.updateCamera(FIXED_DT); // Deprecated in favor of controller
-
         } else if (game.status === GameStatus.STAGE_TRANSITION) {
           // Advance time for animation continuity AND transition logic
           game.gameTimeRef.current += FIXED_DT;
           updateRef.current(FIXED_DT);
           // Allow camera to settle/animate during transitions?
           cameraController.update(FIXED_DT); 
+        } else if (game.status === GameStatus.CAMERA_EDIT) {
+          // Camera Editing Mode: Only update camera
+          cameraController.update(FIXED_DT);
+        } else if (game.status === GameStatus.DYING) {
+          // Death Animation Phase
+          game.gameTimeRef.current += FIXED_DT;
+          updateRef.current(FIXED_DT); // Essential: This runs the timer logic in SnakeGame.tsx
+          cameraController.update(FIXED_DT); // Essential: This runs the camera shake
         }
         
         accumulatorRef.current -= FIXED_DT;

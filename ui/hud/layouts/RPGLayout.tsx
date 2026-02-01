@@ -18,7 +18,7 @@ export const RPGLayout: React.FC<RPGLayoutProps> = ({ data, config, children, sh
 
   return (
     <div 
-        className="relative bg-black overflow-hidden font-sans select-none"
+        className="relative bg-transparent overflow-hidden font-sans select-none"
         style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
     >
       

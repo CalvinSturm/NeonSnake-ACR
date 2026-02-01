@@ -3,6 +3,96 @@
 // DRAWING HELPERS (3D / FX)
 // ─────────────────────────────
 
+import { CameraState } from '../camera/types';
+import { EntityAnchors } from './types';
+import { projectVector } from './camera/projectToScreen';
+
+/**
+ * 2.5D Rendering System
+ * Enforces strictly layered, math-based perspective drawing with state isolation.
+ * Returns screen-space anchors for attaching UI/VFX in subsequent passes.
+ * 
+ * @param ctx Canvas Context
+ * @param x World X (or Local X if context translated)
+ * @param y World Y (or Local Y if context translated)
+ * @param height Logical Entity Height
+ * @param tilt Camera Tilt Factor (0.0 - 1.0)
+ * @param layers Drawing callbacks for each depth layer
+ * @param rotation Rotation in radians (optional)
+ */
+export const drawEntity25D = (
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    height: number,
+    tilt: number,
+    rotation: number = 0,
+    layers: {
+        shadow?: () => void;
+        base?: () => void; // Ground-level details
+        body?: (yOffset: number) => void; // Extrusion / Sides
+        top?: (yOffset: number) => void;  // The "Face" or Cap
+    }
+): EntityAnchors => {
+    // 1. PROJECT VERTICAL OFFSET
+    // Use centralized math: offset = -z * tilt
+    // This vector is in SCREEN SPACE (Up is negative Y)
+    const projection = projectVector(0, 0, height, tilt);
+    const drawOffset = projection.y; 
+
+    ctx.save();
+    ctx.translate(x, y);
+
+    // LAYER 1: SHADOW (Ground Plane)
+    // Rendered without base rotation to ensure placement logic remains in screen-space (e.g. y-offsets)
+    // Caller is responsible for rotating the shadow shape itself if needed.
+    if (layers.shadow) {
+        ctx.save();
+        layers.shadow();
+        ctx.restore();
+    }
+
+    // LAYER 2: BASE (Rotated Ground Details)
+    // Rotated to match entity facing
+    if (layers.base) {
+        ctx.save();
+        if (rotation !== 0) ctx.rotate(rotation);
+        layers.base();
+        ctx.restore();
+    }
+
+    // LAYER 3: BODY (Extrusion / Pillar)
+    // Rendered in SCREEN ALIGNED space (Unrotated) 
+    // This ensures vertical lines go straight UP relative to the screen, regardless of entity facing.
+    // Connects (0,0) to (0, drawOffset)
+    if (layers.body) {
+        ctx.save();
+        // Do not rotate body layer to maintain verticality of pillars
+        layers.body(drawOffset);
+        ctx.restore();
+    }
+
+    // LAYER 4: TOP (Face)
+    // 1. Translate UP in Screen Space (Z-Offset)
+    // 2. Rotate in place (Facing)
+    if (layers.top) {
+        ctx.save();
+        ctx.translate(0, drawOffset); // Move 'Up' relative to camera (Screen Y)
+        if (rotation !== 0) ctx.rotate(rotation);
+        layers.top(drawOffset);
+        ctx.restore();
+    }
+
+    ctx.restore();
+
+    // Return Local Anchors (Caller must transform to Screen Space if needed)
+    return {
+        base: { x: 0, y: 0 },
+        center: { x: 0, y: drawOffset / 2 },
+        top: { x: 0, y: drawOffset }
+    };
+};
+
 export const drawShadow = (ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, blur: number = 5) => {
     ctx.save();
     ctx.translate(x, y);
@@ -15,7 +105,7 @@ export const drawShadow = (ctx: CanvasRenderingContext2D, x: number, y: number, 
     ctx.ellipse(0, 0, radius * 1.2, radius * 0.7, 0, 0, Math.PI * 2);
     ctx.fill();
     
-    // Reset shadow for next pass to avoid cumulative cost if engine doesn't optimize
+    // Reset shadow for next pass to avoid cumulative cost
     ctx.shadowBlur = 0;
 
     // 2. Contact Occlusion (Tight, dark)
@@ -42,8 +132,6 @@ export const drawBoxShadow = (ctx: CanvasRenderingContext2D, x: number, y: numbe
     ctx.fillStyle = 'rgba(0,0,0,0.8)';
     ctx.shadowColor = 'rgba(0,0,0,0.9)';
     ctx.shadowBlur = blur * 0.3;
-    // Draw mainly at base for wall illusion? 
-    // Standard box shadow for top-down:
     ctx.fillRect(x + 3, y + 3, w - 6, h - 6);
 
     ctx.restore();

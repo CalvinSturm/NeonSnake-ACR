@@ -9,14 +9,14 @@ export const formatTime = (ms: number): string => {
   return `${m}:${s}`;
 };
 
-export const getRandomPos = (snake: Point[], exclude: Point[] = [], walls: Point[] = []): Point => {
+export const getRandomPos = (snake: Point[], exclude: Point[] = [], walls: Point[] = [], cols: number = GRID_COLS, rows: number = GRID_ROWS): Point => {
   let pos: Point;
   let collision;
   let attempts = 0;
   do {
     pos = {
-      x: Math.floor(Math.random() * GRID_COLS),
-      y: Math.floor(Math.random() * GRID_ROWS)
+      x: Math.floor(Math.random() * cols),
+      y: Math.floor(Math.random() * rows)
     };
     collision = snake.some(s => s.x === pos.x && s.y === pos.y) || 
                 exclude.some(e => e.x === pos.x && e.y === pos.y) ||
@@ -28,18 +28,18 @@ export const getRandomPos = (snake: Point[], exclude: Point[] = [], walls: Point
   return pos;
 };
 
-export const generateWalls = (stage: number): Point[] => {
+export const generateWalls = (stage: number, cols: number = GRID_COLS, rows: number = GRID_ROWS): Point[] => {
     const walls: Point[] = [];
     
     // WARDEN ARENA (Stage 5) - OPEN ARENA
     if (stage === 5) {
-        for(let x=0; x<GRID_COLS; x++) {
+        for(let x=0; x<cols; x++) {
             walls.push({x, y: 0});
-            walls.push({x, y: GRID_ROWS - 1});
+            walls.push({x, y: rows - 1});
         }
-        for(let y=1; y<GRID_ROWS-1; y++) {
+        for(let y=1; y<rows-1; y++) {
             walls.push({x: 0, y});
-            walls.push({x: GRID_COLS - 1, y});
+            walls.push({x: cols - 1, y});
         }
         return walls;
     }
@@ -52,16 +52,16 @@ export const generateWalls = (stage: number): Point[] => {
     if (patternType === 2) {
         const numBlocks = 6 + stage;
         for(let i=0; i<numBlocks; i++) {
-            const bx = Math.floor(Math.random() * (GRID_COLS - 4)) + 2;
-            const by = Math.floor(Math.random() * (GRID_ROWS - 4)) + 2;
+            const bx = Math.floor(Math.random() * (cols - 4)) + 2;
+            const by = Math.floor(Math.random() * (rows - 4)) + 2;
             walls.push({x: bx, y: by}, {x: bx+1, y: by}, {x: bx, y: by+1}, {x: bx+1, y: by+1});
         }
     }
     else if (patternType === 3) {
-        for(let y = 6; y < GRID_ROWS - 6; y += 8) {
-             const gapStart = Math.floor(GRID_COLS * 0.2) + Math.floor(Math.random() * (GRID_COLS * 0.4));
+        for(let y = 6; y < rows - 6; y += 8) {
+             const gapStart = Math.floor(cols * 0.2) + Math.floor(Math.random() * (cols * 0.4));
              const gapWidth = 8;
-             for(let x = 4; x < GRID_COLS - 4; x++) {
+             for(let x = 4; x < cols - 4; x++) {
                  if (x < gapStart || x > gapStart + gapWidth) {
                      walls.push({x, y});
                  }
@@ -70,20 +70,20 @@ export const generateWalls = (stage: number): Point[] => {
     }
     else if (patternType === 0) {
         const margin = 8; 
-        for(let x = margin; x <= GRID_COLS - margin; x++) {
-            if (Math.abs(x - GRID_COLS/2) > 5) {
-                walls.push({x, y: margin}, {x, y: GRID_ROWS - margin});
+        for(let x = margin; x <= cols - margin; x++) {
+            if (Math.abs(x - cols/2) > 5) {
+                walls.push({x, y: margin}, {x, y: rows - margin});
             }
         }
-        for(let y = margin; y <= GRID_ROWS - margin; y++) {
-            if (Math.abs(y - GRID_ROWS/2) > 4) {
-                walls.push({x: margin, y}, {x: GRID_COLS - margin, y});
+        for(let y = margin; y <= rows - margin; y++) {
+            if (Math.abs(y - rows/2) > 4) {
+                walls.push({x: margin, y}, {x: cols - margin, y});
             }
         }
     }
     
     return walls.filter(w => {
-        const distFromCenter = Math.abs(w.x - GRID_COLS/2) > 6 || Math.abs(w.y - GRID_ROWS/2) > 6;
+        const distFromCenter = Math.abs(w.x - cols/2) > 6 || Math.abs(w.y - rows/2) > 6;
         const distFromSpawn = Math.abs(w.x - 10) > 3 || Math.abs(w.y - 10) > 3;
         return distFromCenter && distFromSpawn;
     });

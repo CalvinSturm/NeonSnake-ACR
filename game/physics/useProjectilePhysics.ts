@@ -4,13 +4,16 @@ import { useGameState } from '../useGameState';
 import { PHYSICS, PROJECTILE_PHYSICS, DEFAULT_SETTINGS } from '../../constants';
 
 export function useProjectilePhysics(game: ReturnType<typeof useGameState>) {
-  const { projectilesRef, floor } = game;
+  const { projectilesRef, floor, viewport } = game;
 
   const update = useCallback((dt: number) => {
     // Convert dt to frame units for compatibility with existing velocity scaling
     // Standard frame is 16.667ms
     const frame = dt / 16.667;
-    const voidY = PHYSICS.VOID_Y_GRID * DEFAULT_SETTINGS.gridSize;
+    
+    // Dynamic Void Boundary: Screen bottom + 5 rows buffer
+    // This fixes the issue where projectiles disappear on tall screens
+    const voidY = (viewport.rows + 5) * DEFAULT_SETTINGS.gridSize;
 
     for (const p of projectilesRef.current) {
         if (p.shouldRemove) continue;
@@ -44,7 +47,7 @@ export function useProjectilePhysics(game: ReturnType<typeof useGameState>) {
             p.shouldRemove = true;
         }
     }
-  }, [projectilesRef, floor]);
+  }, [projectilesRef, floor, viewport]);
 
   return { update };
 }

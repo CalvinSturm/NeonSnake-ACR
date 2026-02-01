@@ -18,7 +18,7 @@ export const renderSnakeProtocol = (
     const { ctx, gridSize, halfGrid, now } = rc;
     
     // 1. Calculate Positions, Angles, and Z-Heights
-    const segments: { x: number, y: number, angle: number, z: number }[] = [];
+    const segments: { x: number, y: number, angle: number, z: number, index: number, isHead: boolean }[] = [];
     
     for (let i = 0; i < snake.length; i++) {
         const curr = snake[i];
@@ -62,7 +62,9 @@ export const renderSnakeProtocol = (
             x: ix * gridSize + halfGrid, 
             y: iy * gridSize + halfGrid,
             angle,
-            z
+            z,
+            index: i,
+            isHead: i === 0
         });
     }
 
@@ -70,6 +72,7 @@ export const renderSnakeProtocol = (
     const integrityRatio = tailIntegrity / 100;
 
     // 2. Draw Shadows (Projected to Ground Plane)
+    // Draw shadows before sorting (Ground layer)
     ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
     for (const seg of segments) {
         ctx.beginPath();
@@ -80,12 +83,12 @@ export const renderSnakeProtocol = (
 
     // 3. Draw Data Spine (Connecting Cable)
     // Drawn first so it appears "inside" or "below" the transparent nodes
+    // Using original array order (0..N) to maintain connectivity logic
     if (segments.length > 1) {
         ctx.save();
         ctx.beginPath();
         
         // Calculate connection points relative to floating height
-        // We connect the "bottoms" of the nodes for a hanging cable look
         const cableOffset = 5; 
         
         const headS = segments[0];
@@ -116,11 +119,13 @@ export const renderSnakeProtocol = (
         ctx.restore();
     }
 
-    // 4. Draw Segments (Tail to Head for Painter's Algorithm)
-    // Drawing tail-first ensures the head overlaps the body correctly when turning
-    for (let i = segments.length - 1; i >= 0; i--) {
-        const seg = segments[i];
-        const isHead = i === 0;
+    // 4. Sort Segments for Z-Buffer (Painter's Algorithm)
+    segments.sort((a, b) => a.y - b.y);
+
+    // 5. Draw Segments
+    for (const seg of segments) {
+        const i = seg.index;
+        const isHead = seg.isHead;
         
         ctx.save();
         
@@ -138,7 +143,6 @@ export const renderSnakeProtocol = (
         // -- DRAWING THE 3D EXTRUDED BOX --
         
         // A. Side Walls (The "Thickness")
-        // We draw vertical rectangles connecting the "Top" face (at 0,0) to the "Bottom" face (at +h)
         ctx.lineWidth = 1;
         ctx.strokeStyle = `rgba(0,0,0,0.5)`; // Subtle edge on sides
         
@@ -179,7 +183,6 @@ export const renderSnakeProtocol = (
         ctx.stroke();
 
         // B. Top Face (The "Screen" or "Deck")
-        // Gradient for glossy look
         const topGrad = ctx.createLinearGradient(-halfL, 0, halfL, 0);
         topGrad.addColorStop(0, '#000');
         topGrad.addColorStop(0.5, '#111');
@@ -194,9 +197,9 @@ export const renderSnakeProtocol = (
         ctx.shadowBlur = 15;
         ctx.lineWidth = 2;
         ctx.strokeRect(-halfL, -halfW, l, w);
-        ctx.shadowBlur = 0; // Reset for inner details
+        ctx.shadowBlur = 0; 
 
-        // C. Details (Inner Logic)
+        // C. Details
         ctx.fillStyle = charColor;
         
         if (isHead) {

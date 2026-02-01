@@ -19,7 +19,7 @@ export const RetroLayout: React.FC<RetroLayoutProps> = ({ data, config, children
 
   return (
     <div 
-        className="relative bg-black overflow-hidden font-mono"
+        className="relative bg-transparent overflow-hidden font-mono"
         style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
     >
       
@@ -37,7 +37,7 @@ export const RetroLayout: React.FC<RetroLayoutProps> = ({ data, config, children
             className="absolute top-0 left-0 w-full z-20 flex justify-between items-start px-4 pt-4 border-b-4 border-double"
             style={{ 
                 height: HUD_TOP_HEIGHT, 
-                backgroundColor: C_BG,
+                backgroundColor: 'rgba(0,0,0,0.8)', // Semi-transparent
                 borderColor: C_GREEN,
                 color: C_GREEN
             }}
@@ -74,7 +74,7 @@ export const RetroLayout: React.FC<RetroLayoutProps> = ({ data, config, children
       {/* ── BOTTOM HUD (Fixed Height) ── */}
       {showUI && (
         <div 
-            className="absolute bottom-0 left-0 w-full z-20 flex items-center justify-between px-6 border-t-4 border-double bg-black"
+            className="absolute bottom-0 left-0 w-full z-20 flex items-center justify-between px-6 border-t-4 border-double bg-black/80"
             style={{ 
                 height: HUD_BOTTOM_HEIGHT, 
                 borderColor: C_GREEN 

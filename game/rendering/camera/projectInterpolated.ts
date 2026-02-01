@@ -9,19 +9,19 @@ export function projectInterpolated(
   worldY: number,
   camera: CameraState
 ): { x: number; y: number } {
+  // Current projection includes current tilt
   const currentProjection = projectToScreen(worldX, worldY, camera);
   
-  // If not transitioning, return current directly
+  // If not transitioning mode, return current directly
   if (!camera.targetMode) {
     return currentProjection;
   }
 
   // Create a temporary camera state for the target mode
-  // The 'x' and 'y' in the real camera are already being updated towards target by updateCamera logic,
-  // but projectToScreen uses 'mode' to decide whether to subtract them.
   const targetCamState = {
     ...camera,
-    mode: camera.targetMode
+    mode: camera.targetMode,
+    tilt: 0 // Assume reset tilt on mode switch unless specified otherwise
   };
 
   const targetProjection = projectToScreen(worldX, worldY, targetCamState);

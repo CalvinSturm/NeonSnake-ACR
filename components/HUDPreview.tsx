@@ -40,7 +40,9 @@ export const HUDPreview: React.FC<HUDPreviewProps> = ({ layoutId, width = 384, h
         numberStyle: 'DIGITAL',
         theme: 'NEON',
         showAnimations: true,
-        opacity: 1.0
+        opacity: 1.0,
+        visible: true,
+        autoHide: false
     } as const;
 
     // Calculate scale based on provided width vs Canvas Width

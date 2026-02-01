@@ -6,7 +6,7 @@ import { useSpawner } from './useSpawner';
 import { useFX } from './useFX';
 import { useProgression } from './useProgression';
 import { Point, GameStatus, FoodType, CameraMode } from '../types';
-import { GRID_COLS, GRID_ROWS, COLORS, DEFAULT_SETTINGS } from '../constants';
+import { COLORS, DEFAULT_SETTINGS } from '../constants';
 import { audio } from '../utils/audio';
 
 // Helper: Point line distance squared
@@ -32,7 +32,7 @@ export function useCollisions(
     foodRef,
     terminalsRef,
     projectilesRef,
-    hitboxesRef, // Added
+    hitboxesRef,
     status,
     setStatus,
     statsRef,
@@ -41,7 +41,10 @@ export function useCollisions(
     setUiShield,
     failureMessageRef,
     traitsRef,
-    cameraRef
+    cameraRef,
+    viewport,
+    debugFlagsRef,
+    stageReadyRef // Added
   } = game;
 
   const { spawnFloatingText, triggerShake, triggerShockwave, createParticles } = fx;
@@ -49,7 +52,10 @@ export function useCollisions(
 
   // 1. Helpers for Damage/Death
   const handleDeath = useCallback((reason: string) => {
-      // GOD MODE VIA INVULNERABILITY
+      // GOD MODE CHECK
+      if (debugFlagsRef.current.godMode) return;
+
+      // Legacy godmode check (kept for compatibility if needed, but redundant)
       if (invulnerabilityTimeRef.current > 1000000) return;
 
       if (invulnerabilityTimeRef.current > 0) return;
@@ -66,13 +72,37 @@ export function useCollisions(
       }
       
       failureMessageRef.current = reason;
-      setStatus(GameStatus.GAME_OVER);
-      audio.play('GAME_OVER');
-      triggerShake(20, 20);
-  }, [invulnerabilityTimeRef, statsRef, setUiShield, triggerShake, spawnFloatingText, failureMessageRef, setStatus, snakeRef]);
+      
+      // Start Death Sequence
+      setStatus(GameStatus.DYING);
+      game.deathTimerRef.current = 2000; // 2 seconds animation
+      
+      audio.play('GAME_OVER'); // Play sound immediately
+      triggerShake(30, 30); // Heavy shake
+      
+      // Explosion Effect
+      const head = snakeRef.current[0];
+      if (head) {
+          // Shockwave
+          triggerShockwave({
+              id: 'death-wave',
+              x: head.x * DEFAULT_SETTINGS.gridSize,
+              y: head.y * DEFAULT_SETTINGS.gridSize,
+              currentRadius: 0,
+              maxRadius: 300,
+              damage: 0,
+              opacity: 1
+          });
+          // Debris
+          createParticles(head.x, head.y, '#ff0000', 30);
+      }
+      
+  }, [invulnerabilityTimeRef, statsRef, setUiShield, triggerShake, spawnFloatingText, failureMessageRef, setStatus, snakeRef, triggerShockwave, createParticles, debugFlagsRef]);
 
   const takeDamage = useCallback((amount: number, reason: string) => {
-      // GOD MODE VIA INVULNERABILITY
+      // GOD MODE CHECK
+      if (debugFlagsRef.current.godMode) return;
+
       if (invulnerabilityTimeRef.current > 1000000) return;
 
       if (invulnerabilityTimeRef.current > 0) return;
@@ -86,14 +116,19 @@ export function useCollisions(
           return;
       }
       handleDeath(reason);
-  }, [invulnerabilityTimeRef, statsRef, setUiShield, triggerShake, handleDeath]);
+  }, [invulnerabilityTimeRef, statsRef, setUiShield, triggerShake, handleDeath, debugFlagsRef]);
 
   // 2. Static Collisions (Walls, Self)
   const checkMoveCollisions = useCallback((head: Point): boolean => {
     const isSideScroll = cameraRef.current.mode === CameraMode.SIDE_SCROLL;
+    
+    // EXIT PHASE: IGNORE COLLISIONS
+    if (stageReadyRef.current) {
+        return false;
+    }
 
     // Walls
-    if (head.x < 0 || head.x >= GRID_COLS || head.y < 0 || head.y >= GRID_ROWS) {
+    if (head.x < 0 || head.x >= viewport.cols || head.y < 0 || head.y >= viewport.rows) {
         if (isSideScroll) return false;
         
         handleDeath('GRID_BOUNDARY_EXCEEDED');
@@ -119,7 +154,7 @@ export function useCollisions(
     }
 
     return false;
-  }, [wallsRef, snakeRef, handleDeath, cameraRef]);
+  }, [wallsRef, snakeRef, handleDeath, cameraRef, viewport, stageReadyRef]);
 
   // 3. Eat Logic
   const handleEat = useCallback((head: Point): boolean => {
@@ -159,6 +194,9 @@ export function useCollisions(
   const checkDynamicCollisions = useCallback(() => {
     if (status !== GameStatus.PLAYING) return;
     
+    // EXIT PHASE: IGNORE DYNAMIC COLLISIONS TOO
+    if (stageReadyRef.current) return;
+
     const head = snakeRef.current[0];
     if (!head) return;
 
@@ -167,6 +205,7 @@ export function useCollisions(
     
     enemiesRef.current.forEach(e => {
         if (e.state !== 'ACTIVE') return;
+        if (e.shouldRemove) return; // FIX: Ignore dead enemies
 
         // Check against Head (Lethal)
         const distHead = Math.hypot(e.x - head.x, e.y - head.y);
@@ -201,37 +240,30 @@ export function useCollisions(
              return; 
         }
 
-        // Check against Body
+        // Check against Body (Tail is invulnerable - only knockback enemies)
         for (let i = 1; i < snakeBody.length; i++) {
              const seg = snakeBody[i];
              const d = Math.hypot(e.x - seg.x, e.y - seg.y);
              if (d < 0.8) {
+                 // Reactive lightning still triggers on contact
                  if (traitsRef.current.reactiveLightningChance > 0 && Math.random() < traitsRef.current.reactiveLightningChance) {
-                     damageEnemy(e, 20); 
-                     fx.triggerLightning({ 
-                         id: Math.random().toString(), 
-                         x1: seg.x * DEFAULT_SETTINGS.gridSize + 10, 
+                     damageEnemy(e, 20);
+                     fx.triggerLightning({
+                         id: Math.random().toString(),
+                         x1: seg.x * DEFAULT_SETTINGS.gridSize + 10,
                          y1: seg.y * DEFAULT_SETTINGS.gridSize + 10,
-                         x2: e.x * DEFAULT_SETTINGS.gridSize + 10, 
+                         x2: e.x * DEFAULT_SETTINGS.gridSize + 10,
                          y2: e.y * DEFAULT_SETTINGS.gridSize + 10,
                          life: 0.5,
                          color: '#ffff00'
                      });
                  }
-                 
-                 const dmg = 5 * traitsRef.current.tailIntegrityDamageMod;
-                 if (invulnerabilityTimeRef.current <= 1000000) {
-                     tailIntegrityRef.current = Math.max(0, tailIntegrityRef.current - dmg);
-                 }
-                 
+
+                 // Knockback enemy away from tail segment (no damage to tail)
                  const ang = Math.atan2(e.y - seg.y, e.x - seg.x);
                  e.x += Math.cos(ang) * 0.5;
                  e.y += Math.sin(ang) * 0.5;
-                 
-                 if (tailIntegrityRef.current <= 0 && invulnerabilityTimeRef.current <= 1000000) {
-                     handleDeath('HULL_BREACH');
-                 }
-                 break; 
+                 break;
              }
         }
     });
@@ -281,10 +313,15 @@ export function useCollisions(
         }
     });
 
-  }, [status, snakeRef, enemiesRef, projectilesRef, hitboxesRef, traitsRef, tailIntegrityRef, fx, damageEnemy, takeDamage, createParticles]);
+  }, [status, snakeRef, enemiesRef, projectilesRef, hitboxesRef, traitsRef, tailIntegrityRef, fx, damageEnemy, takeDamage, createParticles, stageReadyRef]);
 
-  // 5. Terminals
+  // 5. Terminals & Timers
   const updateCollisionLogic = useCallback((dt: number) => {
+      // DECREMENT INVULNERABILITY
+      if (invulnerabilityTimeRef.current > 0 && invulnerabilityTimeRef.current < 1000000) {
+          invulnerabilityTimeRef.current = Math.max(0, invulnerabilityTimeRef.current - dt);
+      }
+
       const head = snakeRef.current[0];
       if (!head) return;
 
@@ -295,6 +332,10 @@ export function useCollisions(
           const activeRadius = t.radius;
 
           if (dist < activeRadius) {
+              // Track when hacking started for sound effect
+              if (!t.isBeingHacked) {
+                  t.lastEffectTime = Date.now();
+              }
               t.isBeingHacked = true;
               t.progress += dt;
               
@@ -346,7 +387,7 @@ export function useCollisions(
       });
       terminalsRef.current = terminalsRef.current.filter(t => !t.shouldRemove);
 
-  }, [snakeRef, terminalsRef, progression, spawnFloatingText, triggerShockwave, triggerShake]);
+  }, [snakeRef, terminalsRef, progression, spawnFloatingText, triggerShockwave, triggerShake, invulnerabilityTimeRef]);
 
   // 6. XP Collection (Vacuum)
   const checkXPCollection = useCallback(() => {

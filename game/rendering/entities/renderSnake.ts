@@ -1,6 +1,6 @@
 
 import { RenderContext } from '../types';
-import { Point, Direction } from '../../../types';
+import { Point, Direction, GameStatus } from '../../../types';
 import { COLORS } from '../../../constants';
 import { drawSphere, drawShadow, drawVolumetricThruster } from '../primitives';
 // V1
@@ -79,17 +79,26 @@ export const renderSnake = (
     prismLanceTimer: number
 ) => {
     if (snake.length === 0) return;
-    const { ctx, gridSize, halfGrid, now, isStopped } = rc;
+    const { ctx, gridSize, halfGrid, now, isStopped, status } = rc;
     const PI2 = Math.PI * 2;
     
+    // DEATH ANIMATION: JITTER
+    let segmentsToRender = snake;
+    if (status === GameStatus.DYING) {
+        segmentsToRender = snake.map(p => ({
+            x: p.x + (Math.random() - 0.5) * 0.4,
+            y: p.y + (Math.random() - 0.5) * 0.4
+        }));
+    }
+
     // CALCULATE VISUAL SEGMENT POSITIONS
     const segments: { x: number, y: number }[] = [];
     
-    for (let i = 0; i < snake.length; i++) {
-        const curr = snake[i];
-        let prev = snake[i + 1]; 
+    for (let i = 0; i < segmentsToRender.length; i++) {
+        const curr = segmentsToRender[i];
+        let prev = segmentsToRender[i + 1]; 
         
-        if (i === snake.length - 1) {
+        if (i === segmentsToRender.length - 1) {
             prev = prevTail || curr;
         }
         
@@ -99,7 +108,7 @@ export const renderSnake = (
         // If stopped, we still interpolate based on the *current* frozen moveProgress (managed by logic)
         // Logic might freeze moveProgress or keep it static.
         // Actually moveProgress is derived from accumulator, which is frozen. So interpolation holds.
-        if (prev) {
+        if (prev && status !== GameStatus.DYING) { // Disable interpolation during death for sharper jitter
             const ix = prev.x + (curr.x - prev.x) * moveProgress;
             const iy = prev.y + (curr.y - prev.y) * moveProgress;
             segments.push({ x: ix * gridSize + halfGrid, y: iy * gridSize + halfGrid });
@@ -125,7 +134,7 @@ export const renderSnake = (
     }
 
     // 0. STOPPED EFFECT (Brake Lights / Freeze)
-    if (isStopped && snake.length > 0) {
+    if (isStopped && segmentsToRender.length > 0) {
         ctx.save();
         ctx.translate(headCx, headCy);
         
@@ -215,71 +224,71 @@ export const renderSnake = (
 
     // 2. RENDER SNAKE BODY
     switch (style) {
-        case 'FLUX': renderSnakeFlux(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'FLUX2': renderSnakeFlux2(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'FLUX3': renderSnakeFlux3(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'FLUX4': renderSnakeFlux4(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'FLUX5': renderSnakeFlux5(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'FLUX6': renderSnakeFlux6(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'FLUX': renderSnakeFlux(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'FLUX2': renderSnakeFlux2(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'FLUX3': renderSnakeFlux3(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'FLUX4': renderSnakeFlux4(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'FLUX5': renderSnakeFlux5(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'FLUX6': renderSnakeFlux6(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
         
-        case 'NEON': renderSnakeNeon(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'NEON2': renderSnakeNeon2(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'NEON3': renderSnakeNeon3(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'NEON4': renderSnakeNeon4(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'NEON5': renderSnakeNeon5(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'NEON6': renderSnakeNeon6(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'NEON': renderSnakeNeon(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'NEON2': renderSnakeNeon2(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'NEON3': renderSnakeNeon3(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'NEON4': renderSnakeNeon4(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'NEON5': renderSnakeNeon5(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'NEON6': renderSnakeNeon6(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
         
-        case 'PIXEL': renderSnakePixel(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'PIXEL2': renderSnakePixel2(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'PIXEL3': renderSnakePixel3(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'PIXEL4': renderSnakePixel4(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'PIXEL5': renderSnakePixel5(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'PIXEL6': renderSnakePixel6(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'PIXEL': renderSnakePixel(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'PIXEL2': renderSnakePixel2(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'PIXEL3': renderSnakePixel3(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'PIXEL4': renderSnakePixel4(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'PIXEL5': renderSnakePixel5(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'PIXEL6': renderSnakePixel6(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
         
-        case 'MINIMAL': renderSnakeMinimal(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'MINIMAL2': renderSnakeMinimal2(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'MINIMAL3': renderSnakeMinimal3(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'MINIMAL4': renderSnakeMinimal4(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'MINIMAL5': renderSnakeMinimal5(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'MINIMAL6': renderSnakeMinimal6(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'MINIMAL': renderSnakeMinimal(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'MINIMAL2': renderSnakeMinimal2(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'MINIMAL3': renderSnakeMinimal3(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'MINIMAL4': renderSnakeMinimal4(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'MINIMAL5': renderSnakeMinimal5(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'MINIMAL6': renderSnakeMinimal6(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
         
-        case 'GLITCH': renderSnakeGlitch(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'GLITCH2': renderSnakeGlitch2(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'GLITCH3': renderSnakeGlitch3(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'GLITCH4': renderSnakeGlitch4(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'GLITCH5': renderSnakeGlitch5(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'GLITCH6': renderSnakeGlitch6(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'GLITCH': renderSnakeGlitch(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'GLITCH2': renderSnakeGlitch2(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'GLITCH3': renderSnakeGlitch3(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'GLITCH4': renderSnakeGlitch4(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'GLITCH5': renderSnakeGlitch5(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'GLITCH6': renderSnakeGlitch6(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
         
-        case 'ORGANIC': renderSnakeOrganic(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'ORGANIC2': renderSnakeOrganic2(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'ORGANIC3': renderSnakeOrganic3(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'ORGANIC4': renderSnakeOrganic4(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'ORGANIC5': renderSnakeOrganic5(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'ORGANIC6': renderSnakeOrganic6(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'ORGANIC': renderSnakeOrganic(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'ORGANIC2': renderSnakeOrganic2(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'ORGANIC3': renderSnakeOrganic3(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'ORGANIC4': renderSnakeOrganic4(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'ORGANIC5': renderSnakeOrganic5(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'ORGANIC6': renderSnakeOrganic6(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
         
-        case 'PROTOCOL': renderSnakeProtocol(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'PROTOCOL2': renderSnakeProtocol2(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'PROTOCOL3': renderSnakeProtocol3(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'PROTOCOL4': renderSnakeProtocol4(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'PROTOCOL5': renderSnakeProtocol5(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'PROTOCOL6': renderSnakeProtocol6(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'PROTOCOL': renderSnakeProtocol(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'PROTOCOL2': renderSnakeProtocol2(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'PROTOCOL3': renderSnakeProtocol3(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'PROTOCOL4': renderSnakeProtocol4(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'PROTOCOL5': renderSnakeProtocol5(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'PROTOCOL6': renderSnakeProtocol6(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
         
-        case 'SYSTEM': renderSnakeSystem(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'SYSTEM2': renderSnakeSystem2(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'SYSTEM3': renderSnakeSystem3(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'SYSTEM4': renderSnakeSystem4(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'SYSTEM5': renderSnakeSystem5(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'SYSTEM6': renderSnakeSystem6(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'SYSTEM': renderSnakeSystem(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'SYSTEM2': renderSnakeSystem2(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'SYSTEM3': renderSnakeSystem3(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'SYSTEM4': renderSnakeSystem4(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'SYSTEM5': renderSnakeSystem5(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'SYSTEM6': renderSnakeSystem6(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
         
-        case 'MECH6': renderSnakeMech6(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'MECH5': renderSnakeMech5(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'MECH4': renderSnakeMech4(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'MECH3': renderSnakeMech3(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
-        case 'MECH2': renderSnakeMech2(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'MECH6': renderSnakeMech6(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'MECH5': renderSnakeMech5(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'MECH4': renderSnakeMech4(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'MECH3': renderSnakeMech3(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
+        case 'MECH2': renderSnakeMech2(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity); break;
         
         case 'MECH':
         default:
-            renderSnakeMech(rc, snake, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity, phaseRailCharge, echoDamageStored, prismLanceTimer);
+            renderSnakeMech(rc, segmentsToRender, prevTail, direction, stats, charProfile, moveProgress, visualNsAngle, tailIntegrity, phaseRailCharge, echoDamageStored, prismLanceTimer);
             break;
     }
 

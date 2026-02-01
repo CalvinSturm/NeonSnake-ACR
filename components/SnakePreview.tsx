@@ -8,9 +8,10 @@ import { CameraBehavior } from '../game/camera/types';
 interface SnakePreviewProps {
     snakeStyle: any;
     charColor?: string;
+    characterId?: string;
 }
 
-export const SnakePreview: React.FC<SnakePreviewProps> = ({ snakeStyle, charColor = '#00ffff' }) => {
+export const SnakePreview: React.FC<SnakePreviewProps> = ({ snakeStyle, charColor = '#00ffff', characterId = 'striker' }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const animationRef = useRef<number>(0);
 
@@ -56,9 +57,7 @@ export const SnakePreview: React.FC<SnakePreviewProps> = ({ snakeStyle, charColo
             }
         };
 
-        // Use 'preview' id, or 'spectre' if AUTO to show Flux variant potentially? 
-        // Default to 'striker' (MECH) behavior for AUTO usually.
-        const profile = { color: charColor, id: 'striker' };
+        const profile = { color: charColor, id: characterId };
 
         const render = (time: number) => {
             // Clear
@@ -83,13 +82,21 @@ export const SnakePreview: React.FC<SnakePreviewProps> = ({ snakeStyle, charColo
                 halfGrid: gridSize / 2,
                 stageReady: false,
                 snakeStyle,
+                stage: 1,
+                bossActive: false,
+                viewport: {
+                    width,
+                    height,
+                    cols: Math.floor(width / gridSize),
+                    rows: Math.floor(height / gridSize)
+                },
                 camera: {
                     mode: CameraMode.TOP_DOWN,
                     behavior: CameraBehavior.MANUAL,
                     x: 0,
                     y: 0,
                     zoom: 1,
-                    rotation: 0,
+                    tilt: 0,
                     isLocked: false,
                     scrollSpeed: 0,
                     targetMode: null,
@@ -118,7 +125,7 @@ export const SnakePreview: React.FC<SnakePreviewProps> = ({ snakeStyle, charColo
 
         animationRef.current = requestAnimationFrame(render);
         return () => cancelAnimationFrame(animationRef.current);
-    }, [snakeStyle, charColor]);
+    }, [snakeStyle, charColor, characterId]);
 
     return (
         <div className="w-full h-36 rounded-md border border-gray-800 bg-black relative mb-4 overflow-hidden group shadow-inner">

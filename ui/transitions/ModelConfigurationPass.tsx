@@ -14,31 +14,31 @@ export const ModelConfigurationPass: React.FC<ModelConfigurationPassProps> = ({ 
   const preset = CONFIGURATION_PRESETS[difficultyId] || CONFIGURATION_PRESETS['EASY'];
 
   useEffect(() => {
-    // TIMELINE
+    // ACCELERATED TIMELINE
     // Phase 0: "CONFIGURATION SELECTED" (0ms)
-    // Phase 1: Parameter List (300ms)
-    // Phase 2: Validating (1800ms)
-    // Phase 3: Active (1800ms + validationMs)
-    // Complete: (Phase 3 + 600ms)
+    // Phase 1: Parameter List (100ms)
+    // Phase 2: Validating (600ms)
+    // Phase 3: Active (600ms + validationMs)
+    // Complete: (Phase 3 + 300ms)
 
     const t1 = setTimeout(() => {
       setPhase(1);
       audio.play('CLI_BURST');
-    }, 300);
+    }, 100);
 
     const t2 = setTimeout(() => {
       setPhase(2);
       audio.play('MOVE');
-    }, 1800);
+    }, 600);
 
     const t3 = setTimeout(() => {
       setPhase(3);
       audio.play('UI_HARD_CLICK');
-    }, 1800 + preset.validationMs);
+    }, 600 + preset.validationMs);
 
     const t4 = setTimeout(() => {
         onComplete();
-    }, 1800 + preset.validationMs + 600);
+    }, 600 + preset.validationMs + 300);
 
     return () => {
       clearTimeout(t1);
@@ -62,7 +62,7 @@ export const ModelConfigurationPass: React.FC<ModelConfigurationPassProps> = ({ 
                 <div className="text-cyan-600 font-bold mb-4 tracking-widest">MODEL: {preset.modelName}</div>
                 <div className="space-y-2">
                     {preset.parameters.map((p, i) => (
-                        <div key={i} className="flex gap-4 opacity-0 animate-in fade-in slide-in-from-left-2 duration-300" style={{ animationDelay: `${i * 100}ms`, animationFillMode: 'forwards' }}>
+                        <div key={i} className="flex gap-4 opacity-0 animate-in fade-in slide-in-from-left-2 duration-300" style={{ animationDelay: `${i * 50}ms`, animationFillMode: 'forwards' }}>
                             <span className="text-gray-600">-</span>
                             <span className="text-gray-300">{p}</span>
                         </div>

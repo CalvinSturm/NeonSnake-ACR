@@ -8,13 +8,15 @@ export function useVoidHazard(
   game: ReturnType<typeof useGameState>,
   triggerPlayerDeath: (reason: string) => void
 ) {
-  const { snakeRef, enemiesRef, cameraRef } = game;
+  const { snakeRef, enemiesRef, cameraRef, viewport } = game;
 
   const update = useCallback(() => {
     // Only active in side-scroll mode where gravity exists
     if (cameraRef.current.mode !== CameraMode.SIDE_SCROLL) return;
 
-    const voidY = PHYSICS.VOID_Y_GRID;
+    // Use dynamic viewport rows plus a buffer instead of static constant
+    // This prevents death when playing on tall screens
+    const voidY = viewport.rows + 5;
 
     // 1. Check Player
     const head = snakeRef.current[0];
@@ -31,7 +33,7 @@ export function useVoidHazard(
         }
     }
 
-  }, [snakeRef, enemiesRef, cameraRef, triggerPlayerDeath]);
+  }, [snakeRef, enemiesRef, cameraRef, triggerPlayerDeath, viewport]);
 
   return { update };
 }

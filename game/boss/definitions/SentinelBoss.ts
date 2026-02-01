@@ -1,7 +1,8 @@
 
-import { BossConfig, BossStateTable } from '../types';
+import { BossConfig, BossStateTable, HitboxDef, BossIntent } from '../types';
+import { EnemyType } from '../../../types';
 
-const HITBOX_SLAM: any = {
+const HITBOX_SLAM: HitboxDef = {
     tag: 'SLAM_ZONE',
     width: 6,
     height: 4,
@@ -22,7 +23,7 @@ const PHASE_1_TABLE: BossStateTable = {
         id: 'TELEGRAPH_SLAM',
         duration: 800,
         next: 'EXECUTE_SLAM',
-        onEnter: [] // Visuals handled by renderer checking stateId
+        onEnter: [] 
     },
     'EXECUTE_SLAM': {
         id: 'EXECUTE_SLAM',
@@ -42,7 +43,7 @@ const PHASE_1_TABLE: BossStateTable = {
     }
 };
 
-const HITBOX_WIDE: any = {
+const HITBOX_WIDE: HitboxDef = {
     tag: 'WIDE_ZONE',
     width: 12,
     height: 3,
@@ -55,31 +56,43 @@ const HITBOX_WIDE: any = {
 const PHASE_2_TABLE: BossStateTable = {
     'IDLE': {
         id: 'IDLE',
-        duration: 1000, // Faster
+        duration: 800,
         next: 'TELEGRAPH_WIDE',
-        onEnter: []
+        onEnter: [
+            { type: 'SPAWN_MINIONS', enemyType: EnemyType.HUNTER, count: 1, offset: { x: 5, y: 5 } }
+        ]
     },
     'TELEGRAPH_WIDE': {
         id: 'TELEGRAPH_WIDE',
-        duration: 600,
+        duration: 500,
         next: 'EXECUTE_WIDE',
         onEnter: []
     },
     'EXECUTE_WIDE': {
         id: 'EXECUTE_WIDE',
         duration: 400,
+        next: 'BARRAGE',
+        onEnter: [
+            { type: 'SPAWN_HITBOX', hitboxDef: HITBOX_WIDE },
+            { type: 'APPLY_EFFECT', effect: 'SLOW', duration: 2000 }
+        ]
+    },
+    'BARRAGE': {
+        id: 'BARRAGE',
+        duration: 600,
         next: 'RECOVERY',
         onEnter: [
-            { type: 'SPAWN_HITBOX', hitboxDef: HITBOX_WIDE }
+            // Fire a ring of projectiles outward
+            { type: 'SPAWN_PROJECTILE', angle: 0, speed: 20, damage: 20, count: 8, spread: Math.PI * 2 }
+        ],
+        onExit: [
+            { type: 'DESPAWN_HITBOX', tag: 'WIDE_ZONE' }
         ]
     },
     'RECOVERY': {
         id: 'RECOVERY',
-        duration: 1000,
-        next: 'IDLE',
-        onExit: [
-            { type: 'DESPAWN_HITBOX', tag: 'WIDE_ZONE' }
-        ]
+        duration: 800,
+        next: 'IDLE'
     }
 };
 
@@ -88,12 +101,12 @@ export const SENTINEL_BOSS_CONFIG: BossConfig = {
     name: 'SENTINEL MK.1',
     phases: [
         {
-            threshold: 1.0, // Start here
+            threshold: 1.0, 
             table: PHASE_1_TABLE,
             entryState: 'IDLE'
         },
         {
-            threshold: 0.5, // 50% HP
+            threshold: 0.5, 
             table: PHASE_2_TABLE,
             entryState: 'IDLE'
         }
