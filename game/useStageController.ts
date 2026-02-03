@@ -95,7 +95,7 @@ export function useStageController(
     // ── CAMERA MODE LOGIC ──
     // FIXED: Enforce TOP_DOWN for standard progression (Stages 1-12)
     // Removed Side Scroll switching ("Bounce")
-    requestCameraSwitch(CameraMode.TOP_DOWN, 1000);
+    requestCameraSwitch(CameraMode.TOP_DOWN, 1000, audioEventsRef);
 
     setUiStageStatus('IN PROGRESS');
 
@@ -230,23 +230,23 @@ export function useStageController(
       stageReadyRef.current = true;
       stageReadyTimeRef.current = gameTimeRef.current;
       setUiStageStatus('EXIT OPEN >>');
-      
+
       // AWARD CURRENCY
       const reward = isBossStage ? 200 : 50;
       addNeonFragments(reward);
       fx.spawnFloatingText(
-          snakeRef.current[0].x * 20, 
-          snakeRef.current[0].y * 20, 
-          `+${reward} NF`, 
-          '#00ffff', 
-          20
+        snakeRef.current[0].x * 20,
+        snakeRef.current[0].y * 20,
+        `+${reward} NF`,
+        '#00ffff',
+        20
       );
       audioEventsRef.current.push({ type: 'BONUS' });
 
       // Clear enemies for exit run
       const activeEnemies = enemiesRef.current.filter(e => !e.shouldRemove);
       const activeTerminals = terminalsRef.current.filter(t => !t.shouldRemove);
-      
+
       activeEnemies.forEach(e => {
         e.shouldRemove = true;
         fx.createParticles(e.x, e.y, '#ffffff', 8);
@@ -266,18 +266,18 @@ export function useStageController(
     const head = snakeRef.current[0];
     const hasExited = head.x > viewport.cols + 2;
     const timeSinceReady = gameTimeRef.current - stageReadyTimeRef.current;
-    
+
     // Fallback: If player somehow stuck for 8 seconds, force transition
     if (hasExited || timeSinceReady > 8000) {
-        const config = DIFFICULTY_CONFIGS[difficulty];
-        if (stageRef.current === config.stageGoal) {
-          unlockNextDifficulty();
-        }
+      const config = DIFFICULTY_CONFIGS[difficulty];
+      if (stageRef.current === config.stageGoal) {
+        unlockNextDifficulty();
+      }
 
-        // ── ENTER TRANSITION
-        pendingStatusRef.current = GameStatus.STAGE_TRANSITION;
-        transitionStartTimeRef.current = gameTimeRef.current;
-        setStatus(GameStatus.STAGE_TRANSITION);
+      // ── ENTER TRANSITION
+      pendingStatusRef.current = GameStatus.STAGE_TRANSITION;
+      transitionStartTimeRef.current = gameTimeRef.current;
+      setStatus(GameStatus.STAGE_TRANSITION);
     }
 
   }, [

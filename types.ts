@@ -11,10 +11,19 @@ export interface PhysicsProfile {
   usesVerticalPhysics: boolean;
   mass?: number;
   friction?: number;
+  canJump?: boolean;
+  jumpCooldown?: number;
 }
 
 // Boss State
-export type BossState = 'ENTERING' | 'IDLE' | 'ATTACK' | 'STUNNED' | 'DYING';
+export type BossStateId = 'ENTERING' | 'IDLE' | 'ATTACK' | 'STUNNED' | 'DYING' | string;
+
+export interface BossState {
+  stateId: BossStateId;
+  timer: number;
+  phaseIndex: number;
+  phases?: { thresholdHp: number; newState: string }[];
+}
 
 export enum GameStatus {
   IDLE = 'IDLE',
@@ -177,6 +186,7 @@ export interface Enemy {
   jumpCooldownTimer: number;
   jumpIntent: boolean;
   shouldRemove?: boolean;
+  flash?: number; // Visual flash effect timer
 
   // AI
   aiState?: string;

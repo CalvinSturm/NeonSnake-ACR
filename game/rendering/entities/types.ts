@@ -1,5 +1,5 @@
 
-import { CameraMode, Point } from '../../types';
+import { CameraMode, Point } from '../../../types';
 
 export enum CameraBehavior {
   FOLLOW_PLAYER = 'FOLLOW_PLAYER',
@@ -12,13 +12,13 @@ export interface CameraState {
   // Base Properties
   mode: CameraMode; // Determines Physics/Renderer Base (TOP_DOWN | SIDE_SCROLL)
   behavior: CameraBehavior;
-  
+
   // Transform
   x: number; // World X (Center)
   y: number; // World Y (Center)
   zoom: number;
   tilt: number; // Radians (0 to ~1.0)
-  
+
   // Control State
   isLocked: boolean; // Overrides player control (e.g. Boss sequences)
 
@@ -31,13 +31,13 @@ export interface CameraState {
   };
 
   // Legacy (Keep for compatibility until refactored)
-  scrollSpeed: number; 
+  scrollSpeed: number;
   targetMode: CameraMode | null;
   transitionT: number;
   transitionDuration: number;
 }
 
-export type CameraIntent = 
+export type CameraIntent =
   | { type: 'SET_ZOOM'; zoom: number; duration: number }
   | { type: 'ADJUST_ZOOM'; delta: number; duration: number } // Relative zoom
   | { type: 'SET_TILT'; tilt: number; duration: number } // New Tilt

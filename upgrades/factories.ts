@@ -2,15 +2,14 @@
 import { UpgradeOption, UpgradeRarity } from '../types';
 import { UpgradeContext, UpgradeId } from './types';
 import { DESCRIPTOR_REGISTRY } from '../game/descriptors';
-import { UPGRADE_BASES, RARITY_MULTIPLIERS, WEAPON_GROWTH_CONFIG } from '../constants';
+import { UPGRADE_BASES, RARITY_MULTIPLIERS } from '../constants';
 import { WeaponStats } from '../types';
 
 // Formatting helpers
 const formatPct = (val: number) => `+${(val * 100).toFixed(1)}%`;
-const formatFlat = (val: number) => `+${val.toFixed(1)}`;
 
 // Unified Weapon Growth Display
-const getWeaponStatsDisplay = (stats: WeaponStats, id: UpgradeId, rarityMod: number) => {
+const getWeaponStatsDisplay = (stats: WeaponStats, id: UpgradeId, _rarityMod: number) => {
   switch (id) {
     case 'CANNON':
       return [

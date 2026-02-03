@@ -146,9 +146,9 @@ export const TERMINAL_HACK_TIME = 3000;
 // Terminal hack time scaled by difficulty (multiplier applied to TERMINAL_HACK_TIME)
 export const TERMINAL_TIME_BY_DIFFICULTY: Record<string, number> = {
     [Difficulty.EASY]: 0.5,      // 1.5 seconds
-    [Difficulty.NORMAL]: 0.75,   // 2.25 seconds
+    [Difficulty.MEDIUM]: 0.75,   // 2.25 seconds
     [Difficulty.HARD]: 1.0,      // 3 seconds
-    [Difficulty.ELITE]: 1.25     // 3.75 seconds
+    [Difficulty.INSANE]: 1.25    // 3.75 seconds
 };
 
 export const ENEMY_PHYSICS_DEFAULTS: Record<string, any> = {
@@ -185,7 +185,7 @@ export const UPGRADE_BASES = {
     LUCK: 0.05,
     SCORE_MULT: 0.1,
     MAX_WEAPON_SLOTS: 8,
-    
+
     CANNON_DMG: 20,
     CANNON_FIRE_RATE: 500,
     AURA_DMG: 15,

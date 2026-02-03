@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useGameState } from './useGameState';
+import { GameStatus } from '../types';
 
 /**
  * Transition Controller
@@ -16,20 +17,23 @@ import { useGameState } from './useGameState';
 export function useTransitions(
   game: ReturnType<typeof useGameState>
 ) {
-  const { transitionStateRef } = game;
+  const { status } = game;
 
   return useMemo(() => {
     const isBlockingSimulation = () => {
-      return transitionStateRef.current.phase !== 'NONE';
+      return status === GameStatus.STAGE_TRANSITION ||
+        status === GameStatus.RESUMING ||
+        status === GameStatus.PAUSED;
     };
 
     const isBlockingInput = () => {
-      return transitionStateRef.current.phase !== 'NONE';
+      return status === GameStatus.STAGE_TRANSITION ||
+        status === GameStatus.RESUMING;
     };
 
     return {
       isBlockingSimulation,
       isBlockingInput
     };
-  }, [transitionStateRef]);
+  }, [status]);
 }

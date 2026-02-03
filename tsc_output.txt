@@ -1,0 +1,53 @@
+components/SnakeGame.tsx(108,33): error TS2554: Expected 0 arguments, but got 1.
+components/SnakeGame.tsx(162,28): error TS2554: Expected 0 arguments, but got 1.
+components/SnakeGame.tsx(405,37): error TS2322: Type '(stageReadyRef?: React.RefObject<boolean>) => void' is not assignable to type 'MouseEventHandler<HTMLButtonElement>'.
+  Types of parameters 'stageReadyRef' and 'event' are incompatible.
+    Property 'current' is missing in type 'MouseEvent<HTMLButtonElement, MouseEvent>' but required in type 'RefObject<boolean>'.
+constants.ts(149,17): error TS2339: Property 'NORMAL' does not exist on type 'typeof Difficulty'.
+constants.ts(151,17): error TS2339: Property 'ELITE' does not exist on type 'typeof Difficulty'.
+game/ai/useEnemyGapAwareness.ts(16,33): error TS2339: Property 'canJump' does not exist on type 'PhysicsProfile'.
+game/ai/useEnemyGapAwareness.ts(48,58): error TS2339: Property 'jumpCooldown' does not exist on type 'PhysicsProfile'.
+game/boss/useBossController.ts(27,41): error TS2339: Property 'stateId' does not exist on type 'BossState'.
+  Property 'stateId' does not exist on type '"ENTERING"'.
+game/boss/useBossController.ts(214,57): error TS2339: Property 'phaseIndex' does not exist on type 'BossState'.
+  Property 'phaseIndex' does not exist on type '"ENTERING"'.
+game/boss/useBossController.ts(216,57): error TS2339: Property 'stateId' does not exist on type 'BossState'.
+  Property 'stateId' does not exist on type '"ENTERING"'.
+game/boss/useBossController.ts(226,22): error TS2339: Property 'timer' does not exist on type 'BossState'.
+  Property 'timer' does not exist on type '"ENTERING"'.
+game/boss/useBossController.ts(229,26): error TS2339: Property 'timer' does not exist on type 'BossState'.
+  Property 'timer' does not exist on type '"ENTERING"'.
+game/boss/useBossController.ts(237,47): error TS2339: Property 'phaseIndex' does not exist on type 'BossState'.
+  Property 'phaseIndex' does not exist on type '"ENTERING"'.
+game/boss/useBossController.ts(240,39): error TS2339: Property 'phaseIndex' does not exist on type 'BossState'.
+  Property 'phaseIndex' does not exist on type '"ENTERING"'.
+game/boss/useBossController.ts(246,49): error TS2339: Property 'phaseIndex' does not exist on type 'BossState'.
+  Property 'phaseIndex' does not exist on type '"ENTERING"'.
+game/boss/useBossController.ts(248,30): error TS2339: Property 'phaseIndex' does not exist on type 'BossState'.
+  Property 'phaseIndex' does not exist on type '"ENTERING"'.
+game/boss/useBossController.ts(250,30): error TS2339: Property 'stateId' does not exist on type 'BossState'.
+  Property 'stateId' does not exist on type '"ENTERING"'.
+game/boss/useBossController.ts(251,30): error TS2339: Property 'timer' does not exist on type 'BossState'.
+  Property 'timer' does not exist on type '"ENTERING"'.
+game/boss/useBossController.ts(262,34): error TS2339: Property 'stateId' does not exist on type 'BossState'.
+  Property 'stateId' does not exist on type '"ENTERING"'.
+game/boss/useBossController.ts(263,34): error TS2339: Property 'timer' does not exist on type 'BossState'.
+  Property 'timer' does not exist on type '"ENTERING"'.
+game/boss/useBossController.ts(270,34): error TS2339: Property 'stateId' does not exist on type 'BossState'.
+  Property 'stateId' does not exist on type '"ENTERING"'.
+game/boss/useBossController.ts(271,34): error TS2339: Property 'timer' does not exist on type 'BossState'.
+  Property 'timer' does not exist on type '"ENTERING"'.
+game/rendering/entities/renderBoss.ts(105,11): error TS2339: Property 'flash' does not exist on type 'Enemy'.
+game/rendering/entities/renderBoss.ts(105,22): error TS2339: Property 'flash' does not exist on type 'Enemy'.
+game/rendering/entities/renderSpaceship.ts(13,34): error TS2339: Property 'stateId' does not exist on type 'BossState'.
+  Property 'stateId' does not exist on type '"ENTERING"'.
+game/rendering/entities/renderWarden.ts(12,34): error TS2339: Property 'stateId' does not exist on type 'BossState'.
+  Property 'stateId' does not exist on type '"ENTERING"'.
+game/rendering/entities/types.ts(2,35): error TS2307: Cannot find module '../../types' or its corresponding type declarations.
+game/useCollisions.ts(220,65): error TS2339: Property 'stateId' does not exist on type 'BossState'.
+  Property 'stateId' does not exist on type '"ENTERING"'.
+game/useProgression.ts(286,20): error TS2339: Property 'flash' does not exist on type 'Enemy'.
+game/useSpawner.ts(380,9): error TS2322: Type '{ stateId: string; timer: number; phaseIndex: number; phases: { thresholdHp: number; newState: string; }[]; }' is not assignable to type 'BossState | undefined'.
+game/useSpawner.ts(493,7): error TS2353: Object literal may only specify known properties, and 'flash' does not exist in type 'Enemy'.
+game/useStageController.ts(98,5): error TS2554: Expected 3 arguments, but got 2.
+game/useTransitions.ts(19,11): error TS2339: Property 'transitionStateRef' does not exist on type '{ resetGame: (charProfile: CharacterProfile) => void; syncUiStats: () => void; unlockedCosmetics: Set<string>; purchasedCosmetics: Set<string>; seenCosmetics: Set<...>; ... 154 more ...; togglePause: (stageReadyRef?: RefObject<...> | undefined) => void; }'.

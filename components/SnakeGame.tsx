@@ -50,9 +50,9 @@ export const SnakeGame: React.FC = () => {
 
     // Core State
     const game = useGameState();
-    const { 
-        status, setStatus, 
-        upgradeOptions, 
+    const {
+        status, setStatus,
+        upgradeOptions,
         modalState, setModalState,
         settings, setSettings,
         unlockedCosmetics,
@@ -72,7 +72,7 @@ export const SnakeGame: React.FC = () => {
     const stageController = useStageController(game, spawner, fx, progression);
     const music = useMusic(game);
     const analytics = useAnalytics(game);
-    
+
     // Physics & Hazards
     const voidHazard = useVoidHazard(game, collisions.handleDeath);
     const gapAwareness = useEnemyGapAwareness(game);
@@ -93,7 +93,7 @@ export const SnakeGame: React.FC = () => {
     const update = (dt: number) => {
         // Audio
         music.updateMusic();
-        
+
         // Process Queued Audio Events
         const audioEvents = game.audioEventsRef.current;
         while (audioEvents.length > 0) {
@@ -104,19 +104,19 @@ export const SnakeGame: React.FC = () => {
         }
 
         if (status === GameStatus.DYING) {
-             game.deathTimerRef.current -= dt;
-             fx.tickTranslation(dt);
-             fx.updateFX();
+            game.deathTimerRef.current -= dt;
+            fx.tickTranslation();
+            fx.updateFX();
 
-             // Ramp up glitch effect
-             const progress = 1 - (Math.max(0, game.deathTimerRef.current) / 2000);
-             game.chromaticAberrationRef.current = progress * 8; 
+            // Ramp up glitch effect
+            const progress = 1 - (Math.max(0, game.deathTimerRef.current) / 2000);
+            game.chromaticAberrationRef.current = progress * 8;
 
-             if (game.deathTimerRef.current <= 0) {
-                 setStatus(GameStatus.GAME_OVER);
-                 game.chromaticAberrationRef.current = 0;
-             }
-             return;
+            if (game.deathTimerRef.current <= 0) {
+                setStatus(GameStatus.GAME_OVER);
+                game.chromaticAberrationRef.current = 0;
+            }
+            return;
         }
 
         // --- GAMEPLAY SIMULATION (Only when PLAYING) ---
@@ -133,14 +133,14 @@ export const SnakeGame: React.FC = () => {
                 if (collisions.checkMoveCollisions(nextHead)) {
                     return; // Death handled inside
                 }
-                
+
                 // 3. Commit Move
                 const grew = collisions.handleEat(nextHead);
                 movement.commitMove(nextHead, grew);
-                
+
                 // Audio: Move
                 audio.play('MOVE');
-                
+
                 // 4. Post-Move Checks (XP Collection)
                 collisions.checkXPCollection();
             }
@@ -150,18 +150,18 @@ export const SnakeGame: React.FC = () => {
             combat.update(dt);
             collisions.checkDynamicCollisions();
             collisions.updateCollisionLogic(dt);
-            
+
             // 6. Passive Systems (Score/Combo/Regen)
             progression.applyPassiveScore(dt);
-            
+
             // 7. Spawning
             spawner.update(dt);
         }
-        
+
         // 8. FX (Always run for visual continuity, even during transition)
-        fx.tickTranslation(dt);
+        fx.tickTranslation();
         fx.updateFX();
-        
+
         // 9. Stage Logic (Handles checking for completion AND processing transition timer)
         stageController.cacheBossRef();
         stageController.checkStageCompletion();
@@ -209,7 +209,7 @@ export const SnakeGame: React.FC = () => {
 
     // Initial Boot
     const [bootComplete, setBootComplete] = useState(false);
-    
+
     if (!bootComplete) {
         return <BootSequence onComplete={() => setBootComplete(true)} />;
     }
@@ -218,15 +218,15 @@ export const SnakeGame: React.FC = () => {
         <UIStyleProvider styleId={settings.hudConfig.theme.toLowerCase()}>
             <VisionProtocolProvider protocolId={settings.visionProtocolId}>
                 <div ref={containerRef} className="relative w-full h-full bg-black overflow-hidden flex items-center justify-center">
-                    
+
                     {/* Render Canvas */}
                     <canvas
                         ref={canvasRef}
                         width={CANVAS_WIDTH}
                         height={CANVAS_HEIGHT}
                         className="block object-contain max-w-full max-h-full"
-                        style={{ 
-                            width: '100%', 
+                        style={{
+                            width: '100%',
                             height: '100%',
                             aspectRatio: `${CANVAS_WIDTH}/${CANVAS_HEIGHT}`,
                             filter: settings.crtEffect ? 'contrast(1.1) brightness(1.1)' : 'none'
@@ -239,7 +239,7 @@ export const SnakeGame: React.FC = () => {
                             <GameHUD game={game} showUI={status !== GameStatus.GAME_OVER && status !== GameStatus.DYING} />
                         </div>
                     ) : null}
-                    
+
                     {/* READY Overlay - Appears after transition fades out */}
                     {status === GameStatus.READY && (
                         <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none animate-in fade-in duration-500 delay-300 fill-mode-backwards">
@@ -259,13 +259,13 @@ export const SnakeGame: React.FC = () => {
                         <div className="absolute inset-0 z-40 pointer-events-none">
                             <div className="pointer-events-auto w-full h-full relative">
                                 {settings.mobileControlScheme === 'SWIPE' && (
-                                    <SwipeControls 
-                                        onDirection={handleInput} 
-                                        onBrake={(active) => { game.stopIntentRef.current = active; }} 
+                                    <SwipeControls
+                                        onDirection={handleInput}
+                                        onBrake={(active) => { game.stopIntentRef.current = active; }}
                                         brakeMode={settings.swipeBrakeBehavior}
                                     />
                                 )}
-                                
+
                                 {settings.mobileControlScheme === 'JOYSTICK' && (
                                     <>
                                         <div className={`absolute bottom-8 ${settings.swapControls ? 'right-8' : 'left-8'}`}>
@@ -287,7 +287,7 @@ export const SnakeGame: React.FC = () => {
                                         </div>
                                     </>
                                 )}
-                                
+
                                 {/* Force Touch Controls Brake for Swipe */}
                                 {settings.mobileControlScheme === 'SWIPE' && settings.swipeBrakeBehavior === 'BUTTON' && (
                                     <div className="absolute bottom-10 right-8">
@@ -300,7 +300,7 @@ export const SnakeGame: React.FC = () => {
 
                     {/* Game Over */}
                     {status === GameStatus.GAME_OVER && (
-                        <GameOverScreen 
+                        <GameOverScreen
                             score={Math.floor(game.scoreRef.current)}
                             highScore={game.highScore}
                             stage={game.stageRef.current}
@@ -320,7 +320,7 @@ export const SnakeGame: React.FC = () => {
 
                     {/* Level Up */}
                     {status === GameStatus.LEVEL_UP && (
-                        <LevelUpScreen 
+                        <LevelUpScreen
                             options={upgradeOptions}
                             onSelect={(id, rarity) => progression.applyUpgrade(id as any, rarity)}
                         />
@@ -328,27 +328,27 @@ export const SnakeGame: React.FC = () => {
 
                     {/* Config Transition */}
                     {status === GameStatus.CONFIGURATION && (
-                        <ModelConfigurationPass 
-                            difficultyId={game.difficulty} 
-                            onComplete={() => setStatus(GameStatus.CHARACTER_SELECT)} 
+                        <ModelConfigurationPass
+                            difficultyId={game.difficulty}
+                            onComplete={() => setStatus(GameStatus.CHARACTER_SELECT)}
                         />
                     )}
 
                     {/* Character Select */}
                     {status === GameStatus.CHARACTER_SELECT && (
-                        <CharacterSelectMenu 
+                        <CharacterSelectMenu
                             onSelect={(char) => {
                                 game.setSelectedChar(char);
                                 game.resetGame(char);
                                 game.stageArmedRef.current = true;
                                 setStatus(GameStatus.PLAYING);
-                            }} 
+                            }}
                         />
                     )}
 
                     {/* Difficulty Select */}
                     {status === GameStatus.DIFFICULTY_SELECT && (
-                        <DifficultySelectMenu 
+                        <DifficultySelectMenu
                             unlockedDifficulties={game.unlockedDifficulties}
                             onSelect={(diff) => {
                                 game.setDifficulty(diff);
@@ -373,7 +373,7 @@ export const SnakeGame: React.FC = () => {
 
                     {/* Main Menu (IDLE) */}
                     {status === GameStatus.IDLE && (
-                        <TitleScreen 
+                        <TitleScreen
                             onStart={() => setStatus(GameStatus.DIFFICULTY_SELECT)}
                             onArchive={() => setStatus(GameStatus.ARCHIVE)}
                             onCosmetics={() => setStatus(GameStatus.COSMETICS)}
@@ -402,19 +402,19 @@ export const SnakeGame: React.FC = () => {
                     {status === GameStatus.PAUSED && modalState === 'PAUSE' && (
                         <div className="absolute inset-0 flex flex-col items-center justify-center z-50 bg-black/60 backdrop-blur">
                             <div className="text-4xl font-bold text-white mb-8 tracking-[0.5em]">PAUSED</div>
-                            <button onClick={game.togglePause} className="mb-4 text-cyan-400 hover:text-white font-bold tracking-widest text-xl">RESUME</button>
+                            <button onClick={() => game.togglePause()} className="mb-4 text-cyan-400 hover:text-white font-bold tracking-widest text-xl">RESUME</button>
                             <button onClick={game.openSettings} className="mb-4 text-gray-400 hover:text-white font-bold tracking-widest text-sm">SETTINGS</button>
                             <button onClick={() => { setStatus(GameStatus.IDLE); setModalState('NONE'); }} className="text-red-500 hover:text-red-300 font-bold tracking-widest text-sm">ABORT MISSION</button>
                         </div>
                     )}
 
                     {/* Global Transition Overlay */}
-                    <ScreenTransition 
-                        status={status} 
+                    <ScreenTransition
+                        status={status}
                         // We predict the next stage number for the transition screen
                         // During STAGE_TRANSITION, stageRef hasn't updated yet (it updates at end of transition duration)
-                        stage={game.stageRef.current + 1} 
-                        difficulty={DIFFICULTY_CONFIGS[game.difficulty].label} 
+                        stage={game.stageRef.current + 1}
+                        difficulty={DIFFICULTY_CONFIGS[game.difficulty].label}
                     />
 
                     {/* Dev Tools */}

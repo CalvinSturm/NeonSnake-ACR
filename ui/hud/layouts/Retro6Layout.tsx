@@ -10,7 +10,7 @@ interface Retro6LayoutProps {
   showUI?: boolean;
 }
 
-export const Retro6Layout: React.FC<Retro6LayoutProps> = ({ data, config, children, showUI = true }) => {
+export const Retro6Layout: React.FC<Retro6LayoutProps> = ({ data, children, showUI = true }) => {
   return (
     <div 
         className="relative bg-[#050010] overflow-hidden font-sans"
@@ -67,7 +67,7 @@ export const Retro6Layout: React.FC<Retro6LayoutProps> = ({ data, config, childr
 
                 {/* Center: Cassette Deck (Weapons) */}
                 <div className="flex-1 h-20 bg-black/60 border-t-2 border-pink-500 rounded-t-lg flex items-center justify-center gap-4 px-4 shadow-[0_-5px_20px_#ff00ff]">
-                    {data.loadout.weapons.map((w, i) => (
+                    {data.loadout.weapons.map((w) => (
                         <div key={w.id} className={`w-12 h-8 border-2 ${w.active ? 'border-yellow-400 bg-yellow-900/50' : 'border-gray-600 bg-gray-800'} flex items-center justify-center`}>
                             <span className="text-white text-xs">{w.icon}</span>
                         </div>
