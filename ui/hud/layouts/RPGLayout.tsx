@@ -2,7 +2,7 @@
 import React from 'react';
 import { HUDData, HUDConfig } from '../types';
 import { HUDNumber, HUDBar, HUDSkillSlot } from '../HUDPrimitives';
-import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT } from '../../../constants';
+import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT } from '../../../constants';
 
 interface RPGLayoutProps {
   data: HUDData;
@@ -19,7 +19,7 @@ export const RPGLayout: React.FC<RPGLayoutProps> = ({ data, config, children, sh
   return (
     <div 
         className="relative bg-transparent overflow-hidden font-sans select-none"
-        style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+        style={{ width: '100%', height: '100%' }}
     >
       
       {/* ── GAME LAYER ── */}

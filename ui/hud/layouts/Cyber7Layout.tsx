@@ -2,7 +2,7 @@
 import React from 'react';
 import { HUDData, HUDConfig } from '../types';
 import { HUDTooltip } from '../HUDPrimitives';
-import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT, PLAY_AREA_HEIGHT } from '../../../constants';
+import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT, PLAY_AREA_HEIGHT } from '../../../constants';
 
 interface Cyber7LayoutProps {
   data: HUDData;
@@ -16,8 +16,8 @@ export const Cyber7Layout: React.FC<Cyber7LayoutProps> = ({ data, config, childr
   
   return (
     <div 
-        className="relative bg-black overflow-hidden font-mono"
-        style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+        className="relative bg-transparent overflow-hidden font-mono"
+        style={{ width: '100%', height: '100%' }}
     >
       
       {/* ── GAME LAYER ── */}
@@ -48,7 +48,7 @@ export const Cyber7Layout: React.FC<Cyber7LayoutProps> = ({ data, config, childr
         <>
             {/* ── TOP UI ZONE (Opaque) ── */}
             <div 
-                className="absolute top-0 left-0 w-full bg-[#050a0a] z-20 flex justify-between px-6 items-center border-b border-gray-800"
+                className="absolute top-0 left-0 w-full bg-transparent z-20 flex justify-between px-6 items-center border-b border-gray-800"
                 style={{ height: HUD_TOP_HEIGHT }}
             >
                 <div className="flex flex-col">
@@ -69,7 +69,7 @@ export const Cyber7Layout: React.FC<Cyber7LayoutProps> = ({ data, config, childr
 
             {/* ── BOTTOM UI ZONE (Opaque) ── */}
             <div 
-                className="absolute bottom-0 left-0 w-full bg-[#050a0a] z-20 flex items-center justify-between px-6 border-t border-gray-800"
+                className="absolute bottom-0 left-0 w-full bg-transparent z-20 flex items-center justify-between px-6 border-t border-gray-800"
                 style={{ height: HUD_BOTTOM_HEIGHT }}
             >
                 {/* Vitals */}

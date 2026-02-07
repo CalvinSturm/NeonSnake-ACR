@@ -8,6 +8,7 @@ import { HUDPreview } from './HUDPreview';
 import { audio } from '../utils/audio';
 
 interface CosmeticsMenuProps {
+    game: ReturnType<typeof useGameState>;
     onClose: () => void;
 }
 
@@ -25,8 +26,8 @@ const TIER_NAMES = {
     4: 'CYBERPSYCHO'
 };
 
-export const CosmeticsMenu: React.FC<CosmeticsMenuProps> = ({ onClose }) => {
-    const { settings, setSettings, unlockedCosmetics, purchasedCosmetics, seenCosmetics, markCosmeticSeen, neonFragments, purchaseCosmetic } = useGameState();
+export const CosmeticsMenu: React.FC<CosmeticsMenuProps> = ({ game, onClose }) => {
+    const { settings, setSettings, unlockedCosmetics, purchasedCosmetics, seenCosmetics, markCosmeticSeen, neonFragments, purchaseCosmetic } = game;
     const [activeTab, setActiveTab] = useState<CosmeticType>('SKIN');
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [purchaseError, setPurchaseError] = useState<string | null>(null);

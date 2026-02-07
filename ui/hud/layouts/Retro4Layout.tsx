@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { HUDData, HUDConfig } from '../types';
-import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT } from '../../../constants';
+import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT } from '../../../constants';
 
 interface Retro4LayoutProps {
   data: HUDData;
@@ -15,8 +15,8 @@ export const Retro4Layout: React.FC<Retro4LayoutProps> = ({ data, config, childr
   
   return (
     <div 
-        className="relative bg-[#1a1000] overflow-hidden font-mono"
-        style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+        className="relative bg-transparent overflow-hidden font-mono"
+        style={{ width: '100%', height: '100%' }}
     >
       <div className="absolute inset-0 z-0 opacity-80 sepia brightness-50 contrast-125">
           {children}

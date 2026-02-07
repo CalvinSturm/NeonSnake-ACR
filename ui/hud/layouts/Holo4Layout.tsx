@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { HUDData, HUDConfig } from '../types';
-import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT } from '../../../constants';
+import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT } from '../../../constants';
 
 interface Holo4LayoutProps {
   data: HUDData;
@@ -13,8 +13,8 @@ interface Holo4LayoutProps {
 export const Holo4Layout: React.FC<Holo4LayoutProps> = ({ data, config, children, showUI = true }) => {
   return (
     <div 
-        className="relative bg-black overflow-hidden font-mono perspective-[1000px]"
-        style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+        className="relative bg-transparent overflow-hidden font-mono perspective-[1000px]"
+        style={{ width: '100%', height: '100%' }}
     >
       <div className="absolute inset-0 z-0">
           {children}

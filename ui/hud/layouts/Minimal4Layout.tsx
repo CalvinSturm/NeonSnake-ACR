@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { HUDData, HUDConfig } from '../types';
-import { CANVAS_WIDTH, CANVAS_HEIGHT, DEFAULT_SETTINGS } from '../../../constants';
+import { DEFAULT_SETTINGS } from '../../../constants';
 
 interface Minimal4LayoutProps {
   data: HUDData;
@@ -21,8 +21,8 @@ export const Minimal4Layout: React.FC<Minimal4LayoutProps> = ({ data, config, ch
 
   return (
     <div 
-        className="relative bg-black overflow-hidden font-sans"
-        style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+        className="relative bg-transparent overflow-hidden font-sans"
+        style={{ width: '100%', height: '100%' }}
     >
       <div className="absolute inset-0 z-0">
           {children}

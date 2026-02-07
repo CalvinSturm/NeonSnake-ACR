@@ -2,7 +2,7 @@
 import React from 'react';
 import { HUDData, HUDConfig } from '../types';
 import { HUDTooltip } from '../HUDPrimitives';
-import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT } from '../../../constants';
+import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT } from '../../../constants';
 
 interface Holo2LayoutProps {
   data: HUDData;
@@ -29,8 +29,8 @@ export const Holo2Layout: React.FC<Holo2LayoutProps> = ({ data, config, children
 
   return (
     <div 
-        className="relative bg-[#00050a] overflow-hidden"
-        style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+        className="relative bg-transparent overflow-hidden"
+        style={{ width: '100%', height: '100%' }}
     >
       {/* ── PROJECTOR LIGHT SOURCE ── */}
       <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-3/4 h-1/2 bg-cyan-500/5 blur-[100px] pointer-events-none rounded-t-full" />

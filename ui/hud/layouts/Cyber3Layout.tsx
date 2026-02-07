@@ -2,7 +2,7 @@
 import React from 'react';
 import { HUDData, HUDConfig } from '../types';
 import { HUDTooltip } from '../HUDPrimitives';
-import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT } from '../../../constants';
+import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT } from '../../../constants';
 
 interface Cyber3LayoutProps {
   data: HUDData;
@@ -13,7 +13,7 @@ interface Cyber3LayoutProps {
 
 export const Cyber3Layout: React.FC<Cyber3LayoutProps> = ({ data, config, children, showUI = true }) => {
   const SynapseLine = ({ x1, y1, x2, y2, active = false }: any) => (
-      <svg className="absolute inset-0 pointer-events-none" style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}>
+      <svg className="absolute inset-0 pointer-events-none" style={{ width: '100%', height: '100%' }}>
           <path 
             d={`M${x1},${y1} C${x1 + 50},${y1} ${x2 - 50},${y2} ${x2},${y2}`}
             fill="none"
@@ -26,8 +26,8 @@ export const Cyber3Layout: React.FC<Cyber3LayoutProps> = ({ data, config, childr
 
   return (
     <div 
-        className="relative bg-[#030305] overflow-hidden"
-        style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+        className="relative bg-transparent overflow-hidden"
+        style={{ width: '100%', height: '100%' }}
     >
       {/* ── GAME LAYER ── */}
       <div className="absolute inset-0 z-0">

@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { HUDData, HUDConfig } from '../types';
-import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT, PLAY_AREA_HEIGHT } from '../../../constants';
+import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT, PLAY_AREA_HEIGHT } from '../../../constants';
 
 interface Retro7LayoutProps {
     data: HUDData;
@@ -13,8 +13,8 @@ interface Retro7LayoutProps {
 export const Retro7Layout: React.FC<Retro7LayoutProps> = ({ data, children, showUI = true }) => {
     return (
         <div
-            className="relative bg-[#8b9bb4] overflow-hidden font-mono text-[#43523d]"
-            style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+            className="relative bg-transparent overflow-hidden font-mono text-[#43523d]"
+            style={{ width: '100%', height: '100%' }}
         >
             {/* ── LCD SCREEN (Game Layer) ── */}
             <div

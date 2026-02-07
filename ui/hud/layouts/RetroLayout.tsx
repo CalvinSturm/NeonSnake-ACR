@@ -2,7 +2,7 @@
 import React from 'react';
 import { HUDData, HUDConfig } from '../types';
 import { HUDBar, HUDSkillSlot } from '../HUDPrimitives';
-import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT } from '../../../constants';
+import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT } from '../../../constants';
 
 interface RetroLayoutProps {
     data: HUDData;
@@ -18,7 +18,7 @@ export const RetroLayout: React.FC<RetroLayoutProps> = ({ data, config, children
     return (
         <div
             className="relative bg-transparent overflow-hidden font-mono"
-            style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+            style={{ width: '100%', height: '100%' }}
         >
 
             {/* ── GAME LAYER ── */}

@@ -1,76 +1,131 @@
-# NeonSnake-ACR
+# Neon Snake: Cyber Protocol
 
-**NeonSnake-ACR** is a high-performance, browser-based arcade game built with **React**, **TypeScript**, and **Vite**. It features a retro aesthetic with modern rendering techniques, currently undergoing a significant architectural evolution to support high entity counts and smooth framerates.
+A high-performance cyberpunk snake game built with **React**, **TypeScript**, **PixiJS**, and **Tauri**. Features a multi-threaded architecture with SharedArrayBuffer for zero-copy state transfer at 144Hz+.
 
-## 🚀 Key Features
+![Cyberpunk Snake Game](https://img.shields.io/badge/status-active-00ff00?style=flat-square)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.4-blue?style=flat-square)
+![React](https://img.shields.io/badge/React-18-61dafb?style=flat-square)
+![PixiJS](https://img.shields.io/badge/PixiJS-8-e72264?style=flat-square)
 
-* **Fast-Paced Gameplay**: Arcade-style action with responsive controls.
-* **Retro Aesthetics**: Immersive visuals powered by custom layouts and rendering.
-* **Modern Tech Stack**: Built on the latest web technologies for performance and maintainability.
-* **Active Performance Engineering**: Currently migrating from Canvas 2D to a **WebGL** based renderer and **Web Worker** driven simulation to ensure 60FPS+ performance under heavy load.
+## ✨ Features
 
-## 🛠️ Technology Stack
+- **Multi-Threaded Simulation** — Game logic runs in a Web Worker at 60Hz, decoupled from rendering
+- **Zero-Copy State Transfer** — SharedArrayBuffer + Atomics for lock-free communication between threads
+- **144Hz Rendering** — Zero-allocation PixiJS renderer reads directly from TypedArrays
+- **Tauri Desktop** — Native desktop builds with Rust backend
+- **Cyberpunk Aesthetics** — Neon glow effects, procedural textures, and shader-based post-processing
 
-* **Core**: [React](https://react.dev/), [TypeScript](https://www.typescriptlang.org/)
-* **Build Tool**: [Vite](https://vitejs.dev/)
-* **Styling**: [TailwindCSS](https://tailwindcss.com/)
-* **Rendering**: Custom Canvas 2D / WebGL (Migration in progress)
-* **State Management**: React Hooks & Custom Game Loop Architecture
+## 🏗️ Architecture
 
-## 📦 Getting Started
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Main Thread                            │
+│  ┌──────────┐    ┌──────────────────┐    ┌──────────────┐   │
+│  │  React   │───▶│ SimulationBridge │───▶│ PixiJS       │   │
+│  │  UI      │    │ (zero-copy read) │    │ Renderer     │   │
+│  └──────────┘    └────────┬─────────┘    └──────────────┘   │
+│                           │                                  │
+│                  SharedArrayBuffer                           │
+│              ┌────────────┴────────────┐                     │
+│              │ • Snapshot Buffers (x2) │                     │
+│              │ • Input Ring Buffer     │                     │
+│              │ • Control Flags         │                     │
+│              └────────────┬────────────┘                     │
+└───────────────────────────┼─────────────────────────────────┘
+                            │
+┌───────────────────────────┼─────────────────────────────────┐
+│                      Worker Thread                          │
+│              ┌────────────┴────────────┐                    │
+│              │   SimulationWorld       │                    │
+│              │   (60Hz fixed timestep) │                    │
+│              └─────────────────────────┘                    │
+└─────────────────────────────────────────────────────────────┘
+```
 
-### Prerequisites
+## 🚀 Quick Start
 
-* Node.js (v18 or higher recommended)
-* npm or yarn
+### Web (Development)
 
-### Installation
+```bash
+npm install
+npm run dev
+```
 
-1. Clone the repository:
+Open `http://localhost:5173` — COOP/COEP headers are configured for SharedArrayBuffer.
 
-    ```bash
-    git clone https://github.com/CalvinSturm/NeonSnake-ACR.git
-    cd NeonSnake-ACR
-    ```
+### Tauri Desktop
 
-2. Install dependencies:
+```bash
+# Install Rust first: https://rustup.rs
+npm install @tauri-apps/cli
+npx tauri dev
+```
 
-    ```bash
-    npm install
-    ```
+## 📁 Project Structure
 
-3. Start the development server:
+```
+├── engine/
+│   ├── shared/           # SharedArrayBuffer infrastructure
+│   │   ├── BinarySnapshot.ts   # ~56KB binary memory layout
+│   │   └── InputRing.ts        # Lock-free SPSC ring buffer
+│   ├── workers/
+│   │   └── sim.worker.ts       # 144Hz simulation worker
+│   ├── simulation/
+│   │   └── SimulationWorld.ts  # Deterministic game logic
+│   └── SimulationBridge.ts     # Main-thread adapter
+├── graphics/
+│   ├── BinarySnapshotRenderer.ts  # Zero-allocation PixiJS
+│   ├── renderers/            # Entity-specific renderers
+│   └── shaders/              # WebGL post-processing
+├── game/
+│   ├── useSimulationBridge.ts    # React hook
+│   └── rendering/            # Render pass orchestration
+├── ui/
+│   └── hud/                  # HUD components & layouts
+├── src-tauri/                # Tauri desktop configuration
+└── types.ts                  # Shared type definitions
+```
 
-    ```bash
-    npm run dev
-    ```
+## 🎮 Controls
 
-4. Open your browser and navigate to `http://localhost:5173`.
+| Key | Action |
+|-----|--------|
+| `W` / `↑` | Move Up |
+| `S` / `↓` | Move Down |
+| `A` / `←` | Move Left |
+| `D` / `→` | Move Right |
+| `Space` | Jump |
+| `Shift` | Brake |
+| `Esc` | Pause |
 
-## 📂 Project Structure
+## 🔧 Scripts
 
-* **`game/`**: Core game logic including state management, custom hooks, and entity definitions (Enemies, Projectiles).
-* **`engine/`**: Low-level engine components, including the main game loop and update schedulers.
-* **`graphics/`**: Rendering systems. Contains the logic for drawing frames, managing sprites, and the transition to WebGL.
-* **`ui/`**: React components for the HUD, menus, and overlay layouts (e.g., `Retro6Layout`).
-* **`docs/`**: Architecture documentation and analysis reports.
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start dev server with hot reload |
+| `npm run build` | Type-check and build for production |
+| `npm run preview` | Preview production build |
+| `npx tauri dev` | Run Tauri desktop in dev mode |
+| `npx tauri build` | Build native desktop executable |
 
-## 🚧 Development Status & Roadmap
+## 🛠️ Tech Stack
 
-The project is currently in an active refactoring phase to address performance bottlenecks:
+- **Frontend**: React 18, TypeScript 5.4
+- **Rendering**: PixiJS 8 (WebGL), Canvas 2D fallback
+- **Threading**: Web Workers, SharedArrayBuffer, Atomics
+- **Desktop**: Tauri 1.6 (Rust backend)
+- **Build**: Vite 5.2
+- **Styling**: TailwindCSS 3.4
 
-* **Phase 1**: Decoupling Game Loop from React (In Progress)
-* **Phase 2**: Offloading Simulation to Web Workers
-* **Phase 3**: Memory Optimization (Object Pooling)
-* **Phase 4**: WebGL Rendering Integration
+## 📊 Performance
 
-See `docs/analysis.md` for a detailed technical breakdown.
-
-## 📜 Scripts
-
-* `npm run dev`: Starts the local development server.
-* `npm run build`: Type-checks and builds the project for production.
-* `npm run preview`: Locally preview the production build.
+| Metric | Target | Method |
+|--------|--------|--------|
+| Simulation | 60 Hz | Fixed timestep in Worker |
+| Rendering | 144+ Hz | RAF with zero-allocation reads |
+| State Transfer | ~0ms | SharedArrayBuffer (no postMessage) |
+| GC Pressure | Minimal | Object pooling + TypedArrays |
 
 ---
-*Built with passion for retro gaming and modern engineering.*
+
+*Built for high-performance gaming on the modern web.*

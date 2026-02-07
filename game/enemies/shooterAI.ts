@@ -2,15 +2,9 @@
 import { Enemy, AIContext } from './enemyTypes';
 import { distanceToPlayer, moveTowardPlayer, moveAwayFromPlayer, angleToPlayer, stopMovement } from './enemyHelpers';
 import { MOVEMENT_CONSTANTS } from '../../constants';
+import { SHOOTER } from './enemyConstants';
 
 type ShooterState = 'PATROL' | 'CHARGE' | 'FIRE' | 'REPOSITION';
-
-const RANGE_MIN = 8;
-const RANGE_MAX = 16;
-// Base Timers
-const BASE_CHARGE_TIME = 1500;
-const BASE_FIRE_TIME = 500;
-const BASE_REPOSITION_TIME = 2000;
 
 export const updateShooter = (enemy: Enemy, ctx: AIContext) => {
   const { dt, playerPos, aggressionMod } = ctx;
@@ -21,8 +15,6 @@ export const updateShooter = (enemy: Enemy, ctx: AIContext) => {
     enemy.attackTimer = 0;
   }
 
-  // Timer update handled centrally
-
   const dist = distanceToPlayer(enemy, playerPos);
 
   // Always face player unless firing (locked)
@@ -31,22 +23,22 @@ export const updateShooter = (enemy: Enemy, ctx: AIContext) => {
   }
 
   // Scale timers based on difficulty
-  const chargeTime = BASE_CHARGE_TIME * aggressionMod;
-  const repositionTime = BASE_REPOSITION_TIME * aggressionMod;
+  const chargeTime = SHOOTER.CHARGE_TIME * aggressionMod;
+  const repositionTime = SHOOTER.REPOSITION_TIME * aggressionMod;
 
   switch (enemy.aiState as ShooterState) {
     case 'PATROL':
       enemy.intent = 'REPOSITIONING';
-      
+
       // Try to maintain ideal range
-      if (dist < RANGE_MIN) {
+      if (dist < SHOOTER.RANGE_MIN) {
         moveAwayFromPlayer(enemy, playerPos, MOVEMENT_CONSTANTS.REPOSITION_SPEED_MULT, dt);
-      } else if (dist > RANGE_MAX) {
+      } else if (dist > SHOOTER.RANGE_MAX) {
         moveTowardPlayer(enemy, playerPos, MOVEMENT_CONSTANTS.REPOSITION_SPEED_MULT, dt);
       } else {
         // In sweet spot, slow down and prepare to engage
         stopMovement(enemy);
-        if (enemy.stateTimer && enemy.stateTimer > (1000 * aggressionMod)) {
+        if (enemy.stateTimer && enemy.stateTimer > (SHOOTER.PATROL_ENGAGE_TIME * aggressionMod)) {
             enemy.aiState = 'CHARGE';
             enemy.stateTimer = 0;
             enemy.attackTimer = 0;
@@ -57,7 +49,7 @@ export const updateShooter = (enemy: Enemy, ctx: AIContext) => {
     case 'CHARGE':
       enemy.intent = 'ATTACKING';
       stopMovement(enemy);
-      
+
       enemy.angle = angleToPlayer(enemy, playerPos);
 
       if (enemy.attackTimer && enemy.attackTimer >= chargeTime) {
@@ -69,8 +61,8 @@ export const updateShooter = (enemy: Enemy, ctx: AIContext) => {
     case 'FIRE':
       enemy.intent = 'ATTACKING';
       stopMovement(enemy);
-      
-      if (enemy.stateTimer && enemy.stateTimer > BASE_FIRE_TIME) {
+
+      if (enemy.stateTimer && enemy.stateTimer > SHOOTER.FIRE_TIME) {
         enemy.aiState = 'REPOSITION';
         enemy.stateTimer = 0;
         enemy.attackTimer = 0;
@@ -80,7 +72,7 @@ export const updateShooter = (enemy: Enemy, ctx: AIContext) => {
     case 'REPOSITION':
       enemy.intent = 'REPOSITIONING';
       moveAwayFromPlayer(enemy, playerPos, MOVEMENT_CONSTANTS.PATROL_SPEED_MULT, dt);
-      
+
       if (enemy.stateTimer && enemy.stateTimer > repositionTime) {
         enemy.aiState = 'PATROL';
         enemy.stateTimer = 0;

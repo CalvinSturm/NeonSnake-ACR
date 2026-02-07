@@ -2,7 +2,7 @@
 import React from 'react';
 import { HUDData, HUDConfig } from '../types';
 import { HUDTooltip } from '../HUDPrimitives';
-import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT } from '../../../constants';
+import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT } from '../../../constants';
 
 interface Retro2LayoutProps {
   data: HUDData;
@@ -21,8 +21,8 @@ export const Retro2Layout: React.FC<Retro2LayoutProps> = ({ data, config, childr
 
   return (
     <div 
-        className="relative bg-[#050505] overflow-hidden font-mono"
-        style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+        className="relative bg-transparent overflow-hidden font-mono"
+        style={{ width: '100%', height: '100%' }}
     >
       {/* ── CRT CURVATURE & GLOW OVERLAY ── */}
       <div className="absolute inset-0 pointer-events-none z-30 shadow-[inset_0_0_80px_rgba(0,0,0,0.8)] rounded-[40px] border-[2px] border-[#111]" />
@@ -125,7 +125,7 @@ export const Retro2Layout: React.FC<Retro2LayoutProps> = ({ data, config, childr
 
                             {/* Cooldown Fill (Simulated by opacity or internal rect) */}
                             {w.cooldownPct < 1 && (
-                                <div className="absolute inset-0 bg-[#000]/80 flex items-end justify-center pb-2">
+                                <div className="absolute inset-0 bg-transparent/80 flex items-end justify-center pb-2">
                                     <div className="w-8 h-1 bg-[#115500]">
                                         <div className="h-full bg-[#33ff00]" style={{ width: `${w.cooldownPct * 100}%` }}></div>
                                     </div>

@@ -2,7 +2,7 @@
 import React from 'react';
 import { HUDData, HUDConfig } from '../types';
 import { HUDTooltip } from '../HUDPrimitives';
-import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT } from '../../../constants';
+import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT } from '../../../constants';
 
 interface Glass3LayoutProps {
   data: HUDData;
@@ -24,8 +24,8 @@ export const Glass3Layout: React.FC<Glass3LayoutProps> = ({ data, config, childr
 
   return (
     <div 
-        className="relative bg-[#1a1a1a] overflow-hidden font-sans"
-        style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+        className="relative bg-transparent overflow-hidden font-sans"
+        style={{ width: '100%', height: '100%' }}
     >
       {/* ── GAME LAYER ── */}
       <div className="absolute inset-0 z-0">

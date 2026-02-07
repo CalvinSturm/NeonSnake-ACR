@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { HUDData, HUDConfig } from '../types';
-import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT } from '../../../constants';
+import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT } from '../../../constants';
 import { HUDTooltip } from '../HUDPrimitives';
 
 interface GlassLayoutProps {
@@ -14,8 +14,8 @@ interface GlassLayoutProps {
 export const GlassLayout: React.FC<GlassLayoutProps> = ({ data, config, children, showUI = true }) => {
   return (
     <div 
-        className="relative bg-black overflow-hidden font-sans"
-        style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+        className="relative bg-transparent overflow-hidden font-sans"
+        style={{ width: '100%', height: '100%' }}
     >
       
       {/* ── GAME LAYER ── */}

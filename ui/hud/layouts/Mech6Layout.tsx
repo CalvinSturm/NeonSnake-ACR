@@ -2,7 +2,7 @@
 import React from 'react';
 import { HUDData, HUDConfig } from '../types';
 import { HUDTooltip } from '../HUDPrimitives';
-import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT } from '../../../constants';
+import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT } from '../../../constants';
 
 interface Mech6LayoutProps {
   data: HUDData;
@@ -14,8 +14,8 @@ interface Mech6LayoutProps {
 export const Mech6Layout: React.FC<Mech6LayoutProps> = ({ data, config, children, showUI = true }) => {
   return (
     <div 
-        className="relative bg-[#1a1a1a] overflow-hidden font-mono text-[#eab308]"
-        style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+        className="relative bg-transparent overflow-hidden font-mono text-[#eab308]"
+        style={{ width: '100%', height: '100%' }}
     >
       {/* ── GAME LAYER ── */}
       <div className="absolute inset-0 z-0">
@@ -38,7 +38,7 @@ export const Mech6Layout: React.FC<Mech6LayoutProps> = ({ data, config, children
                 <div className="flex justify-between px-4 pt-2">
                     {/* Radar Group */}
                     <div className="bg-[#222]/90 border-2 border-[#444] p-1 flex gap-2 rounded-br-lg shadow-lg">
-                        <div className="w-16 h-16 bg-[#000] rounded-full border border-[#333] relative overflow-hidden flex items-center justify-center">
+                        <div className="w-16 h-16 bg-transparent rounded-full border border-[#333] relative overflow-hidden flex items-center justify-center">
                             <div className="absolute w-full h-px bg-[#333]"></div>
                             <div className="absolute h-full w-px bg-[#333]"></div>
                             <div className="w-full h-full bg-[conic-gradient(from_0deg,transparent_0deg,rgba(0,255,0,0.2)_300deg)] animate-spin"></div>

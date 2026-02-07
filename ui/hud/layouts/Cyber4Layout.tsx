@@ -2,7 +2,7 @@
 import React from 'react';
 import { HUDData, HUDConfig } from '../types';
 import { HUDTooltip } from '../HUDPrimitives';
-import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT } from '../../../constants';
+import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT } from '../../../constants';
 
 interface Cyber4LayoutProps {
   data: HUDData;
@@ -14,8 +14,8 @@ interface Cyber4LayoutProps {
 export const Cyber4Layout: React.FC<Cyber4LayoutProps> = ({ data, config, children, showUI = true }) => {
   return (
     <div 
-        className="relative bg-black overflow-hidden font-mono text-red-500"
-        style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+        className="relative bg-transparent overflow-hidden font-mono text-red-500"
+        style={{ width: '100%', height: '100%' }}
     >
       {/* ── BACKGROUND ── */}
       <div className="absolute inset-0 pointer-events-none opacity-20 bg-[linear-gradient(45deg,#220000_25%,transparent_25%,transparent_50%,#220000_50%,#220000_75%,transparent_75%,transparent)] bg-[length:4px_4px]"></div>

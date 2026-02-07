@@ -2,7 +2,7 @@
 import React from 'react';
 import { HUDData, HUDConfig } from '../types';
 import { HUDTooltip } from '../HUDPrimitives';
-import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT } from '../../../constants';
+import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT } from '../../../constants';
 
 interface Mech3LayoutProps {
   data: HUDData;
@@ -25,7 +25,7 @@ export const Mech3Layout: React.FC<Mech3LayoutProps> = ({ data, config, children
               {Array.from({length: 15}).map((_, i) => (
                   <div key={i} className="flex items-center gap-1 w-full justify-between px-1">
                       {side === 'left' && <span className="text-[8px] text-[#00ff00] opacity-50">--</span>}
-                      <div className="w-full h-px bg-[#00ff00] opacity-30"></div>
+                      <div className="w-full h-px bg-transparent opacity-30"></div>
                       {side === 'right' && <span className="text-[8px] text-[#00ff00] opacity-50">--</span>}
                   </div>
               ))}
@@ -44,8 +44,8 @@ export const Mech3Layout: React.FC<Mech3LayoutProps> = ({ data, config, children
 
   return (
     <div 
-        className="relative bg-[#001100] overflow-hidden font-mono"
-        style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+        className="relative bg-transparent overflow-hidden font-mono"
+        style={{ width: '100%', height: '100%' }}
     >
       {/* ── GAME LAYER ── */}
       <div className="absolute inset-0 z-0">
@@ -55,12 +55,12 @@ export const Mech3Layout: React.FC<Mech3LayoutProps> = ({ data, config, children
       {/* ── HUD OVERLAY ── */}
       <div className="absolute inset-0 pointer-events-none z-10">
           {/* Artificial Horizon Line (Static for now) */}
-          <div className="absolute top-1/2 left-0 w-full h-px bg-[#00ff00] opacity-20"></div>
-          <div className="absolute top-0 left-1/2 h-full w-px bg-[#00ff00] opacity-10"></div>
+          <div className="absolute top-1/2 left-0 w-full h-px bg-transparent opacity-20"></div>
+          <div className="absolute top-0 left-1/2 h-full w-px bg-transparent opacity-10"></div>
           
           {/* Center Reticle */}
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 border border-[#00ff00] opacity-50 rounded-full flex items-center justify-center">
-              <div className="w-1 h-1 bg-[#00ff00]"></div>
+              <div className="w-1 h-1 bg-transparent"></div>
           </div>
       </div>
 
@@ -89,7 +89,7 @@ export const Mech3Layout: React.FC<Mech3LayoutProps> = ({ data, config, children
                 <div className="text-[10px] text-[#00ff00] border-b border-[#00ff00] w-full mb-1">ORDNANCE</div>
                 {data.loadout.weapons.map((w, i) => (
                     <div key={w.id} className="flex items-center gap-2">
-                        <div className={`w-3 h-3 border border-[#00ff00] ${w.active ? 'bg-[#00ff00]' : 'bg-transparent'}`}></div>
+                        <div className={`w-3 h-3 border border-[#00ff00] ${w.active ? 'bg-transparent' : 'bg-transparent'}`}></div>
                         <span className={`text-xs ${w.active ? 'text-[#00ff00]' : 'text-green-900'} font-bold`}>
                             {w.label || 'WPN ' + (i+1)}
                         </span>

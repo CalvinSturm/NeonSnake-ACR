@@ -2,7 +2,7 @@
 import React from 'react';
 import { HUDData, HUDConfig } from '../types';
 import { HUDTooltip } from '../HUDPrimitives';
-import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT } from '../../../constants';
+import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT } from '../../../constants';
 
 interface RPG2LayoutProps {
   data: HUDData;
@@ -58,8 +58,8 @@ export const RPG2Layout: React.FC<RPG2LayoutProps> = ({ data, config, children, 
 
   return (
     <div 
-        className="relative bg-[#050505] overflow-hidden font-serif"
-        style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+        className="relative bg-transparent overflow-hidden font-serif"
+        style={{ width: '100%', height: '100%' }}
     >
       {/* ── GAME LAYER ── */}
       <div className="absolute inset-0 z-0">
@@ -95,7 +95,7 @@ export const RPG2Layout: React.FC<RPG2LayoutProps> = ({ data, config, children, 
                     </div>
 
                     {/* MANA (XP) */}
-                    <div className="w-36 h-3 bg-[#0f121a] border border-[#18233d] rounded-sm relative overflow-hidden">
+                    <div className="w-36 h-3 bg-transparent border border-[#18233d] rounded-sm relative overflow-hidden">
                         <div 
                             className="h-full bg-gradient-to-r from-[#00338b] to-[#3388ff] transition-all duration-300"
                             style={{ width: `${xpPct}%` }}
@@ -141,7 +141,7 @@ export const RPG2Layout: React.FC<RPG2LayoutProps> = ({ data, config, children, 
                     
                     {/* Empty Slots */}
                     {Array.from({ length: Math.max(0, data.loadout.maxWeaponSlots - data.loadout.weapons.length) }).map((_, i) => (
-                        <div key={`e-${i}`} className="w-12 h-12 bg-[#0a0805] border border-[#333] rounded flex items-center justify-center opacity-50">
+                        <div key={`e-${i}`} className="w-12 h-12 bg-transparent border border-[#333] rounded flex items-center justify-center opacity-50">
                             <span className="text-[#444] text-xs">+</span>
                         </div>
                     ))}

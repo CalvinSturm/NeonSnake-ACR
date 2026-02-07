@@ -1,7 +1,7 @@
 import React from 'react';
 import { HUDData, HUDConfig } from '../types';
 import { HUDTooltip } from '../HUDPrimitives';
-import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT } from '../../../constants';
+import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT } from '../../../constants';
 
 interface Cyber2LayoutProps {
   data: HUDData;
@@ -36,9 +36,9 @@ const WeaponModule: React.FC<{ skill: any; index: number }> = ({ skill, index })
             {/* Visual Cartridge Container (Clipped & Overflow Hidden) */}
             <div className={`
                 absolute inset-0 
-                bg-[#080808] border border-cyan-900/50 clip-cartridge 
+                bg-transparent border border-cyan-900/50 clip-cartridge 
                 flex flex-col items-center justify-end overflow-hidden 
-                transition-all hover:border-cyan-500/50 hover:bg-[#0a1015]
+                transition-all hover:border-cyan-500/50 hover:bg-transparent
             `}>
                 {/* Charge Bar Background */}
                 <div className="absolute inset-0 w-full h-full bg-cyan-900/10" />
@@ -89,8 +89,8 @@ export const Cyber2Layout: React.FC<Cyber2LayoutProps> = ({ data, config, childr
 
   return (
     <div 
-        className="relative bg-[#020202] overflow-hidden shadow-2xl font-mono text-cyan-50 select-none"
-        style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+        className="relative bg-transparent overflow-hidden shadow-2xl font-mono text-cyan-50 select-none"
+        style={{ width: '100%', height: '100%' }}
     >
       {/* ── BACKGROUND VFX ── */}
       {/* Vignette & Scanlines */}

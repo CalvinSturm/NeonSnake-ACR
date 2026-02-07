@@ -2,7 +2,7 @@
 import React from 'react';
 import { HUDData, HUDConfig } from '../types';
 import { HUDTooltip } from '../HUDPrimitives';
-import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT } from '../../../constants';
+import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT } from '../../../constants';
 
 interface Mech5LayoutProps {
   data: HUDData;
@@ -14,8 +14,8 @@ interface Mech5LayoutProps {
 export const Mech5Layout: React.FC<Mech5LayoutProps> = ({ data, config, children, showUI = true }) => {
   return (
     <div 
-        className="relative bg-[#0d0d0d] overflow-hidden font-mono text-gray-300"
-        style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+        className="relative bg-transparent overflow-hidden font-mono text-gray-300"
+        style={{ width: '100%', height: '100%' }}
     >
       <div className="absolute inset-0 z-0">
           {children}
@@ -53,7 +53,7 @@ export const Mech5Layout: React.FC<Mech5LayoutProps> = ({ data, config, children
                 </div>
 
                 {/* Center: Weapon Hardpoints */}
-                <div className="flex-1 h-24 bg-[#0a0a0a] border border-[#333] rounded p-2 flex items-center justify-center gap-3 shadow-inner">
+                <div className="flex-1 h-24 bg-transparent border border-[#333] rounded p-2 flex items-center justify-center gap-3 shadow-inner">
                     {data.loadout.weapons.map((w, i) => (
                         <div key={w.id} className="relative group w-14 h-16 bg-[#181818] border-2 border-[#444] flex flex-col items-center justify-center hover:border-orange-500 transition-colors">
                             <span className={`text-xl ${w.active ? 'text-orange-400' : 'text-gray-700'}`}>{w.icon}</span>

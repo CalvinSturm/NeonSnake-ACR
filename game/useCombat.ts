@@ -15,6 +15,7 @@ import {
   GRID_ROWS,
   PROJECTILE_SPEED
 } from '../constants';
+import { SHOOTER as SHOOTER_CONSTANTS } from './enemies/enemyConstants';
 
 function findNearestEnemy(enemies: readonly Enemy[], from: { x: number; y: number }, maxRange: number): Enemy | null {
   let nearest: Enemy | null = null;
@@ -640,6 +641,39 @@ export function useCombat(
         auraTickTimerRef.current = 0;
       }
     }
+
+    // ─────────────────────────────────────────────
+    // ENEMY WEAPON SYSTEMS
+    // ─────────────────────────────────────────────
+
+    // SHOOTER enemy projectiles
+    enemiesRef.current.forEach(e => {
+      if (e.shouldRemove || e.type !== EnemyType.SHOOTER) return;
+      if (e.state !== 'ACTIVE') return;
+
+      // Fire when transitioning out of FIRE state (stateTimer just started)
+      if (e.aiState === 'FIRE' && e.stateTimer !== undefined && e.stateTimer < dt * 2) {
+        const angle = e.angle || 0;
+        const speed = PROJECTILE_SPEED * SHOOTER_CONSTANTS.PROJECTILE_SPEED_MULT;
+
+        projectilesRef.current.push({
+          id: Math.random().toString(36),
+          x: e.x * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2,
+          y: e.y * DEFAULT_SETTINGS.gridSize + DEFAULT_SETTINGS.gridSize / 2,
+          vx: Math.cos(angle) * speed / 60,
+          vy: Math.sin(angle) * speed / 60,
+          damage: SHOOTER_CONSTANTS.PROJECTILE_DAMAGE,
+          color: COLORS.enemyShooter,
+          size: SHOOTER_CONSTANTS.PROJECTILE_SIZE,
+          type: 'ENEMY_BOLT',
+          owner: 'ENEMY',
+          usesGravity: false
+        });
+
+        audioEventsRef.current.push({ type: 'SHOOT' });
+        createParticles(e.x, e.y, COLORS.enemyShooter, 3);
+      }
+    });
 
     // ─────────────────────────────────────────────
     // PROJECTILE UPDATE LOOP (Logic Only)

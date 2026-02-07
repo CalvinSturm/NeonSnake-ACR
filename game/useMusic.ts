@@ -27,13 +27,24 @@ export function useMusic(game: ReturnType<typeof useGameState>) {
           audio.stopGameplayLoops();
       }
 
+      // GAME OVER: Switch to DEATH mode (eerie, mournful atmosphere)
+      // "Containment complete. You are protected now. Forever."
+      if (status === GameStatus.GAME_OVER) {
+          audio.setMode('DEATH');
+          currentThreatRef.current = 0;
+          lastThreatChangeTimeRef.current = 0;
+          audio.setThreat(0);
+          audio.startMusic();
+          return;
+      }
+
+      // MENU STATES: OMEGA watches, waiting for the next operator
       if (
           status === GameStatus.IDLE ||
           status === GameStatus.DIFFICULTY_SELECT ||
           status === GameStatus.CHARACTER_SELECT ||
           status === GameStatus.CONFIGURATION ||
-          status === GameStatus.READY ||
-          status === GameStatus.GAME_OVER
+          status === GameStatus.READY
       ) {
           audio.setMode('MENU');
           // Reset threat state so music starts fresh on new game

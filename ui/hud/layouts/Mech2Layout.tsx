@@ -2,7 +2,7 @@
 import React from 'react';
 import { HUDData, HUDConfig } from '../types';
 import { HUDTooltip } from '../HUDPrimitives';
-import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT } from '../../../constants';
+import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT } from '../../../constants';
 
 interface Mech2LayoutProps {
   data: HUDData;
@@ -38,8 +38,8 @@ export const Mech2Layout: React.FC<Mech2LayoutProps> = ({ data, config, children
 
   return (
     <div 
-        className="relative bg-[#0a0a0a] overflow-hidden font-mono"
-        style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+        className="relative bg-transparent overflow-hidden font-mono"
+        style={{ width: '100%', height: '100%' }}
     >
       {/* ── GAME LAYER ── */}
       <div className="absolute inset-0 z-0">
@@ -80,7 +80,7 @@ export const Mech2Layout: React.FC<Mech2LayoutProps> = ({ data, config, children
 
                 {/* Center: Compass */}
                 <div className="flex flex-col items-center w-64">
-                    <div className="w-full h-6 border-x border-[#444] relative overflow-hidden bg-[#050505] flex justify-center items-center">
+                    <div className="w-full h-6 border-x border-[#444] relative overflow-hidden bg-transparent flex justify-center items-center">
                         <div className="text-xs text-amber-600 font-bold">N • • • E • • • S • • • W</div>
                         <div className="absolute top-0 bottom-0 left-1/2 w-0.5 bg-red-500/50"></div>
                     </div>
@@ -120,7 +120,7 @@ export const Mech2Layout: React.FC<Mech2LayoutProps> = ({ data, config, children
                 </div>
 
                 {/* Center Panel: Weapons */}
-                <div className="flex-1 h-24 mx-2 bg-[#0f0f0f]/90 border-t-2 border-[#444] rounded-t-xl flex items-end justify-center pb-2 gap-2 backdrop-blur-sm relative">
+                <div className="flex-1 h-24 mx-2 bg-transparent/90 border-t-2 border-[#444] rounded-t-xl flex items-end justify-center pb-2 gap-2 backdrop-blur-sm relative">
                     {/* Decorative Screws */}
                     <div className="absolute top-2 left-2 w-2 h-2 rounded-full bg-[#333] flex items-center justify-center"><div className="w-1 h-0.5 bg-[#111] rotate-45"></div></div>
                     <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[#333] flex items-center justify-center"><div className="w-1 h-0.5 bg-[#111] rotate-45"></div></div>

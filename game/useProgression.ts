@@ -61,16 +61,15 @@ export function useProgression(game: ReturnType<typeof useGameState>): Progressi
     xpRef,
     nextLevelXpRef,
     levelRef,
-    setUiScore,
-    setUiXp,
-    setUiXpValues,
+    updateScoreRef,
+    updateComboRef,
+    updateXpRefs,
     setUiLevel,
-    setUiCombo,
     setUiShield,
     setStatus,
     setUpgradeOptions,
     audioEventsRef,
-    uiCombo,
+    uiComboRef,
     gameTimeRef,
     lastEatTimeRef,
     stageScoreRef,
@@ -78,7 +77,6 @@ export function useProgression(game: ReturnType<typeof useGameState>): Progressi
     setUnlockedDifficulties,
     difficulty,
     pendingStatusRef,
-    uiXp, // Used for debug assertion
     enemiesRef, // Access enemies for Override effects
     settings,
     setResumeCountdown,
@@ -102,7 +100,7 @@ export function useProgression(game: ReturnType<typeof useGameState>): Progressi
 
   const levelUp = useCallback(() => {
     setStatus(GameStatus.LEVEL_UP);
-    audioEventsRef.current.push({ type: 'LEVEL_UP', data: { level: levelRef.current, difficulty, combo: uiCombo } });
+    audioEventsRef.current.push({ type: 'LEVEL_UP', data: { level: levelRef.current, difficulty, combo: uiComboRef.current } });
 
     const stats = statsRef.current;
     const allIds = Object.keys(UPGRADE_DEFINITIONS) as UpgradeId[];
@@ -186,27 +184,27 @@ export function useProgression(game: ReturnType<typeof useGameState>): Progressi
     }
     
     setUpgradeOptions(options);
-  }, [setStatus, audioEventsRef, levelRef, difficulty, uiCombo, statsRef, setUpgradeOptions]);
+  }, [setStatus, audioEventsRef, levelRef, difficulty, uiComboRef, statsRef, setUpgradeOptions]);
 
   // 🔒 RESTORE XP AUTHORITY
   const gainXp = useCallback((amount: number) => {
       // Invariant 1: Always increment XP
       xpRef.current += amount;
-      
+
       // Invariant 2: Immediate Level-Up Trigger
       if (xpRef.current >= nextLevelXpRef.current) {
           xpRef.current -= nextLevelXpRef.current;
           levelRef.current += 1;
           nextLevelXpRef.current = Math.floor(nextLevelXpRef.current * 1.2);
-          
+
           setUiLevel(levelRef.current);
           levelUp();
       }
-      
-      // Always update UI
-      setUiXp((xpRef.current / nextLevelXpRef.current) * 100);
-      setUiXpValues({ current: Math.floor(xpRef.current), max: nextLevelXpRef.current });
-  }, [xpRef, nextLevelXpRef, levelRef, setUiLevel, setUiXp, setUiXpValues, levelUp]);
+
+      // Always update UI via refs (synced at 10Hz to prevent glitching)
+      const xpPercent = (xpRef.current / nextLevelXpRef.current) * 100;
+      updateXpRefs(xpPercent, Math.floor(xpRef.current), nextLevelXpRef.current);
+  }, [xpRef, nextLevelXpRef, levelRef, setUiLevel, updateXpRefs, levelUp]);
 
   const onEnemyDefeated = useCallback(({ xp }: { xp: number }) => {
       if (xp > 0) gainXp(xp);
@@ -216,24 +214,26 @@ export function useProgression(game: ReturnType<typeof useGameState>): Progressi
 
   const onFoodConsumed = useCallback(({ type, byMagnet, value }: { type: string, byMagnet: boolean, value?: number }) => {
       lastEatTimeRef.current = gameTimeRef.current;
-      
+
+      const currentCombo = uiComboRef.current;
+
       // FIXED: Only increment combo for Normal Food (not XP orbs) to make combo skill-based
-      if ((type === FoodType.NORMAL || type === 'BONUS') && uiCombo < 10) {
-          setUiCombo(c => c + 1);
+      if ((type === FoodType.NORMAL || type === 'BONUS') && currentCombo < 10) {
+          updateComboRef(currentCombo + 1);
       }
-      
+
       const baseScore = 50;
-      const comboMult = 1 + (uiCombo * 0.1);
+      const comboMult = 1 + (currentCombo * 0.1);
       const val = value || baseScore;
       const finalScore = val * comboMult * statsRef.current.scoreMultiplier;
-      
+
       scoreRef.current += finalScore;
       stageScoreRef.current += finalScore;
-      setUiScore(scoreRef.current);
+      updateScoreRef(scoreRef.current);
 
-      audioEventsRef.current.push({ 
-          type: 'EAT', 
-          data: { multiplier: 1 + (uiCombo * 0.1) } 
+      audioEventsRef.current.push({
+          type: 'EAT',
+          data: { multiplier: comboMult }
       });
 
       // Explicitly call gainXp without stage checks
@@ -242,36 +242,36 @@ export function useProgression(game: ReturnType<typeof useGameState>): Progressi
       } else if (type === 'NORMAL') {
           gainXp(10 * statsRef.current.foodQualityMod);
       }
-  }, [gameTimeRef, lastEatTimeRef, uiCombo, setUiCombo, statsRef, scoreRef, stageScoreRef, setUiScore, audioEventsRef, gainXp]);
+  }, [gameTimeRef, lastEatTimeRef, uiComboRef, updateComboRef, statsRef, scoreRef, stageScoreRef, updateScoreRef, audioEventsRef, gainXp]);
 
   const onTerminalHacked = useCallback((type: TerminalType, associatedFileId?: string): number => {
       // 🔒 AUTHORITATIVE TERMINAL REWARD HANDLER
-      
+
       const stats = statsRef.current;
       let xpGained = 0;
 
       if (type === 'RESOURCE') {
           // Standard Terminal: Grants high XP & Score
-          const baseTerminalXp = 300; 
+          const baseTerminalXp = 300;
           const xpGain = Math.floor(baseTerminalXp * stats.hackSpeedMod);
-          
+
           gainXp(xpGain);
           xpGained = xpGain;
 
           scoreRef.current += 1000 * stats.scoreMultiplier;
           stageScoreRef.current += 1000;
-          setUiScore(scoreRef.current);
-      } 
+          updateScoreRef(scoreRef.current);
+      }
       else if (type === 'MEMORY') {
           // 🧠 MEMORY UNLOCK
           if (associatedFileId) {
               const unlocked = unlockMemoryId(associatedFileId);
               if (unlocked) {
                   game.setHasUnreadArchiveData(true); // Flag global state
-                  
+
                   // Find file name for toast
                   const file = ROOT_FILESYSTEM.contents.find(f => f.id === associatedFileId);
-                  
+
                   gainXp(800); // Massive XP for lore
                   xpGained = 800;
                   audioEventsRef.current.push({ type: 'BONUS' });
@@ -289,11 +289,11 @@ export function useProgression(game: ReturnType<typeof useGameState>): Progressi
       else if (type === 'CLEARANCE') {
           // Future proofing for keycard terminals
           scoreRef.current += 500;
-          setUiScore(scoreRef.current);
+          updateScoreRef(scoreRef.current);
       }
 
       return xpGained;
-  }, [scoreRef, statsRef, stageScoreRef, setUiScore, gainXp, enemiesRef, game.setHasUnreadArchiveData]);
+  }, [scoreRef, statsRef, stageScoreRef, updateScoreRef, gainXp, enemiesRef, game.setHasUnreadArchiveData, audioEventsRef]);
 
   const applyPassiveScore = useCallback((dt: number) => {
       // NEW: Award Neon Fragments on stage clear
@@ -315,13 +315,13 @@ export function useProgression(game: ReturnType<typeof useGameState>): Progressi
       const inc = PASSIVE_SCORE_PER_SEC * (dt / 1000) * statsRef.current.scoreMultiplier;
       scoreRef.current += inc;
       stageScoreRef.current += inc;
-      setUiScore(Math.floor(scoreRef.current));
-      
+      updateScoreRef(Math.floor(scoreRef.current));
+
       // FIXED: Combo Counter Logic (Reset if window passed)
-      if (uiCombo > 0 && gameTimeRef.current - lastEatTimeRef.current > COMBO_WINDOW) {
-          setUiCombo(0);
+      if (uiComboRef.current > 0 && gameTimeRef.current - lastEatTimeRef.current > COMBO_WINDOW) {
+          updateComboRef(0);
       }
-  }, [statsRef, scoreRef, stageScoreRef, setUiScore, uiCombo, gameTimeRef, lastEatTimeRef, setUiCombo, game.stageReadyRef, game.pendingStatusRef, traitsRef, levelRef, tailIntegrityRef]);
+  }, [statsRef, scoreRef, stageScoreRef, updateScoreRef, uiComboRef, gameTimeRef, lastEatTimeRef, updateComboRef, game.stageReadyRef, game.pendingStatusRef, traitsRef, levelRef, tailIntegrityRef]);
 
   // 💡 UPGRADE APPLICATION (WITH RARITY SCALING)
   const applyUpgrade = useCallback((id: UpgradeId, rarity: UpgradeRarity = 'COMMON') => {

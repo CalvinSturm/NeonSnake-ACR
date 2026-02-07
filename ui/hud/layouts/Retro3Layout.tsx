@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { HUDData, HUDConfig } from '../types';
-import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT } from '../../../constants';
+import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT } from '../../../constants';
 
 interface Retro3LayoutProps {
   data: HUDData;
@@ -19,8 +19,8 @@ export const Retro3Layout: React.FC<Retro3LayoutProps> = ({ data, config, childr
 
   return (
     <div 
-        className="relative bg-[#9bbc0f] overflow-hidden font-mono flex items-center justify-center"
-        style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+        className="relative bg-transparent overflow-hidden font-mono flex items-center justify-center"
+        style={{ width: '100%', height: '100%' }}
     >
       {/* ── DOT MATRIX FILTER OVERLAY ── */}
       <div 
@@ -52,7 +52,7 @@ export const Retro3Layout: React.FC<Retro3LayoutProps> = ({ data, config, childr
                     <span className="text-xs font-bold">HP</span>
                     <div className="flex">
                         {Array.from({length: 5}).map((_,i) => (
-                            <div key={i} className={`w-3 h-3 border border-[#0f380f] mr-1 ${i < data.vitals.integrity/20 ? 'bg-[#0f380f]' : 'bg-transparent'}`}></div>
+                            <div key={i} className={`w-3 h-3 border border-[#0f380f] mr-1 ${i < data.vitals.integrity/20 ? 'bg-transparent' : 'bg-transparent'}`}></div>
                         ))}
                     </div>
                 </div>

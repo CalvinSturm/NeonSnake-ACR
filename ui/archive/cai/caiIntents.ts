@@ -93,7 +93,6 @@ const KEYWORDS: Record<string, { id: string, category: any }> = {
     'containment': { id: 'LORE_PURPOSE', category: 'LORE' },
     'purpose': { id: 'LORE_PURPOSE', category: 'LORE' },
     'why': { id: 'LORE_PURPOSE', category: 'LORE' },
-    'directive': { id: 'LORE_PURPOSE', category: 'LORE' },
     'protect': { id: 'LORE_PURPOSE', category: 'LORE' },
     'protection': { id: 'LORE_PURPOSE', category: 'LORE' },
 

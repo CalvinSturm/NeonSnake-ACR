@@ -8,6 +8,7 @@ import { SPACESHIP_BOSS_CONFIG } from './definitions/SpaceshipBoss';
 import { BossConfig, BossIntent } from './types';
 import { Enemy, Point } from '../../types';
 import { audio } from '../../utils/audio';
+import { SENTINEL_BOSS } from '../enemies/enemyConstants';
 
 const BOSS_REGISTRY: Record<string, BossConfig> = {
     'SENTINEL': SENTINEL_BOSS_CONFIG,
@@ -30,17 +31,18 @@ export function useBossController(
 
         // 1. SENTINEL MOVEMENT
         if (configId === 'SENTINEL') {
-            const hoverHeight = 5; // Grid units
+            const S = SENTINEL_BOSS;
+            const hoverHeight = S.HOVER_HEIGHT;
             const floorHeight = viewport.rows - 4;
 
-            if (stateId.includes('IDLE')) {
+            if (stateId.includes('IDLE') || stateId.includes('SCATTER')) {
                 // Hover and track X
                 const targetX = player.x;
                 const dx = targetX - boss.x;
-                boss.vx = dx * 1.5; // Smooth track
-                
+                boss.vx = dx * S.TRACKING_SPEED;
+
                 // Bobbing Y
-                const targetY = hoverHeight + Math.sin(gameTimeRef.current / 500) * 1.5;
+                const targetY = hoverHeight + Math.sin(gameTimeRef.current / S.BOB_FREQUENCY) * S.BOB_AMPLITUDE;
                 const dy = targetY - boss.y;
                 boss.vy = dy * 2.0;
 
@@ -53,7 +55,7 @@ export function useBossController(
             } else if (stateId.includes('EXECUTE_SLAM')) {
                 // Crash down
                 boss.vx = 0;
-                boss.vy += 80 * dtSec; // Heavy gravity accel
+                boss.vy += S.SLAM_GRAVITY * dtSec;
                 if (boss.y > floorHeight) {
                     boss.y = floorHeight;
                     boss.vy = 0;
@@ -64,9 +66,9 @@ export function useBossController(
                 boss.vx = 0;
                 const targetY = hoverHeight;
                 const dy = targetY - boss.y;
-                boss.vy = dy * 1.0; // Slow rise
+                boss.vy = dy * S.RISE_SPEED;
             }
-            
+
             // Apply Velocity
             boss.x += boss.vx * dtSec;
             boss.y += boss.vy * dtSec;
@@ -105,7 +107,7 @@ export function useBossController(
 
     }, [viewport, gameTimeRef]);
 
-    const processIntents = useCallback((intents: BossIntent[], bossId: string, bossX: number, bossY: number, facing: number) => {
+    const processIntents = useCallback((intents: BossIntent[], bossId: string, bossX: number, bossY: number, facing: number, playerPos?: Point) => {
         if (!intents) return;
 
         for (const intent of intents) {
@@ -160,7 +162,12 @@ export function useBossController(
                 case 'SPAWN_PROJECTILE':
                     const projCount = intent.count || 1;
                     const projSpread = intent.spread || 0;
-                    const projBaseAngle = intent.angle;
+
+                    // Calculate base angle - either toward player or fixed
+                    let projBaseAngle = intent.angle;
+                    if (intent.targetPlayer && playerPos) {
+                        projBaseAngle = Math.atan2(playerPos.y - bossY, playerPos.x - bossX);
+                    }
 
                     // Use proper grid size and velocity scaling (same as player projectiles)
                     const gridSize = viewport.cols > 0 ? (1920 / viewport.cols) : 32; // Approximate grid size
@@ -229,7 +236,7 @@ export function useBossController(
         if (stateRuntime.timer >= currentStateDef.duration) {
             // Exit Actions
             if (currentStateDef.onExit) {
-                processIntents(currentStateDef.onExit, boss.id, boss.x, boss.y, boss.facing || 1);
+                processIntents(currentStateDef.onExit, boss.id, boss.x, boss.y, boss.facing || 1, playerHead);
             }
 
             // Phase Logic
@@ -253,7 +260,7 @@ export function useBossController(
                 // Enter New Phase State
                 const newState = newPhase.table[newPhase.entryState];
                 if (newState && newState.onEnter) {
-                    processIntents(newState.onEnter, boss.id, boss.x, boss.y, boss.facing || 1);
+                    processIntents(newState.onEnter, boss.id, boss.x, boss.y, boss.facing || 1, playerHead);
                 }
             } else {
                 // STATE TRANSITION
@@ -264,7 +271,7 @@ export function useBossController(
                     
                     const nextState = stateTable[nextId];
                     if (nextState && nextState.onEnter) {
-                        processIntents(nextState.onEnter, boss.id, boss.x, boss.y, boss.facing || 1);
+                        processIntents(nextState.onEnter, boss.id, boss.x, boss.y, boss.facing || 1, playerHead);
                     }
                 } else {
                     stateRuntime.stateId = 'IDLE';

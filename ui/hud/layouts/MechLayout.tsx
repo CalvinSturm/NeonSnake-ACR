@@ -2,7 +2,7 @@
 import React from 'react';
 import { HUDData, HUDConfig } from '../types';
 import { HUDBar, HUDTooltip } from '../HUDPrimitives';
-import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT } from '../../../constants';
+import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT } from '../../../constants';
 
 interface MechLayoutProps {
   data: HUDData;
@@ -19,8 +19,8 @@ export const MechLayout: React.FC<MechLayoutProps> = ({ data, config, children, 
   
   return (
     <div 
-        className="relative bg-[#050505] overflow-hidden"
-        style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+        className="relative bg-transparent overflow-hidden"
+        style={{ width: '100%', height: '100%' }}
     >
       {/* ── GAME LAYER ── */}
       <div className="absolute inset-0 z-0">
@@ -104,7 +104,7 @@ export const MechLayout: React.FC<MechLayoutProps> = ({ data, config, children, 
 
             {/* Center Console (Weapons) */}
             <div className="flex-1 h-20 mx-4 flex items-end justify-center pb-2 bg-gradient-to-t from-black/80 to-transparent">
-                <div className="flex gap-2 p-2 border-b border-amber-900/50 bg-[#0a0a0a]/60 rounded-t-lg backdrop-blur-sm">
+                <div className="flex gap-2 p-2 border-b border-amber-900/50 bg-transparent/60 rounded-t-lg backdrop-blur-sm">
                     {data.loadout.weapons.map((w, i) => (
                         <div key={w.id} className="relative group w-12 h-14 bg-[#151515] border border-[#333] flex flex-col items-center justify-end overflow-hidden">
                             {/* Fill */}
@@ -128,7 +128,7 @@ export const MechLayout: React.FC<MechLayoutProps> = ({ data, config, children, 
                     ))}
                     {/* Empty Slots */}
                     {Array.from({ length: Math.max(0, data.loadout.maxWeaponSlots - data.loadout.weapons.length) }).map((_, i) => (
-                        <div key={`e-${i}`} className="w-12 h-14 border border-[#222] bg-[#050505] flex items-center justify-center">
+                        <div key={`e-${i}`} className="w-12 h-14 border border-[#222] bg-transparent flex items-center justify-center">
                             <span className="text-[#333]">+</span>
                         </div>
                     ))}

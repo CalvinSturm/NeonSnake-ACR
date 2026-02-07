@@ -2,7 +2,7 @@
 import React from 'react';
 import { HUDData, HUDConfig } from '../types';
 import { HUDTooltip } from '../HUDPrimitives';
-import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT } from '../../../constants';
+import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT } from '../../../constants';
 
 interface Glass4LayoutProps {
   data: HUDData;
@@ -14,8 +14,8 @@ interface Glass4LayoutProps {
 export const Glass4Layout: React.FC<Glass4LayoutProps> = ({ data, config, children, showUI = true }) => {
   return (
     <div 
-        className="relative bg-[#eee] overflow-hidden font-sans text-slate-800"
-        style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+        className="relative bg-transparent overflow-hidden font-sans text-slate-800"
+        style={{ width: '100%', height: '100%' }}
     >
       <div className="absolute inset-0 z-0 bg-black">
           {children}

@@ -2,7 +2,7 @@
 import React from 'react';
 import { HUDData, HUDConfig } from '../types';
 import { HUDTooltip } from '../HUDPrimitives';
-import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT } from '../../../constants';
+import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT } from '../../../constants';
 
 interface RPG4LayoutProps {
   data: HUDData;
@@ -17,8 +17,8 @@ export const RPG4Layout: React.FC<RPG4LayoutProps> = ({ data, config, children, 
 
   return (
     <div 
-        className="relative bg-[#0a0500] overflow-hidden font-serif text-[#eecfa1]"
-        style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+        className="relative bg-transparent overflow-hidden font-serif text-[#eecfa1]"
+        style={{ width: '100%', height: '100%' }}
     >
       <div className="absolute inset-0 z-0">
           {children}
@@ -67,7 +67,7 @@ export const RPG4Layout: React.FC<RPG4LayoutProps> = ({ data, config, children, 
 
                     <div className="flex gap-1 bg-[#1a1510] p-2 border border-[#554433] rounded shadow-2xl">
                         {data.loadout.weapons.map((w, i) => (
-                            <div key={w.id} className="relative group w-12 h-12 bg-[#050505] border border-[#443322] flex items-center justify-center hover:border-[#ffd700] transition-colors">
+                            <div key={w.id} className="relative group w-12 h-12 bg-transparent border border-[#443322] flex items-center justify-center hover:border-[#ffd700] transition-colors">
                                 <span className={`text-2xl ${w.active ? 'opacity-100' : 'opacity-40 grayscale'}`}>{w.icon}</span>
                                 {!w.active && (
                                     <div className="absolute inset-0 bg-black/60 flex items-end">
@@ -79,7 +79,7 @@ export const RPG4Layout: React.FC<RPG4LayoutProps> = ({ data, config, children, 
                             </div>
                         ))}
                         {Array.from({ length: Math.max(0, data.loadout.maxWeaponSlots - data.loadout.weapons.length) }).map((_, i) => (
-                            <div key={`e-${i}`} className="w-12 h-12 bg-[#050505] border border-[#221a11] flex items-center justify-center opacity-30">
+                            <div key={`e-${i}`} className="w-12 h-12 bg-transparent border border-[#221a11] flex items-center justify-center opacity-30">
                                 <span>+</span>
                             </div>
                         ))}

@@ -23,6 +23,7 @@ import { updateShooter } from './enemies/shooterAI';
 import { updateDasher } from './enemies/dasherAI';
 import { AIContext } from './enemies/enemyTypes';
 import { updateTimers, applyMovement } from './physics/movementUtils';
+import { HUNTER } from './enemies/enemyConstants';
 
 export function useMovement(
   game: ReturnType<typeof useGameState>,
@@ -362,14 +363,13 @@ export function useMovement(
             const dx = snakeHead.x - e.x;
             const dy = snakeHead.y - e.y;
             const dist = Math.hypot(dx, dy);
-            
+
             e.intent = 'ATTACKING';
             if (dist > 0.1) {
-                const accel = 0.5;
-                e.vx += (dx / dist) * accel * baseSpeedMod;
-                e.vy += (dy / dist) * accel * baseSpeedMod;
-                e.vx *= 0.92;
-                e.vy *= 0.92;
+                e.vx += (dx / dist) * HUNTER.ACCELERATION * baseSpeedMod;
+                e.vy += (dy / dist) * HUNTER.ACCELERATION * baseSpeedMod;
+                e.vx *= HUNTER.FRICTION;
+                e.vy *= HUNTER.FRICTION;
             }
         }
 

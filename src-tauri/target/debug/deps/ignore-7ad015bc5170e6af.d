@@ -1,0 +1,12 @@
+C:\Users\Calvin\Desktop\New folder\NeonSnake-ACR\src-tauri\target\debug\deps\ignore-7ad015bc5170e6af.d: C:\Users\Calvin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ignore-0.4.25\src\lib.rs C:\Users\Calvin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ignore-0.4.25\src\default_types.rs C:\Users\Calvin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ignore-0.4.25\src\dir.rs C:\Users\Calvin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ignore-0.4.25\src\gitignore.rs C:\Users\Calvin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ignore-0.4.25\src\overrides.rs C:\Users\Calvin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ignore-0.4.25\src\pathutil.rs C:\Users\Calvin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ignore-0.4.25\src\types.rs C:\Users\Calvin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ignore-0.4.25\src\walk.rs
+
+C:\Users\Calvin\Desktop\New folder\NeonSnake-ACR\src-tauri\target\debug\deps\libignore-7ad015bc5170e6af.rmeta: C:\Users\Calvin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ignore-0.4.25\src\lib.rs C:\Users\Calvin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ignore-0.4.25\src\default_types.rs C:\Users\Calvin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ignore-0.4.25\src\dir.rs C:\Users\Calvin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ignore-0.4.25\src\gitignore.rs C:\Users\Calvin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ignore-0.4.25\src\overrides.rs C:\Users\Calvin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ignore-0.4.25\src\pathutil.rs C:\Users\Calvin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ignore-0.4.25\src\types.rs C:\Users\Calvin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ignore-0.4.25\src\walk.rs
+
+C:\Users\Calvin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ignore-0.4.25\src\lib.rs:
+C:\Users\Calvin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ignore-0.4.25\src\default_types.rs:
+C:\Users\Calvin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ignore-0.4.25\src\dir.rs:
+C:\Users\Calvin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ignore-0.4.25\src\gitignore.rs:
+C:\Users\Calvin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ignore-0.4.25\src\overrides.rs:
+C:\Users\Calvin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ignore-0.4.25\src\pathutil.rs:
+C:\Users\Calvin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ignore-0.4.25\src\types.rs:
+C:\Users\Calvin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ignore-0.4.25\src\walk.rs:

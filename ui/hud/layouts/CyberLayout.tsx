@@ -107,17 +107,40 @@ export const CyberLayout: React.FC<CyberLayoutProps> = ({ data, config, children
                         {data.score.current.toLocaleString()}
                     </div>
                     
-                    {/* COMBO INDICATOR */}
-                    <div className={`mt-2 transition-all duration-300 origin-left ${data.score.combo > 1 ? 'opacity-100 scale-100' : 'opacity-50 scale-90 grayscale'}`}>
-                        <div className="flex items-center gap-2">
-                             <div className="text-yellow-400 text-xs font-bold font-display tracking-widest bg-yellow-900/30 px-2 py-0.5 border-l-2 border-yellow-500">
-                                COMBO x{data.score.combo}
-                             </div>
-                             {data.score.combo > 1 && (
-                                 <div className="text-[9px] text-yellow-600 font-mono font-bold animate-pulse">
-                                    +{(data.score.combo * 10).toFixed(0)}% BONUS
-                                 </div>
-                             )}
+                    {/* COMBO INDICATOR WITH TIMER */}
+                    <div className={`mt-2 transition-all duration-300 origin-left ${data.score.combo > 0 ? 'opacity-100 scale-100' : 'opacity-30 scale-90'}`}>
+                        <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-2">
+                                <div className={`text-xs font-bold font-display tracking-widest px-2 py-0.5 border-l-2 transition-all
+                                    ${data.score.combo > 0
+                                        ? 'text-yellow-400 bg-yellow-900/30 border-yellow-500'
+                                        : 'text-gray-500 bg-gray-900/30 border-gray-600'}`}>
+                                    {data.score.combo > 0 ? `×${data.score.comboMultiplier.toFixed(1)}` : '×1.0'}
+                                </div>
+                                {data.score.combo > 0 && (
+                                    <div className="text-[10px] text-yellow-500 font-mono font-bold">
+                                        {data.score.combo} CHAIN
+                                    </div>
+                                )}
+                            </div>
+                            {/* Combo Timer Bar */}
+                            <div className="w-32 h-1.5 bg-gray-800/50 overflow-hidden relative">
+                                <div
+                                    className={`h-full transition-all duration-100 ${
+                                        data.score.comboTimerPct > 0.3
+                                            ? 'bg-yellow-500 shadow-[0_0_5px_#eab308]'
+                                            : 'bg-red-500 shadow-[0_0_5px_#ef4444] animate-pulse'
+                                    }`}
+                                    style={{ width: `${data.score.comboTimerPct * 100}%` }}
+                                />
+                                {data.score.combo > 0 && (
+                                    <div className="absolute inset-0 flex items-center justify-center">
+                                        <span className="text-[7px] text-white/80 font-mono uppercase tracking-wider drop-shadow-md">
+                                            EAT TO MAINTAIN
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>

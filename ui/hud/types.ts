@@ -52,6 +52,8 @@ export interface HUDData {
     current: number;
     high: number;
     combo: number;
+    comboMultiplier: number; // 1.0 + (combo * 0.1)
+    comboTimerPct: number; // 0-1, remaining time before combo resets
   };
   threat: {
     label: string;

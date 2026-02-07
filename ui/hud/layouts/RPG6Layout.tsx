@@ -2,7 +2,7 @@
 import React from 'react';
 import { HUDData, HUDConfig } from '../types';
 import { HUDTooltip } from '../HUDPrimitives';
-import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT } from '../../../constants';
+import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT } from '../../../constants';
 
 interface RPG6LayoutProps {
   data: HUDData;
@@ -14,8 +14,8 @@ interface RPG6LayoutProps {
 export const RPG6Layout: React.FC<RPG6LayoutProps> = ({ data, config, children, showUI = true }) => {
   return (
     <div 
-        className="relative bg-[#050202] overflow-hidden font-serif text-[#e2d0a4]"
-        style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+        className="relative bg-transparent overflow-hidden font-serif text-[#e2d0a4]"
+        style={{ width: '100%', height: '100%' }}
     >
       {/* ── GAME LAYER ── */}
       <div className="absolute inset-0 z-0">
@@ -110,7 +110,7 @@ export const RPG6Layout: React.FC<RPG6LayoutProps> = ({ data, config, children, 
                     <div className="absolute inset-[-4px] border border-[#e2d0a4] rounded-full"></div>
                     
                     {/* Globe Mask */}
-                    <div className="absolute inset-0 rounded-full bg-[#0f151a] overflow-hidden shadow-[inset_0_0_30px_#000]">
+                    <div className="absolute inset-0 rounded-full bg-transparent overflow-hidden shadow-[inset_0_0_30px_#000]">
                         {/* Fluid Fill */}
                         <div 
                             className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-[#000080] via-[#4169e1] to-[#87ceeb] transition-all duration-500 ease-in-out"

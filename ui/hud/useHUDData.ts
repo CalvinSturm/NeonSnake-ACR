@@ -1,18 +1,18 @@
 
 import { useMemo } from 'react';
 import { useGameState } from '../../game/useGameState';
-import { DIFFICULTY_CONFIGS, STAMINA_CONFIG } from '../../constants';
+import { DIFFICULTY_CONFIGS, STAMINA_CONFIG, COMBO_WINDOW } from '../../constants';
 import { useVisionProtocol } from '../vision/useVisionProtocol';
 import { HUDData, HUDSkillData } from './types';
 import { DESCRIPTOR_REGISTRY } from '../../game/descriptors';
 
 export function useHUDData(game: ReturnType<typeof useGameState>): HUDData {
-  const { 
+  const {
     uiScore, highScore, uiCombo, uiLevel, uiXp, uiXpValues, uiStage, uiStageStatus,
     uiStats, uiShield, difficulty, status, statsRef, snakeRef,
     weaponFireTimerRef, mineDropTimerRef,
     prismLanceTimerRef, neonScatterTimerRef, voltSerpentTimerRef, phaseRailChargeRef,
-    staminaRef
+    staminaRef, gameTimeRef, lastEatTimeRef
   } = game;
 
   const vision = useVisionProtocol();
@@ -76,9 +76,14 @@ export function useHUDData(game: ReturnType<typeof useGameState>): HUDData {
       });
 
     const head = snakeRef.current[0] || { x: 0, y: 0 };
-    
+
     // Calculate Stamina Percentage
     const staminaPct = Math.min(100, Math.max(0, (staminaRef.current / STAMINA_CONFIG.MAX) * 100));
+
+    // Calculate Combo Timer (remaining time as percentage)
+    const timeSinceEat = gameTimeRef.current - lastEatTimeRef.current;
+    const comboTimerPct = uiCombo > 0 ? Math.max(0, 1 - (timeSinceEat / COMBO_WINDOW)) : 0;
+    const comboMultiplier = 1 + (uiCombo * 0.1);
 
     return {
       status,
@@ -86,7 +91,9 @@ export function useHUDData(game: ReturnType<typeof useGameState>): HUDData {
       score: {
         current: Math.floor(uiScore),
         high: highScore,
-        combo: uiCombo
+        combo: uiCombo,
+        comboMultiplier,
+        comboTimerPct
       },
       threat: {
         label: DIFFICULTY_CONFIGS[difficulty].label,
@@ -129,6 +136,7 @@ export function useHUDData(game: ReturnType<typeof useGameState>): HUDData {
     weaponFireTimerRef.current, mineDropTimerRef.current, prismLanceTimerRef.current,
     neonScatterTimerRef.current, voltSerpentTimerRef.current, phaseRailChargeRef.current,
     snakeRef.current[0],
-    staminaRef.current
+    staminaRef.current,
+    gameTimeRef.current, lastEatTimeRef.current
   ]);
 }

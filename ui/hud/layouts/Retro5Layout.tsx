@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { HUDData, HUDConfig } from '../types';
-import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT } from '../../../constants';
+import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT } from '../../../constants';
 
 interface Retro5LayoutProps {
   data: HUDData;
@@ -13,8 +13,8 @@ interface Retro5LayoutProps {
 export const Retro5Layout: React.FC<Retro5LayoutProps> = ({ data, config, children, showUI = true }) => {
   return (
     <div 
-        className="relative bg-[#100020] overflow-hidden font-sans"
-        style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+        className="relative bg-transparent overflow-hidden font-sans"
+        style={{ width: '100%', height: '100%' }}
     >
       {/* ── SUNSET GRID FLOOR ── */}
       <div className="absolute bottom-0 w-full h-1/3 bg-[linear-gradient(to_bottom,transparent,rgba(255,0,255,0.2))] pointer-events-none z-10" 

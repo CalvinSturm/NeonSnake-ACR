@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { HUDData, HUDConfig } from '../types';
-import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT } from '../../../constants';
+import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT } from '../../../constants';
 
 interface Arcade2LayoutProps {
   data: HUDData;
@@ -13,8 +13,8 @@ interface Arcade2LayoutProps {
 export const Arcade2Layout: React.FC<Arcade2LayoutProps> = ({ data, config, children, showUI = true }) => {
   return (
     <div 
-        className="relative bg-[#111] overflow-hidden font-mono flex items-center justify-center"
-        style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+        className="relative bg-transparent overflow-hidden font-mono flex items-center justify-center"
+        style={{ width: '100%', height: '100%' }}
     >
       {/* ── CABINET BEZEL ART ── */}
       <div className="absolute inset-0 z-50 pointer-events-none">

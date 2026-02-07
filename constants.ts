@@ -289,9 +289,9 @@ export const DIFFICULTY_CONFIGS: Record<Difficulty, DifficultyConfig> = {
 // These apply after the difficulty's allowedEnemies filter
 export const STAGE_ENEMY_UNLOCKS: Record<EnemyType, number> = {
     [EnemyType.HUNTER]: 1,       // Always available
-    [EnemyType.INTERCEPTOR]: 2,  // Stage 2+
-    [EnemyType.SHOOTER]: 4,      // Stage 4+
-    [EnemyType.DASHER]: 6,       // Stage 6+
+    [EnemyType.INTERCEPTOR]: 1,  // Available immediately if difficulty allows
+    [EnemyType.SHOOTER]: 1,      // Available immediately if difficulty allows
+    [EnemyType.DASHER]: 1,       // Available immediately if difficulty allows
     [EnemyType.BOSS]: 999
 };
 

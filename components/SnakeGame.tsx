@@ -403,7 +403,7 @@ export const SnakeGame: React.FC = () => {
 
                     {/* Cosmetics Menu */}
                     {status === GameStatus.COSMETICS && (
-                        <CosmeticsMenu onClose={() => setStatus(GameStatus.IDLE)} />
+                        <CosmeticsMenu game={game} onClose={() => setStatus(GameStatus.IDLE)} />
                     )}
 
                     {/* Unlock Toast (In-Game) - Only renders active toasts */}

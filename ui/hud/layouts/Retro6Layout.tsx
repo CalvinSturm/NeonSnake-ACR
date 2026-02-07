@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { HUDData, HUDConfig } from '../types';
-import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT } from '../../../constants';
+import { HUD_TOP_HEIGHT, HUD_BOTTOM_HEIGHT } from '../../../constants';
 
 interface Retro6LayoutProps {
     data: HUDData;
@@ -13,8 +13,8 @@ interface Retro6LayoutProps {
 export const Retro6Layout: React.FC<Retro6LayoutProps> = ({ data, children, showUI = true }) => {
     return (
         <div
-            className="relative bg-[#050010] overflow-hidden font-sans"
-            style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+            className="relative bg-transparent overflow-hidden font-sans"
+            style={{ width: '100%', height: '100%' }}
         >
             {/* ── SUNSET GRID (Animated via CSS) ── */}
             <div

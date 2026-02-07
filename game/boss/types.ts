@@ -21,7 +21,7 @@ export type BossIntent =
   | { type: 'UNLOCK_CAMERA' }
   | { type: 'SPAWN_MINIONS'; enemyType: EnemyType; count: number; offset?: {x: number, y: number} }
   | { type: 'APPLY_EFFECT'; effect: 'SLOW' | 'MAGNET'; duration: number }
-  | { type: 'SPAWN_PROJECTILE'; angle: number; speed: number; damage: number; count?: number; spread?: number };
+  | { type: 'SPAWN_PROJECTILE'; angle: number; speed: number; damage: number; count?: number; spread?: number; targetPlayer?: boolean };
 
 export interface BossStateDef {
   id: BossStateId;

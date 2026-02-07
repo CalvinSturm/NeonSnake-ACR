@@ -1,0 +1,1 @@
+cargo:rustc-link-search=native=C:\Users\Calvin\Desktop\New folder\NeonSnake-ACR\src-tauri\target\debug\build\webview2-com-sys-0b5fbc60aa428e7e\out\x64
