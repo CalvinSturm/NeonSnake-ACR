@@ -10,6 +10,7 @@ import { useMovement } from '../game/useMovement';
 import { useStageController } from '../game/useStageController';
 import { useGameLoop } from '../game/useGameLoop';
 import { useRendering } from '../game/useRendering';
+import { useWebGLRenderer } from '../game/rendering/useWebGLRenderer';
 import { useInput } from '../game/useInput';
 import { useMusic } from '../game/useMusic';
 import { useAnalytics } from '../game/useAnalytics';
@@ -18,6 +19,12 @@ import { useVoidHazard } from '../game/hazards/useVoidHazard';
 import { useEnemyGapAwareness } from '../game/ai/useEnemyGapAwareness';
 import { useProjectilePhysics } from '../game/physics/useProjectilePhysics';
 import { audio } from '../utils/audio';
+import {
+    setChromaticAberration,
+    applyShaderSettings,
+    setShaderQuality,
+    areShadersActive
+} from '../graphics';
 
 import { GameStatus, CharacterProfile, Direction, Difficulty } from '../types';
 import { CANVAS_WIDTH, CANVAS_HEIGHT, CHARACTERS, DIFFICULTY_CONFIGS } from '../constants';
@@ -87,7 +94,11 @@ export const SnakeGame: React.FC = () => {
             setStatus(GameStatus.PLAYING);
         }
     });
-    const { draw } = useRendering(canvasRef, game, movement.getMoveProgress);
+
+    // WebGL Renderer (Hybrid Mode)
+    const webgl = useWebGLRenderer();
+
+    const { draw } = useRendering(canvasRef, game, movement.getMoveProgress, undefined, { isReady: webgl.isReady });
 
     // Game Loop Update
     const update = (dt: number) => {
@@ -112,9 +123,13 @@ export const SnakeGame: React.FC = () => {
             const progress = 1 - (Math.max(0, game.deathTimerRef.current) / 2000);
             game.chromaticAberrationRef.current = progress * 8;
 
+            // Update GPU shader chromatic aberration
+            setChromaticAberration(progress * 8);
+
             if (game.deathTimerRef.current <= 0) {
                 setStatus(GameStatus.GAME_OVER);
                 game.chromaticAberrationRef.current = 0;
+                setChromaticAberration(0);
             }
             return;
         }
@@ -210,6 +225,28 @@ export const SnakeGame: React.FC = () => {
     // Initial Boot
     const [bootComplete, setBootComplete] = useState(false);
 
+    // WebGL Initialization (after boot, when canvas is ready)
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas || !bootComplete) return;
+
+        // Initialize WebGL in hybrid mode
+        webgl.init(canvas, 'hybrid').then(success => {
+            if (success) {
+                console.log('[SnakeGame] WebGL initialized in hybrid mode');
+                // Apply shader settings after initialization
+                setShaderQuality(settings.shaderQuality);
+                applyShaderSettings(settings.crtEffect, settings.fxIntensity);
+            } else {
+                console.warn('[SnakeGame] WebGL failed, using Canvas2D only');
+            }
+        });
+
+        return () => {
+            webgl.destroy();
+        };
+    }, [bootComplete, webgl]);
+
     if (!bootComplete) {
         return <BootSequence onComplete={() => setBootComplete(true)} />;
     }
@@ -229,7 +266,8 @@ export const SnakeGame: React.FC = () => {
                             width: '100%',
                             height: '100%',
                             aspectRatio: `${CANVAS_WIDTH}/${CANVAS_HEIGHT}`,
-                            filter: settings.crtEffect ? 'contrast(1.1) brightness(1.1)' : 'none'
+                            // Only use CSS filter when GPU shaders are OFF (fallback mode)
+                            filter: (settings.crtEffect && !areShadersActive()) ? 'contrast(1.1) brightness(1.1)' : 'none'
                         }}
                     />
 

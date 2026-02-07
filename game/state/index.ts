@@ -3,7 +3,7 @@
  */
 
 export { useSessionState } from './useSessionState';
-export type { SessionState, UserSettings, DebugFlags } from './useSessionState';
+export type { SessionState, UserSettings, DebugFlags, ShaderQualitySetting } from './useSessionState';
 export { DEFAULT_USER_SETTINGS } from './useSessionState';
 
 export { usePlayerState } from './usePlayerState';

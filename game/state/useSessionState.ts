@@ -11,6 +11,8 @@ import { DEFAULT_SETTINGS } from '../../constants';
 import { loadCosmeticProfile, saveCosmeticProfile } from '../cosmetics/CosmeticProfile';
 import { audio } from '../../utils/audio';
 
+export type ShaderQualitySetting = 'AUTO' | 'HIGH' | 'MEDIUM' | 'LOW' | 'OFF';
+
 export interface UserSettings {
     skipCountdown: boolean;
     uiScale: number;
@@ -34,6 +36,7 @@ export interface UserSettings {
     customControlPositions: { joystick: Point; action: Point } | null;
     hudConfig: HUDConfig;
     snakeStyle: string;
+    shaderQuality: ShaderQualitySetting;
     unlockCheckInterval?: number;
     fxThrottleInterval?: number;
 }
@@ -76,6 +79,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
         autoHide: false
     },
     snakeStyle: 'AUTO',
+    shaderQuality: 'AUTO',
     unlockCheckInterval: DEFAULT_SETTINGS.unlockCheckInterval,
     fxThrottleInterval: DEFAULT_SETTINGS.fxThrottleInterval
 };

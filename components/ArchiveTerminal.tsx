@@ -205,12 +205,12 @@ export const ArchiveTerminal: React.FC<ArchiveTerminalProps> = ({ onClose }) => 
                  </button>
              )}
              
-             {/* Mobile CAI Toggle */}
+             {/* Mobile SERPENT Interface Toggle */}
              <button
                 className="md:hidden hover:bg-green-900/50 text-green-600 hover:text-white px-2 py-1 border border-green-800 text-xs tracking-widest transition-colors"
                 onClick={() => setIsMobileCAI(!isMobileCAI)}
              >
-                {isMobileCAI ? '[ HIDE CAI ]' : '[ SHOW CAI ]'}
+                {isMobileCAI ? '[ HIDE SERPENT ]' : '[ ASK OMEGA ]'}
              </button>
 
              <button onClick={handleBack} className="hover:bg-green-900/50 text-green-600 hover:text-white px-4 py-1 border border-green-800 text-xs tracking-widest transition-colors">
@@ -430,7 +430,7 @@ export const ArchiveTerminal: React.FC<ArchiveTerminalProps> = ({ onClose }) => 
               )}
           </div>
 
-          {/* RIGHT: CAI-OS PANEL */}
+          {/* RIGHT: SERPENT INTERFACE — OMEGA DIRECT */}
           <div className={`${isMobileCAI ? 'flex' : 'hidden'} md:flex w-full md:w-80 h-full border-t md:border-t-0 md:border-l border-green-900/50`}>
               <CAIPanel capabilities={capabilities} />
           </div>

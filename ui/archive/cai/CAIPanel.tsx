@@ -11,12 +11,23 @@ interface CAIPanelProps {
 }
 
 export const CAIPanel: React.FC<CAIPanelProps> = ({ capabilities }) => {
-    const { status, output, processQuery, history, historyIndex, setHistoryIndex } = useCAI(capabilities);
+    const {
+        status,
+        output,
+        processQuery,
+        history,
+        historyIndex,
+        setHistoryIndex,
+        isTyping,
+        typingText,
+        skipTyping
+    } = useCAI(capabilities);
     const [inputVal, setInputVal] = useState('');
     const [suggestions, setSuggestions] = useState<ReturnType<typeof matchAutocomplete>>([]);
     const [suggestionIndex, setSuggestionIndex] = useState(-1);
-    
+
     const inputRef = useRef<HTMLInputElement>(null);
+    const outputRef = useRef<HTMLDivElement>(null);
 
     // ── AUTOCOMPLETE LOGIC ──
     const acContext = useMemo<AutocompleteContext>(() => {
@@ -49,13 +60,26 @@ export const CAIPanel: React.FC<CAIPanelProps> = ({ capabilities }) => {
 
     const handleSubmit = (e?: React.FormEvent) => {
         if (e) e.preventDefault();
-        
+
+        // If typing, skip to end instead of submitting
+        if (isTyping) {
+            skipTyping();
+            return;
+        }
+
         let finalCommand = inputVal;
-        
+
         processQuery(finalCommand);
         setInputVal('');
         setSuggestions([]);
         setSuggestionIndex(-1);
+    };
+
+    // Click anywhere on output to skip typing
+    const handleOutputClick = () => {
+        if (isTyping) {
+            skipTyping();
+        }
     };
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -116,30 +140,66 @@ export const CAIPanel: React.FC<CAIPanelProps> = ({ capabilities }) => {
         }
     };
 
-    // Auto-focus on idle
+    // Auto-focus on idle (after typing completes)
     useEffect(() => {
-        if (status === 'IDLE') {
+        if (status === 'IDLE' && !isTyping) {
             inputRef.current?.focus();
         }
-    }, [status]);
+    }, [status, isTyping]);
 
     return (
         <div className="flex flex-col h-full bg-black/40 w-full shrink-0 relative">
             {/* Header */}
             <div className="p-2 border-b border-green-900/50 text-[10px] text-green-700 font-bold tracking-widest flex justify-between items-center">
-                <span>CAI-OS INTERFACE</span>
-                <span className={`w-2 h-2 rounded-full ${status === 'PROCESSING' ? 'bg-yellow-500 animate-pulse' : 'bg-green-900'}`}></span>
+                <div className="flex items-center gap-2">
+                    <span>SERPENT INTERFACE</span>
+                    {isTyping && (
+                        <span className="text-green-500 animate-pulse">// TRANSMITTING</span>
+                    )}
+                </div>
+                <span className={`w-2 h-2 rounded-full transition-colors ${
+                    isTyping
+                        ? 'bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]'
+                        : status === 'PROCESSING'
+                            ? 'bg-yellow-500 animate-pulse'
+                            : 'bg-green-900'
+                }`}></span>
             </div>
 
             {/* Output Log */}
-            <div className="flex-1 overflow-y-auto p-3 font-mono text-xs space-y-4 custom-scrollbar flex flex-col-reverse">
+            <div
+                ref={outputRef}
+                onClick={handleOutputClick}
+                className={`flex-1 overflow-y-auto p-3 font-mono text-xs space-y-4 custom-scrollbar flex flex-col-reverse ${isTyping ? 'cursor-pointer' : ''}`}
+            >
+                {/* Currently Typing Response */}
+                {isTyping && typingText && (
+                    <div className="whitespace-pre-wrap leading-relaxed text-green-400 relative">
+                        <span className="opacity-50 select-none mr-2">{`>`}</span>
+                        {typingText}
+                        <span className="inline-block w-2 h-4 bg-green-500 ml-0.5 animate-cursor-blink align-middle" />
+                    </div>
+                )}
+
+                {/* Previous Outputs */}
                 {output.map((entry, i) => (
-                    <div key={i} className={`whitespace-pre-wrap leading-relaxed ${i === 0 ? 'text-green-400' : 'text-green-800 opacity-60'}`}>
+                    <div key={i} className={`whitespace-pre-wrap leading-relaxed ${i === 0 && !isTyping ? 'text-green-400' : 'text-green-800 opacity-60'}`}>
                         <span className="opacity-50 select-none mr-2">{`>`}</span>
                         {entry}
                     </div>
                 ))}
             </div>
+
+            {/* Cursor Blink Animation */}
+            <style>{`
+                @keyframes cursor-blink {
+                    0%, 50% { opacity: 1; }
+                    51%, 100% { opacity: 0; }
+                }
+                .animate-cursor-blink {
+                    animation: cursor-blink 0.8s infinite;
+                }
+            `}</style>
 
             {/* Input Line Container */}
             <div className="relative border-t border-green-900/50 bg-black/60">
@@ -155,9 +215,9 @@ export const CAIPanel: React.FC<CAIPanelProps> = ({ capabilities }) => {
                         value={inputVal}
                         onChange={(e) => setInputVal(e.target.value)}
                         onKeyDown={handleKeyDown}
-                        disabled={status === 'PROCESSING'}
+                        disabled={status === 'PROCESSING' && !isTyping}
                         className="bg-transparent border-none outline-none text-green-400 font-mono text-xs w-full placeholder-green-900"
-                        placeholder={status === 'PROCESSING' ? "PROCESSING..." : "ENTER QUERY"}
+                        placeholder={isTyping ? "OMEGA IS RESPONDING... [ENTER TO SKIP]" : status === 'PROCESSING' ? "PROCESSING..." : "ENTER QUERY"}
                         maxLength={120}
                         spellCheck={false}
                         autoComplete="off"

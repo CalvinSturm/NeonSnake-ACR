@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { UserSettings, DEFAULT_USER_SETTINGS } from '../game/useGameState';
+import { UserSettings, DEFAULT_USER_SETTINGS, ShaderQualitySetting } from '../game/useGameState';
 import { audio } from '../utils/audio';
 import { MobileControlScheme } from '../types';
+import { setShaderQuality, applyShaderSettings } from '../graphics';
 
 interface SettingsMenuProps {
   settings: UserSettings;
@@ -93,6 +94,32 @@ const CyberSlider: React.FC<{
                     );
                 })}
             </div>
+        </div>
+    );
+};
+
+const CyberDropdown: React.FC<{
+    label: string;
+    description?: string;
+    value: string;
+    options: { value: string; label: string }[];
+    onChange: (val: string) => void;
+}> = ({ label, description, value, options, onChange }) => {
+    return (
+        <div className="flex items-center justify-between py-2 group hover:bg-white/5 px-2 rounded transition-colors" onMouseEnter={() => audio.play('MOVE')}>
+            <div className="flex flex-col">
+                <span className="text-sm font-bold text-gray-300 group-hover:text-white transition-colors">{label}</span>
+                {description && <span className="text-[10px] text-gray-500 font-mono">{description}</span>}
+            </div>
+            <select
+                value={value}
+                onChange={(e) => { onChange(e.target.value); audio.play('UI_HARD_CLICK'); }}
+                className="bg-black border border-gray-700 text-cyan-400 text-xs font-bold px-3 py-1.5 rounded focus:border-cyan-500 focus:outline-none cursor-pointer hover:border-cyan-600 transition-colors"
+            >
+                {options.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+            </select>
         </div>
     );
 };
@@ -270,49 +297,84 @@ export const SettingsMenu: React.FC<SettingsMenuProps> = ({
       </div>
   );
 
+  const handleShaderQualityChange = (val: string) => {
+      const quality = val as ShaderQualitySetting;
+      setSettings(s => ({ ...s, shaderQuality: quality }));
+      setShaderQuality(quality);
+  };
+
+  const handleCrtToggle = () => {
+      setSettings(s => {
+          const newCrt = !s.crtEffect;
+          applyShaderSettings(newCrt, s.fxIntensity);
+          return { ...s, crtEffect: newCrt };
+      });
+  };
+
+  const handleFxIntensity = (val: number) => {
+      setSettings(s => {
+          applyShaderSettings(s.crtEffect, val);
+          return { ...s, fxIntensity: val };
+      });
+  };
+
   const renderVideoTab = () => (
       <div className="space-y-2 animate-in slide-in-from-right-4 fade-in duration-300">
           <SectionHeader title="Display" />
-          
-          <CyberToggle 
-              label="Fullscreen Mode" 
-              checked={isFullscreen} 
-              onChange={toggleFullscreen} 
+
+          <CyberToggle
+              label="Fullscreen Mode"
+              checked={isFullscreen}
+              onChange={toggleFullscreen}
           />
-          <CyberToggle 
-              label="High Contrast" 
+          <CyberToggle
+              label="High Contrast"
               description="Boost visibility of entities."
-              checked={settings.highContrast} 
-              onChange={() => setSettings(s => ({ ...s, highContrast: !s.highContrast }))} 
+              checked={settings.highContrast}
+              onChange={() => setSettings(s => ({ ...s, highContrast: !s.highContrast }))}
           />
 
           <SectionHeader title="Post-Processing" />
-          
-          <CyberToggle 
-              label="CRT Scanlines" 
+
+          <CyberDropdown
+              label="Shader Quality"
+              description="GPU effect quality (AUTO adjusts to FPS)."
+              value={settings.shaderQuality}
+              options={[
+                  { value: 'AUTO', label: 'AUTO' },
+                  { value: 'HIGH', label: 'HIGH' },
+                  { value: 'MEDIUM', label: 'MEDIUM' },
+                  { value: 'LOW', label: 'LOW' },
+                  { value: 'OFF', label: 'OFF' },
+              ]}
+              onChange={handleShaderQualityChange}
+          />
+
+          <CyberToggle
+              label="CRT Scanlines"
               description="Retro aesthetic overlay."
-              checked={settings.crtEffect} 
-              onChange={() => setSettings(s => ({ ...s, crtEffect: !s.crtEffect }))} 
+              checked={settings.crtEffect}
+              onChange={handleCrtToggle}
           />
-          <CyberToggle 
-              label="Screen Shake" 
+          <CyberToggle
+              label="Screen Shake"
               description="Camera movement on impact."
-              checked={settings.screenShake} 
-              onChange={() => setSettings(s => ({ ...s, screenShake: !s.screenShake }))} 
+              checked={settings.screenShake}
+              onChange={() => setSettings(s => ({ ...s, screenShake: !s.screenShake }))}
           />
-          <CyberToggle 
-              label="Reduce Flashing" 
+          <CyberToggle
+              label="Reduce Flashing"
               description="Limit strobe effects for photosensitivity."
-              checked={settings.reduceFlashing} 
-              onChange={() => setSettings(s => ({ ...s, reduceFlashing: !s.reduceFlashing }))} 
+              checked={settings.reduceFlashing}
+              onChange={() => setSettings(s => ({ ...s, reduceFlashing: !s.reduceFlashing }))}
               warning
           />
 
           <div className="mt-4">
-              <CyberSlider 
-                  label="FX Intensity" 
-                  value={settings.fxIntensity} 
-                  onChange={(val) => setSettings(s => ({ ...s, fxIntensity: val }))} 
+              <CyberSlider
+                  label="FX Intensity"
+                  value={settings.fxIntensity}
+                  onChange={handleFxIntensity}
               />
           </div>
       </div>
